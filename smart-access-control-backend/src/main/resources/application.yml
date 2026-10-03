@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: smart-access-control-backend
+  profiles:
+    default: dev
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/smart_access}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+  flyway:
+    # Enable when database migrations are added in a later step.
+    enabled: false
+    locations: classpath:db/migration
