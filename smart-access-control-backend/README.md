@@ -1,7 +1,7 @@
 ﻿# Smart Access Control IoT — Backend
 
 Backend Spring Boot, Maven, Spring Data JPA, MySQL, Flyway và Lombok, package gốc `com.smartaccess`.
-Đã triển khai tầng database. Controller, service nghiệp vụ, Authentication/JWT, API và giao tiếp thiết bị dành cho bước tiếp theo.
+Đã triển khai tầng database và một phần Manager API theo schema hiện có. Chi tiết API, giới hạn invitation/cấp quyền và bộ Postman: [docs/manager-api.md](docs/manager-api.md). Authentication/JWT và giao tiếp thiết bị dành cho bước tiếp theo.
 
 ## Khởi chạy
 
@@ -28,7 +28,7 @@ Spring Boot không tự đọc `.env`; `.env.example` liệt kê các biến c�
 Profile mặc định là `dev`; `SPRING_PROFILES_ACTIVE=prod` yêu cầu `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`.
 Flyway chạy trước JPA; Hibernate dùng `ddl-auto: validate`, `open-in-view: false`.
 Flyway chỉ tạo bảng trong database đã tồn tại. Sau khi V1 được áp dụng, thay đổi schema cần migration mới.
-Starter Security hiện vẫn dùng cấu hình mặc định của Spring Boot, chưa triển khai Authentication riêng.
+Đã gỡ Starter Security để Manager API test bằng Postman khi chưa có Authentication. managerId tạm truyền từ request; Service kiểm tra quyền quản lý cửa.
 
 ## Migration và model
 

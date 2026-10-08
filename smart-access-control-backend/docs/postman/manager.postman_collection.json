@@ -1,0 +1,826 @@
+{
+  "info": {
+    "name": "Smart Door Manager — existing schema",
+    "description": "Executable supported flows only. Invitation and permission grants are unavailable under the unchanged schema. Run against an isolated fixture DB; requests mutate memberships and device assignments. Restore fixtures before rerunning.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "01 Search by accountId",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/manager/users/search?managerId={{managerId}}&keyword={{userId}}&type=account"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Safe user response', () => { const rows = pm.response.json(); pm.expect(rows).to.have.length(1); pm.expect(String(rows[0].id)).to.eql(pm.environment.get('userId')); pm.expect(rows[0]).not.to.have.property('passwordHash'); pm.expect(rows[0]).not.to.have.property('admin'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 Search by email",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/manager/users/search?managerId={{managerId}}&keyword={{userEmail}}&type=email"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Matches email', () => pm.expect(pm.response.json()[0].email).to.eql(pm.environment.get('userEmail')));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 Search missing account returns []",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/manager/users/search?managerId={{managerId}}&keyword=missing-38b13d@example.test&type=email"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Empty result', () => pm.expect(pm.response.json()).to.eql([]));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 List existing memberships",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users?managerId={{managerId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Member is present', () => pm.expect(pm.response.json().some(row => String(row.userId) === pm.environment.get('userId'))).to.eql(true));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 Foreign door forbidden",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/manager/units/{{otherUnitId}}/users?managerId={{managerId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+              "pm.test('Consistent error', () => { const body = pm.response.json(); pm.expect(body.status).to.eql(403); pm.expect(body.message).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "06.1 Grant allowFace is blocked without invitation proof",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions?managerId={{managerId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"allowFace\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+              "pm.test('Consistent error', () => { const body = pm.response.json(); pm.expect(body.status).to.eql(409); pm.expect(body.message).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "06.2 Grant allowFingerprint is blocked without invitation proof",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions?managerId={{managerId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"allowFingerprint\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+              "pm.test('Consistent error', () => { const body = pm.response.json(); pm.expect(body.status).to.eql(409); pm.expect(body.message).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "06.3 Grant allowRfid is blocked without invitation proof",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions?managerId={{managerId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"allowRfid\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+              "pm.test('Consistent error', () => { const body = pm.response.json(); pm.expect(body.status).to.eql(409); pm.expect(body.message).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "06.4 Grant allowRemoteUnlock is blocked without invitation proof",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions?managerId={{managerId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"allowRemoteUnlock\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+              "pm.test('Consistent error', () => { const body = pm.response.json(); pm.expect(body.status).to.eql(409); pm.expect(body.message).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 Grant to nonmember is rejected",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{nonmemberId}}/permissions?managerId={{managerId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"allowFace\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+              "pm.test('Consistent error', () => { const body = pm.response.json(); pm.expect(body.status).to.eql(409); pm.expect(body.message).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "08.1 Revoke allowFace",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions?managerId={{managerId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"allowFace\": false\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Permission revoked', () => pm.expect(pm.response.json().allowFace).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "08.2 Revoke allowFingerprint",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions?managerId={{managerId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"allowFingerprint\": false\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Permission revoked', () => pm.expect(pm.response.json().allowFingerprint).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "08.3 Revoke allowRfid",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions?managerId={{managerId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"allowRfid\": false\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Permission revoked', () => pm.expect(pm.response.json().allowRfid).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "08.4 Revoke allowRemoteUnlock",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions?managerId={{managerId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"allowRemoteUnlock\": false\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Permission revoked', () => pm.expect(pm.response.json().allowRemoteUnlock).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 Empty PATCH rejected",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions?managerId={{managerId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+              "pm.test('Consistent error', () => { const body = pm.response.json(); pm.expect(body.status).to.eql(400); pm.expect(body.message).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 Device missing",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/devices?managerId={{managerId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"deviceCode\": \"NO-SUCH-DEVICE-38B13D\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+              "pm.test('Consistent error', () => { const body = pm.response.json(); pm.expect(body.status).to.eql(404); pm.expect(body.message).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "11 Device owned by another door",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/devices?managerId={{managerId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"deviceCode\": \"{{otherDeviceCode}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+              "pm.test('Consistent error', () => { const body = pm.response.json(); pm.expect(body.status).to.eql(409); pm.expect(body.message).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "12 Device already in current door",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/devices?managerId={{managerId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"deviceCode\": \"{{sameDeviceCode}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+              "pm.test('Consistent error', () => { const body = pm.response.json(); pm.expect(body.status).to.eql(409); pm.expect(body.message).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "13 Foreign manager cannot register",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/manager/units/{{otherUnitId}}/devices?managerId={{managerId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"deviceCode\": \"{{freeDeviceCode}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+              "pm.test('Consistent error', () => { const body = pm.response.json(); pm.expect(body.status).to.eql(403); pm.expect(body.message).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "14 Register unassigned device",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/devices?managerId={{managerId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"deviceCode\": \"{{freeDeviceCode}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+              "pm.test('Assigned to selected door', () => pm.expect(String(pm.response.json().unitId)).to.eql(pm.environment.get('unitId')));",
+              "pm.test('No device secret', () => pm.expect(pm.response.json()).not.to.have.property('deviceSecretHash'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "15 Duplicate device registration",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/devices?managerId={{managerId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"deviceCode\": \"{{freeDeviceCode}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+              "pm.test('Consistent error', () => { const body = pm.response.json(); pm.expect(body.status).to.eql(409); pm.expect(body.message).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "16 Remove member with face request history rejected",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{historyUserId}}?managerId={{managerId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+              "pm.test('Consistent error', () => { const body = pm.response.json(); pm.expect(body.status).to.eql(409); pm.expect(body.message).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "17 Revoke all rights for member with history",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{historyUserId}}/permissions?managerId={{managerId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"allowFace\": false,\n  \"allowFingerprint\": false,\n  \"allowRfid\": false,\n  \"allowRemoteUnlock\": false\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "18 Remove member without history",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}?managerId={{managerId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 204', () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "19 Removed account still exists",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/manager/users/search?managerId={{managerId}}&keyword={{userId}}&type=account"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Account retained', () => pm.expect(pm.response.json()).to.have.length(1));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "20 Other door membership retained",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/manager/units/{{otherUnitId}}/users?managerId={{otherManagerId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Other membership retained', () => pm.expect(pm.response.json().some(row => String(row.userId) === pm.environment.get('userId'))).to.eql(true));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "21 Delete nonmember returns 404",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}?managerId={{managerId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+              "pm.test('Consistent error', () => { const body = pm.response.json(); pm.expect(body.status).to.eql(404); pm.expect(body.message).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "22 Manager missing",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users?managerId=9223372036854775807"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+              "pm.test('Consistent error', () => { const body = pm.response.json(); pm.expect(body.status).to.eql(404); pm.expect(body.message).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "23 Missing managerId",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+              "pm.test('Consistent error', () => { const body = pm.response.json(); pm.expect(body.status).to.eql(400); pm.expect(body.message).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
