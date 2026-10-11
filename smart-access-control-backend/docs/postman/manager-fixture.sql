@@ -1,20 +1,21 @@
 -- Optional fixture: run once in a disposable MySQL database after Flyway V1.
+-- Supply @fixture_password_hash in the MySQL session from a locally generated BCrypt hash; no default credential.
 -- No DDL; never run against shared/production data. Re-running intentionally fails on unique email/device UID.
 START TRANSACTION;
 INSERT INTO accounts (full_name, email, password_hash, created_at, updated_at)
-VALUES ('Manager fixture', 'manager-38b13d@example.test', 'fixture-not-a-login-hash', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3));
+VALUES ('Manager fixture', 'manager-38b13d@example.test', @fixture_password_hash, CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3));
 SET @manager_id = LAST_INSERT_ID();
 INSERT INTO accounts (full_name, email, password_hash, created_at, updated_at)
-VALUES ('Other manager fixture', 'other-manager-38b13d@example.test', 'fixture-not-a-login-hash', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3));
+VALUES ('Other manager fixture', 'other-manager-38b13d@example.test', @fixture_password_hash, CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3));
 SET @other_manager_id = LAST_INSERT_ID();
 INSERT INTO accounts (full_name, email, password_hash, created_at, updated_at)
-VALUES ('User fixture', 'user-38b13d@example.test', 'fixture-not-a-login-hash', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3));
+VALUES ('User fixture', 'user-38b13d@example.test', @fixture_password_hash, CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3));
 SET @user_id = LAST_INSERT_ID();
 INSERT INTO accounts (full_name, email, password_hash, created_at, updated_at)
-VALUES ('History user fixture', 'history-38b13d@example.test', 'fixture-not-a-login-hash', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3));
+VALUES ('History user fixture', 'history-38b13d@example.test', @fixture_password_hash, CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3));
 SET @history_user_id = LAST_INSERT_ID();
 INSERT INTO accounts (full_name, email, password_hash, created_at, updated_at)
-VALUES ('Nonmember fixture', 'nonmember-38b13d@example.test', 'fixture-not-a-login-hash', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3));
+VALUES ('Nonmember fixture', 'nonmember-38b13d@example.test', @fixture_password_hash, CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3));
 SET @nonmember_id = LAST_INSERT_ID();
 INSERT INTO access_units (manager_id, unit_name, created_at, updated_at)
 VALUES (@manager_id, 'Manager fixture door', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3));

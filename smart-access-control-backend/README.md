@@ -1,18 +1,21 @@
 ﻿# Smart Access Control IoT — Backend
 
 Backend Spring Boot, Maven, Spring Data JPA, MySQL, Flyway và Lombok, package gốc `com.smartaccess`.
-Đã triển khai tầng database và một phần Manager API theo schema hiện có. Chi tiết API, giới hạn invitation/cấp quyền và bộ Postman: [docs/manager-api.md](docs/manager-api.md). Authentication/JWT và giao tiếp thiết bị dành cho bước tiếp theo.
+Đã triển khai tầng database, một phần Manager API và phần tài khoản (đăng ký, đăng nhập, sửa thông tin, đổi mật khẩu, admin khóa/mở). Xác thực dùng HTTP session, giữ nguyên schema. Hướng dẫn chạy/kiểm tra tài khoản: [docs/account-api.md](docs/account-api.md); Manager API: [docs/manager-api.md](docs/manager-api.md). Giao tiếp thiết bị chưa triển khai.
 
 ## Khởi chạy
 
 Yêu cầu JDK 17+, Maven 3.6.3+ và MySQL 8.0.16+ để enforce CHECK constraint.
 Maven đã cấu hình annotation processor Lombok, bao gồm khi chạy bằng JDK 25.
+Nếu chạy trong terminal, đảm bảo `mvn -v` hoạt động. Trong IntelliJ, có thể dùng Maven bundled và chạy `SmartAccessApplication` với các biến môi trường database trong Run Configuration.
 
 Tạo database trước bằng `database/create_database.sql`, ví dụ trong MySQL client:
 
 ```sql
-SOURCE D:/DEV/IOT/smart-access-control-backend/database/create_database.sql;
+SOURCE <project-directory>/database/create_database.sql;
 ```
+
+Thay `<project-directory>` bằng đường dẫn thư mục backend trên máy đang chạy.
 
 Sau đó đặt biến môi trường trong PowerShell:
 
@@ -28,7 +31,9 @@ Spring Boot không tự đọc `.env`; `.env.example` liệt kê các biến c�
 Profile mặc định là `dev`; `SPRING_PROFILES_ACTIVE=prod` yêu cầu `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`.
 Flyway chạy trước JPA; Hibernate dùng `ddl-auto: validate`, `open-in-view: false`.
 Flyway chỉ tạo bảng trong database đã tồn tại. Sau khi V1 được áp dụng, thay đổi schema cần migration mới.
-Đã gỡ Starter Security để Manager API test bằng Postman khi chưa có Authentication. managerId tạm truyền từ request; Service kiểm tra quyền quản lý cửa.
+API dùng Spring Security và cookie `JSESSIONID`; request thay đổi dữ liệu cần CSRF token. Gọi `GET /api/auth/csrf`, gửi token bằng header `X-CSRF-TOKEN` khi đăng ký/đăng nhập, rồi lấy token mới sau đăng nhập. `POST /api/auth/register` nhận fullName, email/phone và password; `POST /api/auth/login` nhận identifier (email hoặc phone) và password. Client giữ cookie giữa các request. ManagerController lấy ID từ session, không tin query managerId; Service vẫn kiểm tra quyền quản lý cửa.
+
+Session hết hạn sau 1 giờ không hoạt động, lưu trong bộ nhớ của một backend instance và mất khi khởi động lại. Chưa hỗ trợ nhiều instance hoặc JWT/refresh token. CORS mặc định cho localhost/127.0.0.1:8081; cấu hình bằng CORS_ALLOWED_ORIGINS. Profile prod bắt buộc HTTPS với cookie Secure.
 
 ## Migration và model
 
@@ -88,7 +93,7 @@ Chỉ UserAccessId có equals/hashCode theo hai giá trị khóa.
 | audit_logs.actor_id | accounts.account_id | SET NULL |
 
 Khóa chính `user_access`: `(account_id, unit_id)`. Các bảng còn lại có BIGINT AUTO_INCREMENT.
-CHECK của accounts yêu cầu email hoặc phone khác NULL; validation nghiệp vụ bổ sung sẽ thuộc bước service.
+CHECK của accounts yêu cầu email hoặc phone khác NULL; AccountService kiểm tra liên hệ và dữ liệu tài khoản trước khi lưu.
 
 ## Index
 
@@ -130,10 +135,6 @@ mvn clean test
 BLOB, JSON, enum và timestamp. Test cũng xác nhận không thể tạo FaceRequest khi chưa là User,
 không thể xóa membership có history, và manager/actor được SET NULL khi Account bị xóa.
 Dữ liệu test được rollback sau mỗi test; schema Flyway được giữ lại.
-
-Kết quả kiểm chứng ngày 03/10/2026 trên MySQL 8.0.43 tạm tại máy phát triển:
-Flyway V1 áp dụng thành công; Hibernate validate thành công; `mvn clean test` BUILD SUCCESS,
-4 test chạy, 0 lỗi, 0 thất bại, 0 bỏ qua. Không áp dụng migration vào MySQL đang dùng tại cổng 3306.
 
 ## Quy tắc dành cho bước nghiệp vụ tiếp theo
 
