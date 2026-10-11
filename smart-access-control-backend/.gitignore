@@ -12,3 +12,6 @@ docs/postman/*.local.postman_environment.json
 .settings/
 .DS_Store
 Thumbs.db
+
+# Runtime images and metadata (default app.upload-dir)
+/uploads/
