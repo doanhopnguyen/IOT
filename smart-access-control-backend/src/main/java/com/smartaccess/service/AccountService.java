@@ -2,6 +2,8 @@ package com.smartaccess.service;
 
 import com.smartaccess.dto.account.AccountResponse;
 import com.smartaccess.dto.account.RegisterRequest;
+import com.smartaccess.dto.account.UpdateProfileRequest;
+import com.smartaccess.dto.account.ChangePasswordRequest;
 import com.smartaccess.exception.BusinessException;
 import com.smartaccess.model.Account;
 import com.smartaccess.model.enumtype.AccountStatus;
@@ -10,6 +12,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.context.ApplicationEventPublisher;
 import java.nio.charset.StandardCharsets;
 
 @Service
@@ -17,10 +20,12 @@ import java.nio.charset.StandardCharsets;
 public class AccountService {
     private final AccountRepository accounts;
     private final PasswordEncoder passwords;
+    private final ApplicationEventPublisher events;
 
-    public AccountService(AccountRepository accounts, PasswordEncoder passwords) {
+    public AccountService(AccountRepository accounts, PasswordEncoder passwords, ApplicationEventPublisher events) {
         this.accounts = accounts;
         this.passwords = passwords;
+        this.events = events;
     }
 
     @Transactional
@@ -39,6 +44,54 @@ public class AccountService {
         account.setStatus(AccountStatus.ACTIVE);
         return AccountResponse.from(accounts.saveAndFlush(account));
     }
+
+    public AccountResponse getProfile(Long accountId) {
+        return AccountResponse.from(requireActiveAccount(accountId, false));
+    }
+
+    @Transactional
+    public AccountResponse updateProfile(Long accountId, UpdateProfileRequest input) {
+        Account account = requireActiveAccount(accountId, true);
+        if (!input.isNotEmpty()) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "At least one profile field is required");
+        }
+        String email = input.email() == null ? account.getEmail() : emptyToNull(input.email());
+        String phone = input.phone() == null ? account.getPhone() : emptyToNull(input.phone());
+        if (email == null && phone == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Email or phone is required");
+        }
+        requireAvailableContacts(email, phone, accountId);
+        if (input.fullName() != null) { account.setFullName(input.fullName()); }
+        account.setEmail(email);
+        account.setPhone(phone);
+        return AccountResponse.from(accounts.saveAndFlush(account));
+    }
+
+    @Transactional
+    public void changePassword(Long accountId, ChangePasswordRequest input) {
+        Account account = requireActiveAccount(accountId, true);
+        validatePassword(input.newPassword());
+        if (input.currentPassword().getBytes(StandardCharsets.UTF_8).length > 72
+                || !passwords.matches(input.currentPassword(), account.getPasswordHash())) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Current password is incorrect");
+        }
+        account.setPasswordHash(passwords.encode(input.newPassword()));
+        accounts.saveAndFlush(account);
+        events.publishEvent(new SessionsRevoked(accountId));
+    }
+
+    private Account requireActiveAccount(Long accountId, boolean lock) {
+        Account account = (lock ? accounts.findForUpdate(accountId) : accounts.findById(accountId))
+                .orElseThrow(() -> new BusinessException(HttpStatus.UNAUTHORIZED, "Account is no longer available"));
+        if (account.getStatus() != AccountStatus.ACTIVE) {
+            throw new BusinessException(HttpStatus.UNAUTHORIZED, "Account is disabled");
+        }
+        return account;
+    }
+
+    private String emptyToNull(String value) { return value.isEmpty() ? null : value; }
+
+    public record SessionsRevoked(Long accountId) {}
 
     private void requireAvailableContacts(String email, String phone, Long ownId) {
         if (email != null && accounts.findByEmailIgnoreCase(email)

@@ -9,6 +9,7 @@ import com.smartaccess.model.enumtype.AccountStatus;
 import com.smartaccess.repository.AccountRepository;
 import com.smartaccess.service.AccountService;
 import com.smartaccess.service.AuthService;
+import com.smartaccess.security.SessionRevocationListener;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,8 +30,8 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(AuthController.class)
-@Import({SecurityConfig.class, PasswordConfig.class, AccountService.class, AuthService.class, GlobalExceptionHandler.class})
+@WebMvcTest({AuthController.class, AccountController.class})
+@Import({SecurityConfig.class, PasswordConfig.class, AccountService.class, AuthService.class, GlobalExceptionHandler.class, SessionRevocationListener.class})
 class AuthControllerTest {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
@@ -47,6 +48,7 @@ class AuthControllerTest {
         when(accounts.findByEmailForUpdate("user@example.test")).thenReturn(Optional.of(user));
         when(accounts.findByPhoneForUpdate("0912345678")).thenReturn(Optional.of(user));
         when(accounts.findById(2L)).thenReturn(Optional.of(user));
+        when(accounts.findForUpdate(2L)).thenReturn(Optional.of(user));
     }
 
     @Test void loginByEmailCreatesSessionAndDoesNotExposePassword() throws Exception {
@@ -57,7 +59,7 @@ class AuthControllerTest {
         var session = (MockHttpSession) result.getRequest().getSession(false);
         assertThat(session).isNotNull();
         assertThat(sessions.getSessionInformation(session.getId())).isNotNull();
-        mvc.perform(get("/api/manager/unknown").session(session)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/accounts/me").session(session)).andExpect(status().isOk()).andExpect(jsonPath("$.accountId").value(2));
     }
 
     @Test void loginByPhoneWorks() throws Exception {
@@ -118,5 +120,58 @@ class AuthControllerTest {
                 .andExpect(status().isOk()).andExpect(header().string("Access-Control-Allow-Credentials", "true"));
         mvc.perform(options("/api/auth/login").header("Origin", "https://untrusted.example")
                 .header("Access-Control-Request-Method", "POST")).andExpect(status().isForbidden());
+    }
+
+    MockHttpSession login() throws Exception {
+        var result = mvc.perform(post("/api/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("identifier", "user@example.test", "password", "Password123!"))))
+                .andExpect(status().isOk()).andReturn();
+        return (MockHttpSession) result.getRequest().getSession(false);
+    }
+
+    @Test void profileUpdateUsesSessionIdentityAndIgnoresProtectedFields() throws Exception {
+        var session = login();
+        when(accounts.saveAndFlush(user)).thenReturn(user);
+        mvc.perform(patch("/api/accounts/me").session(session).with(csrf()).param("accountId", "999")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fullName\":\"Updated User\",\"accountId\":999,\"admin\":true,\"status\":\"DISABLED\",\"passwordHash\":\"evil\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.accountId").value(2))
+                .andExpect(jsonPath("$.fullName").value("Updated User")).andExpect(jsonPath("$.admin").value(false))
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
+        assertThat(passwords.matches("Password123!", user.getPasswordHash())).isTrue();
+        mvc.perform(get("/api/accounts/me").session(session)).andExpect(status().isOk());
+    }
+
+    @Test void profileRejectsEmptyBodyInvalidFieldsAndMissingCsrf() throws Exception {
+        var session = login();
+        for (var body : new String[]{"{}", "{\"fullName\":\" \"}", "{\"email\":\"bad\"}", "{\"phone\":\"abc\"}", "{\"email\":\"\",\"phone\":\"\"}"}) {
+            mvc.perform(patch("/api/accounts/me").session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest());
+        }
+        mvc.perform(patch("/api/accounts/me").session(session).contentType(MediaType.APPLICATION_JSON).content("{\"fullName\":\"Name\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test void changingPasswordExpiresAllSessionsAndRequiresNewPassword() throws Exception {
+        var first = login(); var second = login();
+        mvc.perform(put("/api/accounts/me/password").session(first).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"currentPassword\":\"Password123!\",\"newPassword\":\"NewPassword123!\"}"))
+                .andExpect(status().isNoContent());
+        mvc.perform(get("/api/accounts/me").session(first)).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/accounts/me").session(second)).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"identifier\":\"user@example.test\",\"password\":\"Password123!\"}"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"identifier\":\"0912345678\",\"password\":\"NewPassword123!\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test void failedPasswordChangeKeepsExistingSession() throws Exception {
+        var session = login();
+        mvc.perform(put("/api/accounts/me/password").session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"currentPassword\":\"WrongPassword\",\"newPassword\":\"NewPassword123!\"}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/accounts/me").session(session)).andExpect(status().isOk());
     }
 }
