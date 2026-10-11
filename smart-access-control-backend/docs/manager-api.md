@@ -2,7 +2,7 @@
 
 ## Phạm vi và giới hạn
 
-Dùng MySQL, Java Long/BIGINT và toàn bộ 11 bảng hiện có. Không sửa model, V1, script tạo database, datasource, không có migration mới. Dependency spring-boot-starter-security đã được gỡ để API chạy bằng Postman khi chưa có Authentication. Không có Login/Register/JWT/Security filter.
+Dùng MySQL, Java Long/BIGINT và toàn bộ 11 bảng hiện có. Không sửa model, V1, script tạo database, datasource, không có migration mới. Spring Security xác thực bằng HTTP session. Đăng ký/đăng nhập tại /api/auth; Manager API yêu cầu cookie JSESSIONID, thao tác ghi cần X-CSRF-TOKEN. Không dùng JWT.
 
 Đã triển khai tìm account/email, xem người thuộc cửa, thu hồi riêng từng quyền, xóa membership không có face request history, gán thiết bị có sẵn chưa thuộc cửa. Ghi REVOKE_PERMISSION, REMOVE_USER_FROM_UNIT, REGISTER_DEVICE bằng AuditLog hiện có, trong cùng transaction với cập nhật nghiệp vụ.
 
@@ -20,7 +20,7 @@ Không có username trong Account. type=account tìm chính xác accountId dạn
 
 ## Danh sách API
 
-Tất cả API yêu cầu query managerId, là Long dương. ManagerService kiểm tra account tồn tại. Search yêu cầu account quản lý ít nhất một access unit. Các API theo cửa kiểm tra AccessUnit.manager.accountId == managerId tại Service trước khi đọc/sửa người hoặc thiết bị. is_admin không bỏ qua kiểm tra cửa. API sửa membership không cho sửa membership của admin hoặc tài khoản quản lý một cửa.
+Tất cả API lấy managerId từ tài khoản đang đăng nhập; query managerId không còn xác định người thực hiện. ManagerService kiểm tra account tồn tại. Search yêu cầu account quản lý ít nhất một access unit. Các API theo cửa kiểm tra AccessUnit.manager.accountId == managerId tại Service trước khi đọc/sửa người hoặc thiết bị. is_admin không bỏ qua kiểm tra cửa. API sửa membership không cho sửa membership của admin hoặc tài khoản quản lý một cửa.
 
 | Method | Path | Thành công |
 | --- | --- | --- |
@@ -91,7 +91,7 @@ Manager/cửa không tồn tại: 404. Khác manager_id/cửa chưa gán manager
 
 1. Khởi tạo một database MySQL kiểm thử riêng bằng cấu hình dự án. Chạy ứng dụng để Flyway V1 tạo schema, rồi tùy chọn chạy docs/postman/manager-fixture.sql đúng một lần bằng MySQL client trong database đó. Script chỉ INSERT dữ liệu theo schema hiện có; chưa được tự động chạy trong tác vụ này.
 2. Import manager.postman_collection.json và manager.postman_environment.json trong docs/postman.
-3. Điền managerId, otherManagerId, unitId, otherUnitId, userId, historyUserId, nonmemberId bằng kết quả SELECT cuối fixture. baseUrl mặc định http://localhost:8080. Không đặt Authorization.
+3. Điền managerId, otherManagerId, unitId, otherUnitId, userId, historyUserId, nonmemberId bằng kết quả SELECT cuối fixture. baseUrl mặc định http://localhost:8080. Không đặt Authorization; đăng nhập đúng manager bằng /api/auth/login, giữ cookie và lấy CSRF token mới qua /api/auth/csrf. Gửi X-CSRF-TOKEN cho request ghi.
 4. Chạy collection theo thứ tự: tìm account/email; đọc thành viên; kiểm tra cửa khác; kiểm tra bật quyền bị từ chối; tắt từng quyền; kiểm tra thiết bị không có/đã gán; đăng ký thiết bị chưa gán; xóa membership có lịch sử bị từ chối; thu hồi quyền người có lịch sử; xóa người không có lịch sử; xác nhận account và membership cửa khác còn tồn tại.
 5. Các request làm thay đổi dữ liệu. Trước khi chạy lại toàn bộ, dùng database fixture mới hoặc khôi phục dữ liệu fixture. Không chạy script lần hai lên cùng dữ liệu vì email/deviceUid UNIQUE. Không tự chạy cleanup trên database dùng chung.
 
@@ -125,7 +125,7 @@ Theo README có thể chạy toàn bộ test với SMART_ACCESS_DB_TEST_URL/USER
 
 ## Tích hợp Authentication sau này
 
-Chỗ tạm thời dùng managerId: tất cả năm method của ManagerController. Team Authentication thay @RequestParam managerId bằng ID người hiện tại rồi truyền cùng tham số vào ManagerService; không bỏ validateManagerAccess hoặc kiểm tra membership. Chưa có accountId cho accept/reject vì invitation chưa triển khai.
+Cả năm method của ManagerController đã lấy accountId từ AccountPrincipal của session rồi truyền vào ManagerService. validateManagerAccess và kiểm tra membership giữ nguyên. Các query managerId trong ví dụ/bộ Postman cũ không còn tác dụng; cần đăng nhập đúng manager và gửi CSRF cho request ghi. Chưa có accountId cho accept/reject vì invitation chưa triển khai.
 
 Để hoàn thành flow invitation và cấp quyền, cần cơ chế lưu invitation được thống nhất hoặc nguồn invitation sẵn có do team khác cung cấp. Giữ schema hiện tại đồng nghĩa các chức năng này chưa thể hoàn thành đúng yêu cầu.
 

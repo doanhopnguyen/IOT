@@ -2,6 +2,8 @@ package com.smartaccess.controller;
 
 import com.smartaccess.dto.manager.*;
 import com.smartaccess.service.ManagerService;
+import com.smartaccess.security.AccountPrincipal;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -15,32 +17,32 @@ public class ManagerController {
     public ManagerController(ManagerService service) { this.service = service; }
 
     @GetMapping("/users/search")
-    public List<UserSearchResponse> searchUsers(@RequestParam Long managerId,
+    public List<UserSearchResponse> searchUsers(@AuthenticationPrincipal AccountPrincipal principal,
             @RequestParam String keyword, @RequestParam(defaultValue = "auto") String type) {
-        return service.searchUsers(managerId, keyword, type);
+        return service.searchUsers(principal.accountId(), keyword, type);
     }
 
     @GetMapping("/units/{unitId}/users")
-    public List<UnitUserResponse> getUsers(@RequestParam Long managerId, @PathVariable Long unitId) {
-        return service.getUsers(managerId, unitId);
+    public List<UnitUserResponse> getUsers(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable Long unitId) {
+        return service.getUsers(principal.accountId(), unitId);
     }
 
     @PatchMapping("/units/{unitId}/users/{userId}/permissions")
-    public UnitUserResponse updatePermissions(@RequestParam Long managerId, @PathVariable Long unitId,
+    public UnitUserResponse updatePermissions(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable Long unitId,
             @PathVariable Long userId, @RequestBody PermissionRequest request) {
-        return service.updatePermissions(managerId, unitId, userId, request);
+        return service.updatePermissions(principal.accountId(), unitId, userId, request);
     }
 
     @DeleteMapping("/units/{unitId}/users/{userId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void removeUser(@RequestParam Long managerId, @PathVariable Long unitId, @PathVariable Long userId) {
-        service.removeUser(managerId, unitId, userId);
+    public void removeUser(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable Long unitId, @PathVariable Long userId) {
+        service.removeUser(principal.accountId(), unitId, userId);
     }
 
     @PostMapping("/units/{unitId}/devices")
     @ResponseStatus(HttpStatus.CREATED)
-    public DeviceResponse registerDevice(@RequestParam Long managerId, @PathVariable Long unitId,
+    public DeviceResponse registerDevice(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable Long unitId,
             @Valid @RequestBody RegisterDeviceRequest request) {
-        return service.registerDevice(managerId, unitId, request);
+        return service.registerDevice(principal.accountId(), unitId, request);
     }
 }

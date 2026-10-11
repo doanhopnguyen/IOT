@@ -1,7 +1,7 @@
 ﻿# Smart Access Control IoT — Backend
 
 Backend Spring Boot, Maven, Spring Data JPA, MySQL, Flyway và Lombok, package gốc `com.smartaccess`.
-Đã triển khai tầng database và một phần Manager API theo schema hiện có. Chi tiết API, giới hạn invitation/cấp quyền và bộ Postman: [docs/manager-api.md](docs/manager-api.md). Authentication/JWT và giao tiếp thiết bị dành cho bước tiếp theo.
+Đã triển khai tầng database, một phần Manager API và đăng ký/đăng nhập bằng email hoặc số điện thoại. Xác thực dùng HTTP session, giữ nguyên schema. Chi tiết Manager API: [docs/manager-api.md](docs/manager-api.md). Giao tiếp thiết bị chưa triển khai.
 
 ## Khởi chạy
 
@@ -28,7 +28,9 @@ Spring Boot không tự đọc `.env`; `.env.example` liệt kê các biến c�
 Profile mặc định là `dev`; `SPRING_PROFILES_ACTIVE=prod` yêu cầu `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`.
 Flyway chạy trước JPA; Hibernate dùng `ddl-auto: validate`, `open-in-view: false`.
 Flyway chỉ tạo bảng trong database đã tồn tại. Sau khi V1 được áp dụng, thay đổi schema cần migration mới.
-Đã gỡ Starter Security để Manager API test bằng Postman khi chưa có Authentication. managerId tạm truyền từ request; Service kiểm tra quyền quản lý cửa.
+API dùng Spring Security và cookie `JSESSIONID`; request thay đổi dữ liệu cần CSRF token. Gọi `GET /api/auth/csrf`, gửi token bằng header `X-CSRF-TOKEN` khi đăng ký/đăng nhập, rồi lấy token mới sau đăng nhập. `POST /api/auth/register` nhận fullName, email/phone và password; `POST /api/auth/login` nhận identifier (email hoặc phone) và password. Client giữ cookie giữa các request. ManagerController lấy ID từ session, không tin query managerId; Service vẫn kiểm tra quyền quản lý cửa.
+
+Session hết hạn sau 1 giờ không hoạt động, lưu trong bộ nhớ của một backend instance và mất khi khởi động lại. Chưa hỗ trợ nhiều instance hoặc JWT/refresh token. CORS mặc định cho localhost/127.0.0.1:8081; cấu hình bằng CORS_ALLOWED_ORIGINS. Profile prod bắt buộc HTTPS với cookie Secure.
 
 ## Migration và model
 

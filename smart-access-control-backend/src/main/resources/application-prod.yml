@@ -5,3 +5,8 @@ spring:
     password: ${DB_PASSWORD}
   jpa:
     show-sql: false
+server:
+  servlet:
+    session:
+      cookie:
+        secure: true
