@@ -150,4 +150,55 @@ class AccountServiceTest {
                 .isInstanceOf(BusinessException.class);
         verifyNoInteractions(events);
     }
+
+    Account admin() {
+        Account admin = new Account(); admin.setAccountId(1L); admin.setAdmin(true);
+        when(accounts.findById(1L)).thenReturn(Optional.of(admin));
+        return admin;
+    }
+
+    @Test void adminDisablesAndEnablesOrdinaryAccountWithoutChangingOtherData() {
+        admin(); Account user = storedUser(); String hash = user.getPasswordHash();
+        assertThat(service.changeStatus(1L, 2L, AccountStatus.DISABLED).status()).isEqualTo(AccountStatus.DISABLED);
+        assertThat(service.changeStatus(1L, 2L, AccountStatus.ACTIVE).status()).isEqualTo(AccountStatus.ACTIVE);
+        assertThat(user.getPasswordHash()).isEqualTo(hash);
+        assertThat(user.getEmail()).isEqualTo("user@example.test");
+        verify(events, times(2)).publishEvent(new AccountService.SessionsRevoked(2L));
+        verify(accounts, never()).delete(any());
+    }
+
+    @Test void ordinaryUserCannotChangeStatusEvenWhenServiceCalledDirectly() {
+        Account user = new Account(); user.setAccountId(2L);
+        when(accounts.findById(2L)).thenReturn(Optional.of(user));
+        assertThatThrownBy(() -> service.changeStatus(2L, 3L, AccountStatus.DISABLED))
+                .isInstanceOfSatisfying(BusinessException.class, e -> assertThat(e.getStatus()).isEqualTo(HttpStatus.FORBIDDEN));
+        verify(accounts, never()).findForUpdate(any());
+    }
+
+    @Test void adminCannotChangeOwnStatusOrAnotherAdmin() {
+        admin();
+        assertThatThrownBy(() -> service.changeStatus(1L, 1L, AccountStatus.DISABLED))
+                .isInstanceOfSatisfying(BusinessException.class, e -> assertThat(e.getStatus()).isEqualTo(HttpStatus.FORBIDDEN));
+        Account other = new Account(); other.setAccountId(3L); other.setAdmin(true);
+        when(accounts.findForUpdate(3L)).thenReturn(Optional.of(other));
+        assertThatThrownBy(() -> service.changeStatus(1L, 3L, AccountStatus.ACTIVE))
+                .isInstanceOfSatisfying(BusinessException.class, e -> assertThat(e.getStatus()).isEqualTo(HttpStatus.FORBIDDEN));
+        verifyNoInteractions(events);
+    }
+
+    @Test void rejectsMissingTargetInvalidIdAndNullStatus() {
+        admin();
+        assertThatThrownBy(() -> service.changeStatus(1L, 99L, AccountStatus.DISABLED))
+                .isInstanceOfSatisfying(BusinessException.class, e -> assertThat(e.getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
+        assertThatThrownBy(() -> service.changeStatus(1L, 0L, AccountStatus.DISABLED))
+                .isInstanceOfSatisfying(BusinessException.class, e -> assertThat(e.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST));
+        assertThatThrownBy(() -> service.changeStatus(1L, 2L, null)).isInstanceOf(BusinessException.class);
+    }
+
+    @Test void repeatedStatusUpdateDoesNotInvalidateSessionsOrWriteAgain() {
+        admin(); storedUser();
+        service.changeStatus(1L, 2L, AccountStatus.ACTIVE);
+        verify(accounts, never()).saveAndFlush(any());
+        verifyNoInteractions(events);
+    }
 }

@@ -80,6 +80,31 @@ public class AccountService {
         events.publishEvent(new SessionsRevoked(accountId));
     }
 
+    @Transactional
+    public AccountResponse changeStatus(Long actorId, Long targetId, AccountStatus status) {
+        Account actor = requireActiveAccount(actorId, false);
+        if (!actor.isAdmin()) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "Only admins can change account status");
+        }
+        if (targetId == null || targetId <= 0 || status == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Positive account ID and status are required");
+        }
+        if (actorId.equals(targetId)) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "Admins cannot change their own status");
+        }
+        Account target = accounts.findForUpdate(targetId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Account not found"));
+        if (target.isAdmin()) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "Cannot change another admin's status");
+        }
+        if (target.getStatus() != status) {
+            target.setStatus(status);
+            accounts.saveAndFlush(target);
+            events.publishEvent(new SessionsRevoked(targetId));
+        }
+        return AccountResponse.from(target);
+    }
+
     private Account requireActiveAccount(Long accountId, boolean lock) {
         Account account = (lock ? accounts.findForUpdate(accountId) : accounts.findById(accountId))
                 .orElseThrow(() -> new BusinessException(HttpStatus.UNAUTHORIZED, "Account is no longer available"));

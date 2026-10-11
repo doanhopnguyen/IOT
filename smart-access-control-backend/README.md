@@ -5,6 +5,8 @@ Backend Spring Boot, Maven, Spring Data JPA, MySQL, Flyway và Lombok, package g
 
 Tài khoản đang đăng nhập có thể xem/sửa họ tên, email, phone tại `GET/PATCH /api/accounts/me`; `PUT /api/accounts/me/password` nhận currentPassword/newPassword. Đổi mật khẩu thành công hủy tất cả session của tài khoản sau khi transaction commit. PATCH bỏ qua/null giữ nguyên trường; chuỗi rỗng xóa email/phone nhưng phải còn ít nhất một thông tin liên hệ. Mật khẩu từ 8 ký tự đến 72 byte UTF-8, hash bằng BCrypt. Phone gồm 8–15 chữ số, có thể bắt đầu bằng +; chưa chuyển đổi đầu số quốc gia.
 
+Admin khóa/mở tài khoản thường bằng `PATCH /api/admin/accounts/{accountId}/status` với `{"status":"DISABLED"}` hoặc `{"status":"ACTIVE"}`. Không được thao tác với chính mình/admin khác. Khóa hủy session cũ; mở khóa yêu cầu đăng nhập mới. Không xóa account, membership, credential hoặc history. Trạng thái và quyền admin được đọc lại từ database trên mỗi request; yêu cầu đã được xử lý trước lúc khóa không bị thu hồi ngược. Chưa đồng bộ lệnh khóa xuống thiết bị offline.
+
 ## Khởi chạy
 
 Yêu cầu JDK 17+, Maven 3.6.3+ và MySQL 8.0.16+ để enforce CHECK constraint.

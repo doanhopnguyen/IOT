@@ -30,7 +30,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest({AuthController.class, AccountController.class})
+@WebMvcTest({AuthController.class, AccountController.class, AdminAccountController.class})
 @Import({SecurityConfig.class, PasswordConfig.class, AccountService.class, AuthService.class, GlobalExceptionHandler.class, SessionRevocationListener.class})
 class AuthControllerTest {
     @Autowired MockMvc mvc;
@@ -173,5 +173,60 @@ class AuthControllerTest {
                 .content("{\"currentPassword\":\"WrongPassword\",\"newPassword\":\"NewPassword123!\"}"))
                 .andExpect(status().isBadRequest());
         mvc.perform(get("/api/accounts/me").session(session)).andExpect(status().isOk());
+    }
+
+    MockHttpSession adminLogin() throws Exception {
+        Account admin = new Account(); admin.setAccountId(1L); admin.setFullName("Admin"); admin.setAdmin(true);
+        admin.setEmail("admin@example.test"); admin.setPasswordHash(passwords.encode("AdminPassword123!"));
+        when(accounts.findByEmailForUpdate("admin@example.test")).thenReturn(Optional.of(admin));
+        when(accounts.findById(1L)).thenReturn(Optional.of(admin));
+        var result = mvc.perform(post("/api/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"identifier\":\"admin@example.test\",\"password\":\"AdminPassword123!\"}"))
+                .andExpect(status().isOk()).andReturn();
+        return (MockHttpSession) result.getRequest().getSession(false);
+    }
+
+    @Test void adminLockRevokesOldSessionsAndUnlockRequiresFreshLogin() throws Exception {
+        var first = login(); var second = login(); var admin = adminLogin();
+        mvc.perform(patch("/api/admin/accounts/2/status").session(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"DISABLED\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("DISABLED"));
+        mvc.perform(get("/api/accounts/me").session(first)).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"identifier\":\"0912345678\",\"password\":\"Password123!\"}"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(patch("/api/admin/accounts/2/status").session(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"ACTIVE\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ACTIVE"));
+        mvc.perform(get("/api/accounts/me").session(second)).andExpect(status().isUnauthorized());
+        login();
+        mvc.perform(get("/api/accounts/me").session(admin)).andExpect(status().isOk());
+    }
+
+    @Test void userCannotLockAnyoneAndAdminCannotLockSelfOrOtherAdmin() throws Exception {
+        var userSession = login();
+        mvc.perform(patch("/api/admin/accounts/2/status").session(userSession).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"DISABLED\"}"))
+                .andExpect(status().isForbidden());
+        var admin = adminLogin();
+        mvc.perform(patch("/api/admin/accounts/1/status").session(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"DISABLED\"}"))
+                .andExpect(status().isForbidden());
+        Account other = new Account(); other.setAccountId(3L); other.setAdmin(true);
+        when(accounts.findForUpdate(3L)).thenReturn(Optional.of(other));
+        mvc.perform(patch("/api/admin/accounts/3/status").session(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"DISABLED\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test void adminStatusRejectsInvalidBodiesAndMissingTarget() throws Exception {
+        var admin = adminLogin();
+        for (var body : new String[]{"{}", "{\"status\":null}", "{\"status\":\"UNKNOWN\"}"}) {
+            mvc.perform(patch("/api/admin/accounts/2/status").session(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest());
+        }
+        mvc.perform(patch("/api/admin/accounts/999/status").session(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"DISABLED\"}"))
+                .andExpect(status().isNotFound());
     }
 }
