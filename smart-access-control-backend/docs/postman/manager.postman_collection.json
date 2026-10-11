@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Smart Door Manager — existing schema",
-    "description": "Executable supported flows only. Invitation and permission grants are unavailable under the unchanged schema. Run against an isolated fixture DB; requests mutate memberships and device assignments. Restore fixtures before rerunning.",
+    "description": "Các flow Manager trên database fixture riêng. Cần managerIdentifier/managerPassword và otherManagerIdentifier/otherManagerPassword; pre-request đăng nhập đúng manager và lấy CSRF tự động. Cookie jar bật. Query managerId không còn xác định danh tính.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -10,7 +10,7 @@
       "request": {
         "method": "GET",
         "header": [],
-        "url": "{{baseUrl}}/api/manager/users/search?managerId={{managerId}}&keyword={{userId}}&type=account"
+        "url": "{{baseUrl}}/api/manager/users/search?keyword={{userId}}&type=account"
       },
       "event": [
         {
@@ -30,7 +30,7 @@
       "request": {
         "method": "GET",
         "header": [],
-        "url": "{{baseUrl}}/api/manager/users/search?managerId={{managerId}}&keyword={{userEmail}}&type=email"
+        "url": "{{baseUrl}}/api/manager/users/search?keyword={{userEmail}}&type=email"
       },
       "event": [
         {
@@ -50,7 +50,7 @@
       "request": {
         "method": "GET",
         "header": [],
-        "url": "{{baseUrl}}/api/manager/users/search?managerId={{managerId}}&keyword=missing-38b13d@example.test&type=email"
+        "url": "{{baseUrl}}/api/manager/users/search?keyword=missing-38b13d@example.test&type=email"
       },
       "event": [
         {
@@ -70,7 +70,7 @@
       "request": {
         "method": "GET",
         "header": [],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users?managerId={{managerId}}"
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users"
       },
       "event": [
         {
@@ -90,7 +90,7 @@
       "request": {
         "method": "GET",
         "header": [],
-        "url": "{{baseUrl}}/api/manager/units/{{otherUnitId}}/users?managerId={{managerId}}"
+        "url": "{{baseUrl}}/api/manager/units/{{otherUnitId}}/users"
       },
       "event": [
         {
@@ -115,7 +115,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions?managerId={{managerId}}",
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions",
         "body": {
           "mode": "raw",
           "raw": "{\n  \"allowFace\": true\n}",
@@ -149,7 +149,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions?managerId={{managerId}}",
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions",
         "body": {
           "mode": "raw",
           "raw": "{\n  \"allowFingerprint\": true\n}",
@@ -183,7 +183,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions?managerId={{managerId}}",
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions",
         "body": {
           "mode": "raw",
           "raw": "{\n  \"allowRfid\": true\n}",
@@ -217,7 +217,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions?managerId={{managerId}}",
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions",
         "body": {
           "mode": "raw",
           "raw": "{\n  \"allowRemoteUnlock\": true\n}",
@@ -251,7 +251,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{nonmemberId}}/permissions?managerId={{managerId}}",
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{nonmemberId}}/permissions",
         "body": {
           "mode": "raw",
           "raw": "{\n  \"allowFace\": true\n}",
@@ -285,7 +285,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions?managerId={{managerId}}",
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions",
         "body": {
           "mode": "raw",
           "raw": "{\n  \"allowFace\": false\n}",
@@ -319,7 +319,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions?managerId={{managerId}}",
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions",
         "body": {
           "mode": "raw",
           "raw": "{\n  \"allowFingerprint\": false\n}",
@@ -353,7 +353,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions?managerId={{managerId}}",
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions",
         "body": {
           "mode": "raw",
           "raw": "{\n  \"allowRfid\": false\n}",
@@ -387,7 +387,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions?managerId={{managerId}}",
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions",
         "body": {
           "mode": "raw",
           "raw": "{\n  \"allowRemoteUnlock\": false\n}",
@@ -421,7 +421,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions?managerId={{managerId}}",
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}/permissions",
         "body": {
           "mode": "raw",
           "raw": "{}",
@@ -455,7 +455,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/devices?managerId={{managerId}}",
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/devices",
         "body": {
           "mode": "raw",
           "raw": "{\n  \"deviceCode\": \"NO-SUCH-DEVICE-38B13D\"\n}",
@@ -489,7 +489,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/devices?managerId={{managerId}}",
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/devices",
         "body": {
           "mode": "raw",
           "raw": "{\n  \"deviceCode\": \"{{otherDeviceCode}}\"\n}",
@@ -523,7 +523,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/devices?managerId={{managerId}}",
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/devices",
         "body": {
           "mode": "raw",
           "raw": "{\n  \"deviceCode\": \"{{sameDeviceCode}}\"\n}",
@@ -557,7 +557,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/manager/units/{{otherUnitId}}/devices?managerId={{managerId}}",
+        "url": "{{baseUrl}}/api/manager/units/{{otherUnitId}}/devices",
         "body": {
           "mode": "raw",
           "raw": "{\n  \"deviceCode\": \"{{freeDeviceCode}}\"\n}",
@@ -591,7 +591,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/devices?managerId={{managerId}}",
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/devices",
         "body": {
           "mode": "raw",
           "raw": "{\n  \"deviceCode\": \"{{freeDeviceCode}}\"\n}",
@@ -626,7 +626,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/devices?managerId={{managerId}}",
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/devices",
         "body": {
           "mode": "raw",
           "raw": "{\n  \"deviceCode\": \"{{freeDeviceCode}}\"\n}",
@@ -655,7 +655,7 @@
       "request": {
         "method": "DELETE",
         "header": [],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{historyUserId}}?managerId={{managerId}}"
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{historyUserId}}"
       },
       "event": [
         {
@@ -680,7 +680,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{historyUserId}}/permissions?managerId={{managerId}}",
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{historyUserId}}/permissions",
         "body": {
           "mode": "raw",
           "raw": "{\n  \"allowFace\": false,\n  \"allowFingerprint\": false,\n  \"allowRfid\": false,\n  \"allowRemoteUnlock\": false\n}",
@@ -708,7 +708,7 @@
       "request": {
         "method": "DELETE",
         "header": [],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}?managerId={{managerId}}"
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}"
       },
       "event": [
         {
@@ -727,7 +727,7 @@
       "request": {
         "method": "GET",
         "header": [],
-        "url": "{{baseUrl}}/api/manager/users/search?managerId={{managerId}}&keyword={{userId}}&type=account"
+        "url": "{{baseUrl}}/api/manager/users/search?keyword={{userId}}&type=account"
       },
       "event": [
         {
@@ -747,7 +747,7 @@
       "request": {
         "method": "GET",
         "header": [],
-        "url": "{{baseUrl}}/api/manager/units/{{otherUnitId}}/users?managerId={{otherManagerId}}"
+        "url": "{{baseUrl}}/api/manager/units/{{otherUnitId}}/users"
       },
       "event": [
         {
@@ -767,7 +767,7 @@
       "request": {
         "method": "DELETE",
         "header": [],
-        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}?managerId={{managerId}}"
+        "url": "{{baseUrl}}/api/manager/units/{{unitId}}/users/{{userId}}"
       },
       "event": [
         {
@@ -783,7 +783,7 @@
       ]
     },
     {
-      "name": "22 Manager missing",
+      "name": "22 Query managerId giả không thay đổi danh tính",
       "request": {
         "method": "GET",
         "header": [],
@@ -795,15 +795,15 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('HTTP 404', () => pm.response.to.have.status(404));",
-              "pm.test('Consistent error', () => { const body = pm.response.json(); pm.expect(body.status).to.eql(404); pm.expect(body.message).to.be.a('string'); });"
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Danh sách của cửa đang quản lý', () => pm.expect(pm.response.json()).to.be.an('array')); "
             ]
           }
         }
       ]
     },
     {
-      "name": "23 Missing managerId",
+      "name": "23 Không cần query managerId",
       "request": {
         "method": "GET",
         "header": [],
@@ -815,12 +815,37 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
-              "pm.test('Consistent error', () => { const body = pm.response.json(); pm.expect(body.status).to.eql(400); pm.expect(body.message).to.be.a('string'); });"
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
             ]
           }
         }
       ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const other = pm.info.requestName.startsWith('20 ');",
+          "const identifier = pm.environment.get(other ? 'otherManagerIdentifier' : 'managerIdentifier');",
+          "const password = pm.environment.get(other ? 'otherManagerPassword' : 'managerPassword');",
+          "if (!identifier || !password) throw new Error('Cần điền thông tin đăng nhập manager trong environment');",
+          "const base = pm.environment.get('baseUrl');",
+          "pm.sendRequest({url:base+'/api/auth/csrf',method:'GET'},(err,res)=>{",
+          "  if(err || res.code!==200) throw new Error('Không lấy được CSRF trước đăng nhập');",
+          "  const csrf=res.json();",
+          "  pm.sendRequest({url:base+'/api/auth/login',method:'POST',header:{'Content-Type':'application/json',[csrf.headerName]:csrf.token},body:{mode:'raw',raw:JSON.stringify({identifier,password})}},(err,login)=>{",
+          "    if(err || login.code!==200) throw new Error('Đăng nhập manager thất bại');",
+          "    pm.sendRequest({url:base+'/api/auth/csrf',method:'GET'},(err,res)=>{",
+          "      if(err || res.code!==200) throw new Error('Không lấy được CSRF sau đăng nhập');",
+          "      const fresh=res.json(); pm.request.headers.upsert({key:fresh.headerName,value:fresh.token});",
+          "    });",
+          "  });",
+          "});"
+        ]
+      }
     }
   ]
 }

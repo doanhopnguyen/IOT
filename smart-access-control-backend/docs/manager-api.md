@@ -24,14 +24,14 @@ Tất cả API lấy managerId từ tài khoản đang đăng nhập; query mana
 
 | Method | Path | Thành công |
 | --- | --- | --- |
-| GET | /api/manager/users/search?managerId=1&keyword=3&type=account | 200, danh sách 0 hoặc 1 tài khoản |
-| GET | /api/manager/users/search?managerId=1&keyword=user@example.test&type=email | 200 |
-| GET | /api/manager/units/10/users?managerId=1 | 200, danh sách membership |
-| PATCH | /api/manager/units/10/users/3/permissions?managerId=1 | 200, quyền còn lại |
-| DELETE | /api/manager/units/10/users/3?managerId=1 | 204, chỉ xóa user_access cửa 10 |
-| POST | /api/manager/units/10/devices?managerId=1 | 201, thông tin thiết bị |
+| GET | /api/manager/users/search?keyword=3&type=account | 200, danh sách 0 hoặc 1 tài khoản |
+| GET | /api/manager/users/search?keyword=user@example.test&type=email | 200 |
+| GET | /api/manager/units/10/users | 200, danh sách membership |
+| PATCH | /api/manager/units/10/users/3/permissions | 200, quyền còn lại |
+| DELETE | /api/manager/units/10/users/3 | 204, chỉ xóa user_access cửa 10 |
+| POST | /api/manager/units/10/devices | 201, thông tin thiết bị |
 
-Các URL invitation chưa đăng ký; không gọi chúng để test flow thành công. Không có endpoint tạo account, tạo user_access, đổi manager hay thay đổi is_admin.
+Các URL invitation chưa đăng ký; không gọi chúng để test flow thành công. Namespace /api/manager không có endpoint tạo account, tạo user_access, đổi manager hay thay đổi is_admin. Đăng ký tài khoản thường thuộc /api/auth/register.
 
 ### Search response
 
@@ -89,13 +89,25 @@ Manager/cửa không tồn tại: 404. Khác manager_id/cửa chưa gán manager
 
 ## Postman
 
-1. Khởi tạo một database MySQL kiểm thử riêng bằng cấu hình dự án. Chạy ứng dụng để Flyway V1 tạo schema, rồi tùy chọn chạy docs/postman/manager-fixture.sql đúng một lần bằng MySQL client trong database đó. Script chỉ INSERT dữ liệu theo schema hiện có; chưa được tự động chạy trong tác vụ này.
+1. Khởi tạo một database MySQL kiểm thử riêng bằng cấu hình dự án. Chạy ứng dụng để Flyway V1 tạo schema, chuẩn bị `@fixture_password_hash` theo hướng dẫn bên dưới, rồi chạy docs/postman/manager-fixture.sql đúng một lần bằng MySQL client trong database đó. Script chỉ tạo dữ liệu fixture theo schema hiện có; không chạy trên database đang sử dụng.
 2. Import manager.postman_collection.json và manager.postman_environment.json trong docs/postman.
 3. Điền managerId, otherManagerId, unitId, otherUnitId, userId, historyUserId, nonmemberId bằng kết quả SELECT cuối fixture. baseUrl mặc định http://localhost:8080. Không đặt Authorization; đăng nhập đúng manager bằng /api/auth/login, giữ cookie và lấy CSRF token mới qua /api/auth/csrf. Gửi X-CSRF-TOKEN cho request ghi.
-4. Chạy collection theo thứ tự: tìm account/email; đọc thành viên; kiểm tra cửa khác; kiểm tra bật quyền bị từ chối; tắt từng quyền; kiểm tra thiết bị không có/đã gán; đăng ký thiết bị chưa gán; xóa membership có lịch sử bị từ chối; thu hồi quyền người có lịch sử; xóa người không có lịch sử; xác nhận account và membership cửa khác còn tồn tại.
+4. Điền managerIdentifier/managerPassword và otherManagerIdentifier/otherManagerPassword cục bộ. Hai manager fixture dùng mật khẩu kiểm thử tự chọn tương ứng với @fixture_password_hash; xem cách chuẩn bị bên dưới. Không ghi mật khẩu/hash vào file SQL hoặc environment được Git theo dõi. Cookie jar bật; pre-request tự login đúng manager và lấy CSRF. Chạy collection theo thứ tự: tìm account/email; đọc thành viên; kiểm tra cửa khác; kiểm tra bật quyền bị từ chối; tắt từng quyền; kiểm tra thiết bị không có/đã gán; đăng ký thiết bị chưa gán; xóa membership có lịch sử bị từ chối; thu hồi quyền người có lịch sử; xóa người không có lịch sử; xác nhận account và membership cửa khác còn tồn tại.
 5. Các request làm thay đổi dữ liệu. Trước khi chạy lại toàn bộ, dùng database fixture mới hoặc khôi phục dữ liệu fixture. Không chạy script lần hai lên cùng dữ liệu vì email/deviceUid UNIQUE. Không tự chạy cleanup trên database dùng chung.
 
-Collection có 29 request với kiểm tra HTTP status, response phù hợp từng flow và bảo toàn account/cửa khác. Các phép thử chưa được chạy trên Postman/live MySQL trong tác vụ này.
+Collection kiểm tra HTTP status, response phù hợp từng flow và bảo toàn account/cửa khác. Request 22/23 kiểm tra query managerId giả hoặc thiếu không thay đổi danh tính session.
+
+Trước khi chạy fixture ở bước 1, đăng ký một tài khoản kiểm thử riêng qua `/api/auth/register` với mật khẩu tự chọn và ghi lại ID. Trong cùng session MySQL dùng để chạy fixture, lấy hash từ tài khoản đó mà không in hash ra màn hình:
+
+```sql
+SET @fixture_password_hash = (
+  SELECT password_hash FROM accounts
+  WHERE account_id = <test-account-id> AND is_admin = FALSE AND status = 'ACTIVE'
+);
+SELECT @fixture_password_hash IS NOT NULL AS ready;
+```
+
+Chỉ chạy `SOURCE .../manager-fixture.sql` khi `ready = 1`, trên database kiểm thử riêng. Điền mật khẩu đã tự chọn vào các trường managerPassword/otherManagerPassword tại máy. File fixture không có credential mặc định; chưa đặt biến thì INSERT account bị từ chối do password_hash NOT NULL. Không sửa file SQL để điền hash, không export environment chứa credential lên Git. Bản local có thể đặt tên `manager.local.postman_environment.json` để được Git bỏ qua.
 
 ## Đối chiếu 22 test yêu cầu ban đầu
 
@@ -119,28 +131,8 @@ Collection có 29 request với kiểm tra HTTP status, response phù hợp từ
 
 ## Kiểm thử tự động và giới hạn
 
-mvn clean test: BUILD SUCCESS; 53 test mới thành công (43 Service, 10 HTTP), 4 DatabaseIntegrationTest cũ bỏ qua khi chưa có SMART_ACCESS_DB_TEST_URL. Service test dùng mock repository; HTTP test dùng MockMvc và mock Service. Những kiểm thử này không chứng minh rollback/khóa trên MySQL thật. Transaction annotation và PESSIMISTIC_WRITE đã có trong code; cần database kiểm thử để xác minh hành vi runtime và tích hợp repository.
+ManagerServiceTest dùng mock repository; ManagerControllerTest dùng MockMvc, mock Service và chạy qua SecurityFilterChain với session/CSRF. Những kiểm thử này không chứng minh rollback/khóa trên MySQL thật; cần database kiểm thử để xác minh hành vi runtime và tích hợp repository.
 
 Theo README có thể chạy toàn bộ test với SMART_ACCESS_DB_TEST_URL/USERNAME/PASSWORD trên MySQL riêng. Không chạy vào database production. DatabaseIntegrationTest hiện kiểm tra V1/entity/schema, chưa có test transaction đa thao tác của Manager trên MySQL.
 
-## Tích hợp Authentication sau này
-
-Cả năm method của ManagerController đã lấy accountId từ AccountPrincipal của session rồi truyền vào ManagerService. validateManagerAccess và kiểm tra membership giữ nguyên. Các query managerId trong ví dụ/bộ Postman cũ không còn tác dụng; cần đăng nhập đúng manager và gửi CSRF cho request ghi. Chưa có accountId cho accept/reject vì invitation chưa triển khai.
-
-Để hoàn thành flow invitation và cấp quyền, cần cơ chế lưu invitation được thống nhất hoặc nguồn invitation sẵn có do team khác cung cấp. Giữ schema hiện tại đồng nghĩa các chức năng này chưa thể hoàn thành đúng yêu cầu.
-
-## File thay đổi
-
-Tạo mới:
-- src/main/java/com/smartaccess/controller/ManagerController.java
-- src/main/java/com/smartaccess/service/ManagerService.java
-- src/main/java/com/smartaccess/dto/manager/{UserSearchResponse,UnitUserResponse,PermissionRequest,RegisterDeviceRequest,DeviceResponse}.java
-- src/main/java/com/smartaccess/exception/{BusinessException,GlobalExceptionHandler}.java
-- src/test/java/com/smartaccess/service/ManagerServiceTest.java
-- src/test/java/com/smartaccess/controller/ManagerControllerTest.java
-- docs/manager-api.md, docs/manager-source.md, docs/manager-implementation-proposal.md
-- docs/postman/manager.postman_collection.json, manager.postman_environment.json, manager-fixture.sql
-
-Sửa: pom.xml (bỏ dependency Security), README.md (phạm vi Manager/đường dẫn docs), năm repository Account/AccessUnit/UserAccess/Device/FaceRequest (thêm truy vấn, giữ API cũ).
-
-Không sửa model/schema/migration/application config. Không có migration mới. Báo cáo manager-implementation-proposal.md lưu đề xuất ban đầu với chú thích đã rút đề xuất schema. Code hoàn chỉnh của các file Java/POM tạo hoặc sửa nằm trong manager-source.md.
+Hướng dẫn đăng ký, đăng nhập và quản lý tài khoản: [account-api.md](account-api.md).

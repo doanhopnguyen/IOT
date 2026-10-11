@@ -1,22 +1,21 @@
 ﻿# Smart Access Control IoT — Backend
 
 Backend Spring Boot, Maven, Spring Data JPA, MySQL, Flyway và Lombok, package gốc `com.smartaccess`.
-Đã triển khai tầng database, một phần Manager API và đăng ký/đăng nhập bằng email hoặc số điện thoại. Xác thực dùng HTTP session, giữ nguyên schema. Chi tiết Manager API: [docs/manager-api.md](docs/manager-api.md). Giao tiếp thiết bị chưa triển khai.
-
-Tài khoản đang đăng nhập có thể xem/sửa họ tên, email, phone tại `GET/PATCH /api/accounts/me`; `PUT /api/accounts/me/password` nhận currentPassword/newPassword. Đổi mật khẩu thành công hủy tất cả session của tài khoản sau khi transaction commit. PATCH bỏ qua/null giữ nguyên trường; chuỗi rỗng xóa email/phone nhưng phải còn ít nhất một thông tin liên hệ. Mật khẩu từ 8 ký tự đến 72 byte UTF-8, hash bằng BCrypt. Phone gồm 8–15 chữ số, có thể bắt đầu bằng +; chưa chuyển đổi đầu số quốc gia.
-
-Admin khóa/mở tài khoản thường bằng `PATCH /api/admin/accounts/{accountId}/status` với `{"status":"DISABLED"}` hoặc `{"status":"ACTIVE"}`. Không được thao tác với chính mình/admin khác. Khóa hủy session cũ; mở khóa yêu cầu đăng nhập mới. Không xóa account, membership, credential hoặc history. Trạng thái và quyền admin được đọc lại từ database trên mỗi request; yêu cầu đã được xử lý trước lúc khóa không bị thu hồi ngược. Chưa đồng bộ lệnh khóa xuống thiết bị offline.
+Đã triển khai tầng database, một phần Manager API và phần tài khoản (đăng ký, đăng nhập, sửa thông tin, đổi mật khẩu, admin khóa/mở). Xác thực dùng HTTP session, giữ nguyên schema. Hướng dẫn chạy/kiểm tra tài khoản: [docs/account-api.md](docs/account-api.md); Manager API: [docs/manager-api.md](docs/manager-api.md). Giao tiếp thiết bị chưa triển khai.
 
 ## Khởi chạy
 
 Yêu cầu JDK 17+, Maven 3.6.3+ và MySQL 8.0.16+ để enforce CHECK constraint.
 Maven đã cấu hình annotation processor Lombok, bao gồm khi chạy bằng JDK 25.
+Nếu chạy trong terminal, đảm bảo `mvn -v` hoạt động. Trong IntelliJ, có thể dùng Maven bundled và chạy `SmartAccessApplication` với các biến môi trường database trong Run Configuration.
 
 Tạo database trước bằng `database/create_database.sql`, ví dụ trong MySQL client:
 
 ```sql
-SOURCE D:/DEV/IOT/smart-access-control-backend/database/create_database.sql;
+SOURCE <project-directory>/database/create_database.sql;
 ```
+
+Thay `<project-directory>` bằng đường dẫn thư mục backend trên máy đang chạy.
 
 Sau đó đặt biến môi trường trong PowerShell:
 
@@ -94,7 +93,7 @@ Chỉ UserAccessId có equals/hashCode theo hai giá trị khóa.
 | audit_logs.actor_id | accounts.account_id | SET NULL |
 
 Khóa chính `user_access`: `(account_id, unit_id)`. Các bảng còn lại có BIGINT AUTO_INCREMENT.
-CHECK của accounts yêu cầu email hoặc phone khác NULL; validation nghiệp vụ bổ sung sẽ thuộc bước service.
+CHECK của accounts yêu cầu email hoặc phone khác NULL; AccountService kiểm tra liên hệ và dữ liệu tài khoản trước khi lưu.
 
 ## Index
 
@@ -136,10 +135,6 @@ mvn clean test
 BLOB, JSON, enum và timestamp. Test cũng xác nhận không thể tạo FaceRequest khi chưa là User,
 không thể xóa membership có history, và manager/actor được SET NULL khi Account bị xóa.
 Dữ liệu test được rollback sau mỗi test; schema Flyway được giữ lại.
-
-Kết quả kiểm chứng ngày 03/10/2026 trên MySQL 8.0.43 tạm tại máy phát triển:
-Flyway V1 áp dụng thành công; Hibernate validate thành công; `mvn clean test` BUILD SUCCESS,
-4 test chạy, 0 lỗi, 0 thất bại, 0 bỏ qua. Không áp dụng migration vào MySQL đang dùng tại cổng 3306.
 
 ## Quy tắc dành cho bước nghiệp vụ tiếp theo
 
