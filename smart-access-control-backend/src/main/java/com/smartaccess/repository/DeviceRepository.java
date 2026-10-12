@@ -1,5 +1,6 @@
 package com.smartaccess.repository;
 
+import com.smartaccess.model.enumtype.DeviceType;
 import com.smartaccess.model.Device;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -15,4 +16,6 @@ public interface DeviceRepository extends JpaRepository<Device, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select d from Device d where d.deviceUid = :deviceUid")
     Optional<Device> findByDeviceUidForUpdate(@Param("deviceUid") String deviceUid);
+
+    Optional<Device> findFirstByAccessUnit_UnitIdAndDeviceType(Long unitId, DeviceType deviceType);
 }
