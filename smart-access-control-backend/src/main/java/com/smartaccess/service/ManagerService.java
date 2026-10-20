@@ -3,6 +3,7 @@ package com.smartaccess.service;
 import com.smartaccess.dto.manager.*;
 import com.smartaccess.exception.BusinessException;
 import com.smartaccess.model.*;
+import com.smartaccess.model.enumtype.AccountStatus;
 import com.smartaccess.model.enumtype.DeviceLifecycleStatus;
 import com.smartaccess.repository.*;
 import org.springframework.http.HttpStatus;
@@ -85,27 +86,51 @@ public class ManagerService {
         return DeviceResponse.from(device);
     }
 
-    /** Grants remain unavailable until an invitation acceptance source is integrated. */
+    /** Manager thêm thẳng thành viên (không có bảng lời mời); người đó có thể là manager của cửa khác. */
+    @Transactional
+    public UnitUserResponse addUser(Long managerId, Long unitId, Long userId) {
+        AccessUnit unit = validateManagerAccess(managerId, unitId, true);
+        Account user = requireAccount(userId, "User not found");
+        if (user.isAdmin()) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "Cannot add an admin account to an access unit");
+        }
+        if (user.getStatus() != AccountStatus.ACTIVE) {
+            throw new BusinessException(HttpStatus.CONFLICT, "User account is not active");
+        }
+        if (isManagerOf(unit, userId)) {
+            throw new BusinessException(HttpStatus.CONFLICT, "Manager already owns this access unit");
+        }
+        if (memberships.existsById(new UserAccessId(userId, unitId))) {
+            throw new BusinessException(HttpStatus.CONFLICT, "User already belongs to this access unit");
+        }
+        UserAccess membership = new UserAccess();
+        membership.setAccount(user);
+        membership.setAccessUnit(unit);
+        membership.setAllowFingerprint(true);
+        membership.setAllowRfid(true);
+        membership.setAllowRemoteUnlock(true);
+        memberships.saveAndFlush(membership);
+        audit(unit.getManager(), "ADD_USER_TO_UNIT", "USER_ACCESS", userId,
+                Map.of("unitId", unitId, "accountId", userId));
+        return UnitUserResponse.from(membership);
+    }
+
     @Transactional
     public UnitUserResponse updatePermissions(Long managerId, Long unitId, Long userId, PermissionRequest request) {
         AccessUnit unit = validateManagerAccess(managerId, unitId, true);
-        UserAccess membership = requireManagedMember(unitId, userId, HttpStatus.CONFLICT);
+        UserAccess membership = requireManagedMember(unit, userId, HttpStatus.CONFLICT);
         if (request == null || request.isEmpty()) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "At least one permission is required");
         }
-        if (request.requestsGrant()) {
-            throw new BusinessException(HttpStatus.CONFLICT,
-                    "Cannot grant access: current schema has no invitation acceptance record");
-        }
         Map<String, Object> before = permissionValues(membership);
-        if (request.allowFace() != null) { membership.setAllowFace(false); }
-        if (request.allowFingerprint() != null) { membership.setAllowFingerprint(false); }
-        if (request.allowRfid() != null) { membership.setAllowRfid(false); }
-        if (request.allowRemoteUnlock() != null) { membership.setAllowRemoteUnlock(false); }
+        if (request.allowFace() != null) { membership.setAllowFace(request.allowFace()); }
+        if (request.allowFingerprint() != null) { membership.setAllowFingerprint(request.allowFingerprint()); }
+        if (request.allowRfid() != null) { membership.setAllowRfid(request.allowRfid()); }
+        if (request.allowRemoteUnlock() != null) { membership.setAllowRemoteUnlock(request.allowRemoteUnlock()); }
         Map<String, Object> after = permissionValues(membership);
         if (!before.equals(after)) {
             memberships.save(membership);
-            audit(unit.getManager(), "REVOKE_PERMISSION", "USER_ACCESS", userId,
+            audit(unit.getManager(), "UPDATE_PERMISSION", "USER_ACCESS", userId,
                     Map.of("unitId", unitId, "accountId", userId, "before", before, "after", after));
         }
         return UnitUserResponse.from(membership);
@@ -114,7 +139,7 @@ public class ManagerService {
     @Transactional
     public void removeUser(Long managerId, Long unitId, Long userId) {
         AccessUnit unit = validateManagerAccess(managerId, unitId, true);
-        UserAccess membership = requireManagedMember(unitId, userId, HttpStatus.NOT_FOUND);
+        UserAccess membership = requireManagedMember(unit, userId, HttpStatus.NOT_FOUND);
         if (faceRequests.existsByAccount_AccountIdAndAccessUnit_UnitId(userId, unitId)) {
             throw new BusinessException(HttpStatus.CONFLICT,
                     "Cannot remove membership with face request history in current schema; revoke permissions instead");
@@ -125,14 +150,19 @@ public class ManagerService {
                 Map.of("unitId", unitId, "accountId", userId));
     }
 
-    private UserAccess requireManagedMember(Long unitId, Long userId, HttpStatus missingMembershipStatus) {
+    // Manager của cửa khác vẫn là thành viên bình thường ở cửa này; chỉ chặn admin và chủ chính cửa này.
+    private UserAccess requireManagedMember(AccessUnit unit, Long userId, HttpStatus missingMembershipStatus) {
         Account user = requireAccount(userId, "User not found");
-        UserAccess membership = memberships.findById(new UserAccessId(userId, unitId))
+        UserAccess membership = memberships.findById(new UserAccessId(userId, unit.getUnitId()))
                 .orElseThrow(() -> new BusinessException(missingMembershipStatus, "User does not belong to this access unit"));
-        if (user.isAdmin() || units.existsByManager_AccountId(userId)) {
-            throw new BusinessException(HttpStatus.FORBIDDEN, "Manager cannot modify an admin or manager account's membership");
+        if (user.isAdmin() || isManagerOf(unit, userId)) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "Manager cannot modify an admin or this unit manager's membership");
         }
         return membership;
+    }
+
+    private boolean isManagerOf(AccessUnit unit, Long accountId) {
+        return unit.getManager() != null && accountId.equals(unit.getManager().getAccountId());
     }
 
     private Map<String, Object> permissionValues(UserAccess membership) {

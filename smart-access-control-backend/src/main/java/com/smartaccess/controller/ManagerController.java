@@ -27,6 +27,13 @@ public class ManagerController {
         return service.getUsers(principal.accountId(), unitId);
     }
 
+    @PostMapping("/units/{unitId}/users/{userId}")
+    @ResponseStatus(HttpStatus.CREATED)
+    public UnitUserResponse addUser(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable Long unitId,
+            @PathVariable Long userId) {
+        return service.addUser(principal.accountId(), unitId, userId);
+    }
+
     @PatchMapping("/units/{unitId}/users/{userId}/permissions")
     public UnitUserResponse updatePermissions(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable Long unitId,
             @PathVariable Long userId, @RequestBody PermissionRequest request) {

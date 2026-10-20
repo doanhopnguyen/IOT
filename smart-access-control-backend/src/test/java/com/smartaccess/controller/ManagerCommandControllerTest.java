@@ -12,6 +12,7 @@ import com.smartaccess.service.DeviceCommandService;
 import com.smartaccess.service.FingerprintService;
 import com.smartaccess.service.PinService;
 import com.smartaccess.service.RemoteUnlockService;
+import com.smartaccess.service.RfidService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +45,7 @@ class ManagerCommandControllerTest {
     @MockitoBean FingerprintService fingerprintService;
     @MockitoBean RemoteUnlockService remoteUnlockService;
     @MockitoBean DeviceCommandService commandService;
+    @MockitoBean RfidService rfidService;
     @MockitoBean AccountRepository accounts;
     @Autowired SessionRegistry sessions;
     MockHttpSession session;

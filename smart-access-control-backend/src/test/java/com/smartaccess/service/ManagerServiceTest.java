@@ -135,31 +135,68 @@ class ManagerServiceTest {
         boolean[] actual = {response.allowFace(), response.allowFingerprint(), response.allowRfid(), response.allowRemoteUnlock()};
         for (int i = 0; i < 4; i++) assertThat(actual[i]).isEqualTo(i != index);
         var audit = ArgumentCaptor.forClass(AuditLog.class); verify(audits).save(audit.capture());
-        assertThat(audit.getValue().getAction()).isEqualTo("REVOKE_PERMISSION");
+        assertThat(audit.getValue().getAction()).isEqualTo("UPDATE_PERMISSION");
         assertThat(audit.getValue().getDetails()).containsEntry("unitId", 10L).containsEntry("accountId", 2L);
         verify(accounts, never()).delete(any());
         verify(memberships, never()).delete(any());
     }
 
     @ParameterizedTest @ValueSource(ints = {0, 1, 2, 3})
-    void cannotGrantAnyPermissionWithoutInvitationProof(int index) {
-        member(); Boolean[] values = new Boolean[4]; values[index] = true;
-        assertStatus(() -> service.updatePermissions(1L, 10L, 2L,
-                new PermissionRequest(values[0], values[1], values[2], values[3])), HttpStatus.CONFLICT);
-        verify(memberships, never()).save(any()); verifyNoInteractions(audits);
+    void grantsEachPermissionWithoutChangingOthers(int index) {
+        member();
+        member.setAllowFace(false); member.setAllowFingerprint(false); member.setAllowRfid(false); member.setAllowRemoteUnlock(false);
+        Boolean[] values = new Boolean[4]; values[index] = true;
+        var response = service.updatePermissions(1L, 10L, 2L, new PermissionRequest(values[0], values[1], values[2], values[3]));
+        boolean[] actual = {response.allowFace(), response.allowFingerprint(), response.allowRfid(), response.allowRemoteUnlock()};
+        for (int i = 0; i < 4; i++) assertThat(actual[i]).isEqualTo(i == index);
+        verify(memberships).save(member);
     }
 
-    @Test void mixedGrantAndRevokeDoesNotPartiallyRevoke() {
-        member(); assertStatus(() -> service.updatePermissions(1L, 10L, 2L,
-                new PermissionRequest(false, true, null, null)), HttpStatus.CONFLICT);
-        assertThat(member.isAllowFace()).isTrue(); verifyNoInteractions(audits);
+    @Test void mixedGrantAndRevokeAppliesBoth() {
+        member(); member.setAllowFingerprint(false);
+        var response = service.updatePermissions(1L, 10L, 2L, new PermissionRequest(false, true, null, null));
+        assertThat(response.allowFace()).isFalse(); assertThat(response.allowFingerprint()).isTrue();
+        assertThat(response.allowRfid()).isTrue();
     }
 
-    @Test void cannotGrantToNonMember() {
+    @Test void cannotUpdateNonMember() {
         managed(true); when(accounts.findById(2L)).thenReturn(Optional.of(user));
         assertStatus(() -> service.updatePermissions(1L, 10L, 2L,
                 new PermissionRequest(true, null, null, null)), HttpStatus.CONFLICT);
         verify(memberships, never()).save(any());
+    }
+
+    @Test void addsUserAsMemberWithDevicePermissions() {
+        managed(true); when(accounts.findById(2L)).thenReturn(Optional.of(user));
+        var response = service.addUser(1L, 10L, 2L);
+        assertThat(response.userId()).isEqualTo(2L);
+        assertThat(response.allowFingerprint()).isTrue(); assertThat(response.allowRfid()).isTrue();
+        assertThat(response.allowRemoteUnlock()).isTrue(); assertThat(response.allowFace()).isFalse();
+        verify(memberships).saveAndFlush(any(UserAccess.class));
+        var audit = ArgumentCaptor.forClass(AuditLog.class); verify(audits).save(audit.capture());
+        assertThat(audit.getValue().getAction()).isEqualTo("ADD_USER_TO_UNIT");
+    }
+
+    @Test void addsManagerOfAnotherUnitAsMember() {
+        managed(true); when(accounts.findById(2L)).thenReturn(Optional.of(user));
+        // user 2 quản lý cửa khác nhưng ở cửa 10 chỉ là thành viên
+        assertThat(service.addUser(1L, 10L, 2L).userId()).isEqualTo(2L);
+        verify(units, never()).existsByManager_AccountId(2L);
+    }
+
+    @Test void cannotAddExistingMember() {
+        managed(true); when(accounts.findById(2L)).thenReturn(Optional.of(user));
+        when(memberships.existsById(new UserAccessId(2L, 10L))).thenReturn(true);
+        assertStatus(() -> service.addUser(1L, 10L, 2L), HttpStatus.CONFLICT);
+        verify(memberships, never()).saveAndFlush(any());
+    }
+
+    @Test void cannotAddUnitManagerOrAdmin() {
+        managed(true);
+        assertStatus(() -> service.addUser(1L, 10L, 1L), HttpStatus.CONFLICT);
+        when(accounts.findById(2L)).thenReturn(Optional.of(user)); user.setAdmin(true);
+        assertStatus(() -> service.addUser(1L, 10L, 2L), HttpStatus.FORBIDDEN);
+        verify(memberships, never()).saveAndFlush(any());
     }
 
     @Test void permissionRequestCannotBeEmpty() {
@@ -196,10 +233,11 @@ class ManagerServiceTest {
         assertStatus(() -> service.removeUser(1L, 10L, 2L), HttpStatus.FORBIDDEN);
     }
 
-    @Test void cannotModifyAnotherManagerMembership() {
-        member(); when(units.existsByManager_AccountId(2L)).thenReturn(true);
-        assertStatus(() -> service.updatePermissions(1L, 10L, 2L,
-                new PermissionRequest(false, null, null, null)), HttpStatus.FORBIDDEN);
+    @Test void managerOfAnotherUnitIsModifiedAsMember() {
+        member();
+        var response = service.updatePermissions(1L, 10L, 2L, new PermissionRequest(false, null, null, null));
+        assertThat(response.allowFace()).isFalse();
+        verify(units, never()).existsByManager_AccountId(2L);
     }
 
     @Test void registersExistingUnassignedDeviceAndAudits() {

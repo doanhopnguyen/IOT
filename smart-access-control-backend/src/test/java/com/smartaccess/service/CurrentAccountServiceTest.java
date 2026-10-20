@@ -40,4 +40,17 @@ class CurrentAccountServiceTest {
         account.setStatus(AccountStatus.DISABLED);
         assertThatThrownBy(service::requireAccount).isInstanceOf(ResponseStatusException.class);
     }
+
+    @Test
+    void resolvesSessionAccountPrincipalById() {
+        var accounts = mock(AccountRepository.class);
+        var service = new CurrentAccountService(accounts);
+        Account account = new Account();
+        account.setAccountId(7L);
+        account.setStatus(AccountStatus.ACTIVE);
+        when(accounts.findById(7L)).thenReturn(Optional.of(account));
+        SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
+                new com.smartaccess.security.AccountPrincipal(7L), null, List.of()));
+        assertThat(service.requireAccount()).isSameAs(account);
+    }
 }

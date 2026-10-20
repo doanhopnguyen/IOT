@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
 @Component
 public class ManagerAccessGuard {
     // Thiết bị được coi là online nếu có heartbeat trong 90 giây gần nhất
-    private static final long ONLINE_WINDOW_SEC = 90;
+    static final long ONLINE_WINDOW_SEC = 90;
 
     private final AccessUnitRepository units;
     private final UserAccessRepository memberships;
