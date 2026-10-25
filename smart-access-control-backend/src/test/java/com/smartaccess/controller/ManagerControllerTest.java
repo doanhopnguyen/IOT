@@ -108,6 +108,21 @@ class ManagerControllerTest {
         verify(service).updatePermissions(1L, 10L, 2L, new PermissionRequest(false, null, null, null));
     }
 
+    @Test void createMemberProfileReturns201() throws Exception {
+        mvc.perform(post("/api/manager/units/10/member-profiles").session(session).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(new ObjectMapper().writeValueAsString(
+                        Map.of("fullName", " Bé Na ", "contact", "0912000111", "room", "P302"))))
+                .andExpect(status().isCreated());
+        verify(service).createMemberProfile(1L, 10L, new CreateMemberProfileRequest("Bé Na", "0912000111", "P302"));
+    }
+
+    @Test void createMemberProfileRequiresNameAndContact() throws Exception {
+        mvc.perform(post("/api/manager/units/10/member-profiles").session(session).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"fullName\":\" \"}"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+    }
+
     @Test void removeReturns204() throws Exception {
         mvc.perform(delete("/api/manager/units/10/users/2").session(session).with(csrf()))
                 .andExpect(status().isNoContent());

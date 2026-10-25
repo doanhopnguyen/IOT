@@ -16,4 +16,8 @@ public interface CredentialRepository extends JpaRepository<Credential, Long> {
             Long deviceId, CredentialType type, Short localTemplateId, CredentialStatus status);
 
     boolean existsByRfidUidAndStatus(String rfidUid, CredentialStatus status);
+
+    boolean existsByAccount_AccountIdAndCredentialTypeAndStatus(Long accountId, CredentialType type, CredentialStatus status);
+
+    List<Credential> findByAccount_AccountId(Long accountId);
 }

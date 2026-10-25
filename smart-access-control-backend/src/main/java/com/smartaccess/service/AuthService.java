@@ -30,12 +30,13 @@ public class AuthService {
     private final SecurityContextRepository contexts;
     private final SessionAuthenticationStrategy strategy;
     private final SessionRegistry sessions;
+    private final MemberProfileService memberProfiles;
     private final String dummyHash;
 
     public AuthService(AccountRepository accounts, PasswordEncoder passwords, SecurityContextRepository contexts,
-            SessionAuthenticationStrategy strategy, SessionRegistry sessions) {
+            SessionAuthenticationStrategy strategy, SessionRegistry sessions, MemberProfileService memberProfiles) {
         this.accounts = accounts; this.passwords = passwords; this.contexts = contexts;
-        this.strategy = strategy; this.sessions = sessions;
+        this.strategy = strategy; this.sessions = sessions; this.memberProfiles = memberProfiles;
         this.dummyHash = passwords.encode(UUID.randomUUID().toString());
     }
 
@@ -61,6 +62,7 @@ public class AuthService {
         context.setAuthentication(authentication);
         SecurityContextHolder.setContext(context);
         contexts.saveContext(context, request, response);
+        memberProfiles.recordLogin(account);
         return AccountResponse.from(account);
     }
 }

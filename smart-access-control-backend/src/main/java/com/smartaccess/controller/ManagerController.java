@@ -34,6 +34,13 @@ public class ManagerController {
         return service.addUser(principal.accountId(), unitId, userId);
     }
 
+    @PostMapping("/units/{unitId}/member-profiles")
+    @ResponseStatus(HttpStatus.CREATED)
+    public UnitUserResponse createMemberProfile(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable Long unitId,
+            @Valid @RequestBody CreateMemberProfileRequest request) {
+        return service.createMemberProfile(principal.accountId(), unitId, request);
+    }
+
     @PatchMapping("/units/{unitId}/users/{userId}/permissions")
     public UnitUserResponse updatePermissions(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable Long unitId,
             @PathVariable Long userId, @RequestBody PermissionRequest request) {

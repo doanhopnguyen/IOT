@@ -28,7 +28,8 @@ Tất cả API lấy managerId từ tài khoản đang đăng nhập; query mana
 | GET | /api/manager/users/search?keyword=user@example.test&type=email | 200 |
 | GET | /api/manager/units/10/users | 200, danh sách membership |
 | PATCH | /api/manager/units/10/users/3/permissions | 200, quyền còn lại |
-| DELETE | /api/manager/units/10/users/3 | 204, chỉ xóa user_access cửa 10 |
+| POST | /api/manager/units/10/member-profiles | 201, tạo tài khoản tối thiểu + thêm vào cửa 10 |
+| DELETE | /api/manager/units/10/users/3 | 204, xóa user_access cửa 10 (kèm tài khoản nếu là hồ sơ chưa đăng nhập) |
 | POST | /api/manager/units/10/devices | 201, thông tin thiết bị |
 
 Các URL invitation chưa đăng ký; không gọi chúng để test flow thành công. Namespace /api/manager không có endpoint tạo account, tạo user_access, đổi manager hay thay đổi is_admin. Đăng ký tài khoản thường thuộc /api/auth/register.
@@ -66,6 +67,23 @@ Body {} hoặc toàn null trả 400. User không tồn tại trả 404. User t�
 ### Xóa người
 
 Không có body. User không tồn tại/không thuộc cửa trả 404. Có face request history trả 409. Khi xóa thành công, chỉ xóa dòng khóa kép (userId, unitId); account và membership cửa khác được giữ lại. Không tự xóa face_requests hoặc credential để né FK. FK vẫn bảo vệ nếu lịch sử được thêm đồng thời.
+
+Ngoại lệ: hồ sơ do chủ chính cửa này tạo (xem mục dưới), chưa từng đăng nhập, không thuộc cửa khác và không quản lý cửa nào thì tài khoản bị xử lý theo:
+- Còn vân tay ACTIVE → 409, phải xóa vân tay trên thiết bị trước.
+- Không có access_logs → xóa credentials rồi xóa hẳn account.
+- Có access_logs (FK RESTRICT) → ẩn: status DISABLED, phone = null, email = `deleted-<id>@noapp.local`, giữ full_name cho lịch sử; credential ACTIVE chuyển REVOKED.
+
+Audit REMOVE_USER_FROM_UNIT có thêm `details.account` = KEPT / DELETED / HIDDEN.
+
+### Thêm người chưa có ứng dụng
+
+```json
+{"fullName":"Nguyễn Văn B","contact":"0912000111","room":"P302"}
+```
+
+`contact` là số điện thoại (8–15 số) hoặc email, `room` không bắt buộc (tối đa 50 ký tự). Backend tạo account với mật khẩu mặc định `123456` và user_access với allowFingerprint/allowRfid = true, allowRemoteUnlock = false. Contact đã có tài khoản trả 409 (dùng tìm kiếm + thêm người đã có ứng dụng).
+
+Schema không có cột đánh dấu hay cột phòng, nên dùng audit_logs (chỉ thêm dữ liệu): `CREATE_MEMBER_PROFILE` (entity ACCOUNT, details {unitId, createdBy, room}) và `FIRST_LOGIN` (ghi khi tài khoản đó đăng nhập thành công lần đầu). GET danh sách thành viên trả thêm `phone`, `room`, `hasLoggedIn`, `deletableAccount`.
 
 ### Đăng ký thiết bị
 

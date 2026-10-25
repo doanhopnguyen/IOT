@@ -28,6 +28,7 @@ class ManagerServiceTest {
     @Mock DeviceRepository devices;
     @Mock AuditLogRepository audits;
     @Mock FaceRequestRepository faceRequests;
+    @Mock MemberProfileService memberProfiles;
     ManagerService service;
     Account manager;
     Account user;
@@ -37,7 +38,7 @@ class ManagerServiceTest {
 
     @BeforeEach
     void setup() {
-        service = new ManagerService(accounts, units, memberships, devices, audits, faceRequests);
+        service = new ManagerService(accounts, units, memberships, devices, audits, faceRequests, memberProfiles);
         manager = account(1L, "Manager");
         user = account(2L, "Member");
         unit = new AccessUnit(); unit.setUnitId(10L); unit.setUnitName("Door 10"); unit.setManager(manager);
@@ -210,6 +211,62 @@ class ManagerServiceTest {
         verify(accounts, never()).delete(any()); verify(memberships, never()).deleteById(new UserAccessId(2L, 11L));
         var audit = ArgumentCaptor.forClass(AuditLog.class); verify(audits).save(audit.capture());
         assertThat(audit.getValue().getAction()).isEqualTo("REMOVE_USER_FROM_UNIT");
+    }
+
+    @Test void listsMemberProfileWithRoomAndDeletableFlag() {
+        managed(false); when(memberships.findMembersByUnitId(10L)).thenReturn(List.of(member));
+        when(memberProfiles.describe(10L, List.of(member)))
+                .thenReturn(java.util.Map.of(2L, new MemberProfileService.ProfileInfo("P302", false, true)));
+        var response = service.getUsers(1L, 10L).get(0);
+        assertThat(response.room()).isEqualTo("P302");
+        assertThat(response.hasLoggedIn()).isFalse(); assertThat(response.deletableAccount()).isTrue();
+    }
+
+    @Test void selfRegisteredMemberIsNotDeletable() {
+        managed(false); when(memberships.findMembersByUnitId(10L)).thenReturn(List.of(member));
+        var response = service.getUsers(1L, 10L).get(0);
+        assertThat(response.hasLoggedIn()).isTrue(); assertThat(response.deletableAccount()).isFalse();
+    }
+
+    @Test void createsMemberProfileForManagedUnit() {
+        managed(true);
+        var request = new CreateMemberProfileRequest("Bé Na", "0912000111", "P302");
+        when(memberProfiles.create(unit, request)).thenReturn(member);
+        var response = service.createMemberProfile(1L, 10L, request);
+        assertThat(response.userId()).isEqualTo(2L); assertThat(response.room()).isEqualTo("P302");
+        assertThat(response.deletableAccount()).isTrue();
+    }
+
+    @Test void foreignManagerCannotCreateMemberProfile() {
+        managed(true); unit.setManager(account(99L, "Other"));
+        assertStatus(() -> service.createMemberProfile(1L, 10L, new CreateMemberProfileRequest("Bé Na", "0912000111", null)),
+                HttpStatus.FORBIDDEN);
+        verifyNoInteractions(memberProfiles);
+    }
+
+    @Test void removingDisposableProfileDisposesAccountAfterMembership() {
+        member(); when(memberProfiles.isDisposable(unit, 2L)).thenReturn(true);
+        when(memberProfiles.dispose(user)).thenReturn(MemberProfileService.Disposal.DELETED);
+        service.removeUser(1L, 10L, 2L);
+        var order = inOrder(memberships, memberProfiles);
+        order.verify(memberships).delete(member); order.verify(memberships).flush();
+        order.verify(memberProfiles).dispose(user);
+        var audit = ArgumentCaptor.forClass(AuditLog.class); verify(audits).save(audit.capture());
+        assertThat(audit.getValue().getDetails()).containsEntry("account", "DELETED");
+    }
+
+    @Test void removingOrdinaryMemberKeepsAccount() {
+        member(); service.removeUser(1L, 10L, 2L);
+        verify(memberProfiles, never()).dispose(any());
+        var audit = ArgumentCaptor.forClass(AuditLog.class); verify(audits).save(audit.capture());
+        assertThat(audit.getValue().getDetails()).containsEntry("account", "KEPT");
+    }
+
+    @Test void activeFingerprintBlocksRemovalOfDisposableProfile() {
+        member(); when(memberProfiles.isDisposable(unit, 2L))
+                .thenThrow(new BusinessException(HttpStatus.CONFLICT, "fingerprint"));
+        assertStatus(() -> service.removeUser(1L, 10L, 2L), HttpStatus.CONFLICT);
+        verify(memberships, never()).delete(any()); verifyNoInteractions(audits);
     }
 
     @Test void removalWithHistoryFailsWithoutDeletingHistoryOrChangingPermissions() {

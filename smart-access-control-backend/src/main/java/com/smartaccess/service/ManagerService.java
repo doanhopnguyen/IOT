@@ -23,16 +23,18 @@ public class ManagerService {
     private final DeviceRepository devices;
     private final AuditLogRepository audits;
     private final FaceRequestRepository faceRequests;
+    private final MemberProfileService memberProfiles;
 
     public ManagerService(AccountRepository accounts, AccessUnitRepository units,
             UserAccessRepository memberships, DeviceRepository devices, AuditLogRepository audits,
-            FaceRequestRepository faceRequests) {
+            FaceRequestRepository faceRequests, MemberProfileService memberProfiles) {
         this.accounts = accounts;
         this.units = units;
         this.memberships = memberships;
         this.devices = devices;
         this.audits = audits;
         this.faceRequests = faceRequests;
+        this.memberProfiles = memberProfiles;
     }
 
     public List<UserSearchResponse> searchUsers(Long managerId, String keyword, String type) {
@@ -57,7 +59,17 @@ public class ManagerService {
 
     public List<UnitUserResponse> getUsers(Long managerId, Long unitId) {
         validateManagerAccess(managerId, unitId, false);
-        return memberships.findMembersByUnitId(unitId).stream().map(UnitUserResponse::from).toList();
+        List<UserAccess> members = memberships.findMembersByUnitId(unitId);
+        Map<Long, MemberProfileService.ProfileInfo> profiles = memberProfiles.describe(unitId, members);
+        return members.stream().map(member -> toResponse(member, profiles)).toList();
+    }
+
+    /** Thêm người chưa có ứng dụng: tạo tài khoản tối thiểu (mật khẩu mặc định 123456) rồi thêm thẳng vào cửa. */
+    @Transactional
+    public UnitUserResponse createMemberProfile(Long managerId, Long unitId, CreateMemberProfileRequest request) {
+        AccessUnit unit = validateManagerAccess(managerId, unitId, true);
+        UserAccess membership = memberProfiles.create(unit, request);
+        return UnitUserResponse.from(membership, request.room(), false, true);
     }
 
     @Transactional
@@ -133,7 +145,7 @@ public class ManagerService {
             audit(unit.getManager(), "UPDATE_PERMISSION", "USER_ACCESS", userId,
                     Map.of("unitId", unitId, "accountId", userId, "before", before, "after", after));
         }
-        return UnitUserResponse.from(membership);
+        return toResponse(membership, memberProfiles.describe(unitId, List.of(membership)));
     }
 
     @Transactional
@@ -144,10 +156,21 @@ public class ManagerService {
             throw new BusinessException(HttpStatus.CONFLICT,
                     "Cannot remove membership with face request history in current schema; revoke permissions instead");
         }
+        // Tài khoản do chủ cửa này tạo mà người đó chưa từng đăng nhập thì xóa (hoặc ẩn) theo luôn.
+        boolean disposeAccount = memberProfiles.isDisposable(unit, userId);
+        Account user = membership.getAccount();
         memberships.delete(membership);
         memberships.flush(); // Detect restrictive FK conflicts before recording success.
+        MemberProfileService.Disposal disposal = disposeAccount
+                ? memberProfiles.dispose(user) : MemberProfileService.Disposal.KEPT;
         audit(unit.getManager(), "REMOVE_USER_FROM_UNIT", "USER_ACCESS", userId,
-                Map.of("unitId", unitId, "accountId", userId));
+                Map.of("unitId", unitId, "accountId", userId, "account", disposal.name()));
+    }
+
+    private UnitUserResponse toResponse(UserAccess member, Map<Long, MemberProfileService.ProfileInfo> profiles) {
+        MemberProfileService.ProfileInfo profile = profiles.get(member.getAccount().getAccountId());
+        return profile == null ? UnitUserResponse.from(member)
+                : UnitUserResponse.from(member, profile.room(), profile.hasLoggedIn(), profile.deletableAccount());
     }
 
     // Manager của cửa khác vẫn là thành viên bình thường ở cửa này; chỉ chặn admin và chủ chính cửa này.

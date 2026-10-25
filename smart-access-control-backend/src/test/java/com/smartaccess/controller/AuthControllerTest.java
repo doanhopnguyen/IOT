@@ -9,6 +9,7 @@ import com.smartaccess.model.enumtype.AccountStatus;
 import com.smartaccess.repository.AccountRepository;
 import com.smartaccess.service.AccountService;
 import com.smartaccess.service.AuthService;
+import com.smartaccess.service.MemberProfileService;
 import com.smartaccess.security.SessionRevocationListener;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,6 +39,7 @@ class AuthControllerTest {
     @Autowired PasswordEncoder passwords;
     @Autowired SessionRegistry sessions;
     @MockitoBean AccountRepository accounts;
+    @MockitoBean MemberProfileService memberProfiles;
     Account user;
 
     @BeforeEach void setup() {
@@ -66,6 +68,22 @@ class AuthControllerTest {
         mvc.perform(post("/api/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(Map.of("identifier", "0912345678", "password", "Password123!"))))
                 .andExpect(status().isOk());
+        verify(memberProfiles).recordLogin(user);
+    }
+
+    @Test void memberProfileCanLoginWithDefaultShortPassword() throws Exception {
+        user.setPasswordHash(passwords.encode(MemberProfileService.DEFAULT_PASSWORD));
+        mvc.perform(post("/api/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("identifier", "0912345678", "password", "123456"))))
+                .andExpect(status().isOk());
+        verify(memberProfiles).recordLogin(user);
+    }
+
+    @Test void failedLoginIsNotRecorded() throws Exception {
+        mvc.perform(post("/api/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("identifier", "0912345678", "password", "wrong-password"))))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(memberProfiles);
     }
 
     @Test void wrongPasswordUnknownUserAndDisabledAccountHaveSameError() throws Exception {

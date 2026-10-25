@@ -15,4 +15,6 @@ public interface UserAccessRepository extends JpaRepository<UserAccess, UserAcce
     List<UserAccess> findByAccountWithUnit(@Param("accountId") Long accountId);
 
     long countByAccessUnit_UnitId(Long unitId);
+
+    boolean existsByAccount_AccountId(Long accountId);
 }
