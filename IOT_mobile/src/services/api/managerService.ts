@@ -26,7 +26,14 @@ export const managerService = {
   setAccess(unitId: number, userId: number, on: boolean) {
     return request<UnitUserDto>(`/api/manager/units/${unitId}/users/${userId}/permissions`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ allowFingerprint: on, allowRfid: on, allowRemoteUnlock: on }),
+      body: JSON.stringify({ allowFace: on, allowFingerprint: on, allowRfid: on, allowRemoteUnlock: on }),
+    });
+  },
+  // Cập nhật riêng quyền khuôn mặt, giữ nguyên các phương thức xác thực khác tại cửa.
+  setFaceAccess(unitId: number, userId: number, allowFace: boolean) {
+    return request<UnitUserDto>(`/api/manager/units/${unitId}/users/${userId}/permissions`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ allowFace }),
     });
   },
   enrollFingerprint(unitId: number, userId: number, label: string) {

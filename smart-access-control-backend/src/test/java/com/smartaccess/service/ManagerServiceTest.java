@@ -123,7 +123,9 @@ class ManagerServiceTest {
     }
 
     @Test void listsOnlyRequestedUnit() {
-        managed(false); when(memberships.findMembersByUnitId(10L)).thenReturn(List.of(member));
+        managed(false);
+        UserAccess ownerEnrollment = new UserAccess(); ownerEnrollment.setAccount(manager); ownerEnrollment.setAccessUnit(unit);
+        when(memberships.findMembersByUnitId(10L)).thenReturn(List.of(member, ownerEnrollment));
         assertThat(service.getUsers(1L, 10L)).extracting(UnitUserResponse::userId).containsExactly(2L);
         verify(memberships).findMembersByUnitId(10L);
     }

@@ -21,6 +21,15 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Cho phép Smart Door dùng camera để đăng ký khuôn mặt.",
+          "recordAudioAndroid": false
+        }
+      ]
+    ]
   }
 }

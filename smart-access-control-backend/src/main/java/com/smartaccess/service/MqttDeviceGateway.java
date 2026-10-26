@@ -30,22 +30,32 @@ public class MqttDeviceGateway implements DeviceGateway {
     private final DeviceService deviceService;
     private final CommandAckService ackService;
     private final AccessEventService accessEvents;
+    private final DeviceAuthenticationService authentication;
+    private final FaceRecognitionService faceRecognition;
+    private final String username;
+    private final String password;
+    @Value("${app.mqtt.enabled:true}") private boolean enabled;
     private MqttClient client;
     private volatile boolean running = true;
 
     public MqttDeviceGateway(@Value("${app.mqtt.broker-url}") String brokerUrl,
             @Value("${app.mqtt.topic-prefix}") String prefix, ObjectMapper json,
-            DeviceService deviceService, CommandAckService ackService, AccessEventService accessEvents) {
+            DeviceService deviceService, CommandAckService ackService, AccessEventService accessEvents,
+            DeviceAuthenticationService authentication, @org.springframework.context.annotation.Lazy FaceRecognitionService faceRecognition,
+            @Value("${app.mqtt.username:}") String username, @Value("${app.mqtt.password:}") String password) {
         this.brokerUrl = brokerUrl;
         this.prefix = prefix;
         this.json = json;
         this.deviceService = deviceService;
         this.ackService = ackService;
         this.accessEvents = accessEvents;
+        this.authentication = authentication; this.faceRecognition = faceRecognition;
+        this.username = username; this.password = password;
     }
 
     @PostConstruct
     void start() throws MqttException {
+        if (!enabled) return;
         client = new MqttClient(brokerUrl, "smartdoor-backend-" + UUID.randomUUID(), new MemoryPersistence());
         client.setCallback(new MqttCallbackExtended() {
             @Override public void connectComplete(boolean reconnect, String serverUri) { subscribe(); }
@@ -64,6 +74,9 @@ public class MqttDeviceGateway implements DeviceGateway {
         options.setAutomaticReconnect(true);
         options.setCleanSession(true);
         options.setConnectionTimeout(10);
+        if (!username.isBlank()) {
+            options.setUserName(username); options.setPassword(password.toCharArray());
+        }
         while (running && !client.isConnected()) {
             try {
                 client.connect(options);
@@ -77,7 +90,7 @@ public class MqttDeviceGateway implements DeviceGateway {
 
     private void subscribe() {
         try {
-            client.subscribe(new String[] {prefix + "/+/ack", prefix + "/+/status", prefix + "/+/access"}, new int[] {1, 0, 1});
+            client.subscribe(new String[] {prefix + "/+/ack", prefix + "/+/status", prefix + "/+/access", prefix + "/+/face"}, new int[] {1, 0, 1, 1});
         } catch (MqttException e) {
             log.error("Không subscribe được topic thiết bị", e);
         }
@@ -105,28 +118,37 @@ public class MqttDeviceGateway implements DeviceGateway {
 
     private void handle(String topic, MqttMessage message) {
         String[] parts = topic.split("/");
-        if (parts.length < 3) { return; }
+        if (parts.length < 3) return;
         String deviceUid = parts[parts.length - 2];
         String kind = parts[parts.length - 1];
         try {
+            if ("face".equals(kind)) {
+                if (parts.length != 3 || !parts[0].equals(prefix) || message.isRetained() || message.getPayload().length > 16384) return;
+                JsonNode body = json.readTree(message.getPayload());
+                var device = authentication.authenticate(deviceUid, text(body, "deviceSecret"));
+                if (device.getDeviceType() != com.smartaccess.model.enumtype.DeviceType.FACE_CAMERA_NODE) return;
+                deviceService.touch(deviceUid);
+                faceRecognition.receive(deviceUid, body);
+                return;
+            }
             deviceService.touch(deviceUid);
             switch (kind) {
                 case "ack" -> {
-                    JsonNode ack = json.readTree(new String(message.getPayload(), StandardCharsets.UTF_8));
+                    JsonNode ack = json.readTree(message.getPayload());
                     ackService.handleAck(deviceUid, ack.path("commandUuid").asText(""),
                             ack.path("success").asBoolean(false), text(ack, "message"));
                 }
                 case "access" -> {
-                    JsonNode event = json.readTree(new String(message.getPayload(), StandardCharsets.UTF_8));
+                    JsonNode event = json.readTree(message.getPayload());
                     if ("FINGERPRINT".equals(event.path("method").asText())) {
                         Integer templateId = event.hasNonNull("templateId") ? event.get("templateId").asInt() : null;
                         accessEvents.recordFingerprint(deviceUid, templateId, "GRANTED".equals(event.path("result").asText()));
                     }
                 }
-                default -> { } // status: heartbeat đã xử lý bằng touch()
+                default -> { } // Trạng thái heartbeat đã được xử lý bằng touch().
             }
         } catch (Exception e) {
-            log.error("Lỗi xử lý tin nhắn MQTT trên {}", topic, e);
+            log.warn("Đã từ chối tin nhắn MQTT trên {} ({})", topic, e.getClass().getSimpleName());
         }
     }
 

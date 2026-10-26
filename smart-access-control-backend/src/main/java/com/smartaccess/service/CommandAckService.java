@@ -43,17 +43,23 @@ public class CommandAckService {
 
     @Transactional
     public void handleAck(String deviceUid, String commandUuid, boolean success, String message) {
-        Command command = commands.findByCommandUuid(commandUuid).orElse(null);
+        Command command = commands.findForUpdate(commandUuid).orElse(null);
         if (command == null
                 || !command.getDevice().getDeviceUid().equals(deviceUid)
                 || command.getStatus() == CommandStatus.ACKNOWLEDGED
                 || command.getStatus() == CommandStatus.FAILED) {
             return;
         }
+        boolean face = command.getPayload() != null && "FACE".equals(command.getPayload().get("accessMethod"));
+        if (face && (command.getStatus() == CommandStatus.TIMEOUT
+                || command.getRequestedAt().isBefore(LocalDateTime.now().minusSeconds(15)))) return;
         command.setAcknowledgedAt(LocalDateTime.now());
         command.setResultMessage(message);
         if (!success) {
             command.setStatus(CommandStatus.FAILED);
+            if (face) accessLogs.findByAccessUuid(commandUuid).ifPresent(log -> {
+                log.setResult(AccessResult.ERROR); log.setReasonCode("DEVICE_FAILED");
+            });
             return;
         }
         String entityType = "CREDENTIAL";
@@ -104,6 +110,11 @@ public class CommandAckService {
 
     private Long applyUnlock(Command command) {
         Long unitId = ((Number) command.getPayload().get("unitId")).longValue();
+        if ("FACE".equals(command.getPayload().get("accessMethod"))) {
+            AccessLog log = accessLogs.findByAccessUuid(command.getCommandUuid()).orElseThrow();
+            log.setResult(AccessResult.GRANTED); log.setReasonCode(null);
+            return unitId;
+        }
         AccessLog log = new AccessLog();
         log.setAccessUuid(command.getCommandUuid());
         log.setAccessUnit(units.getReferenceById(unitId));

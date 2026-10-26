@@ -59,7 +59,9 @@ public class ManagerService {
 
     public List<UnitUserResponse> getUsers(Long managerId, Long unitId) {
         validateManagerAccess(managerId, unitId, false);
-        List<UserAccess> members = memberships.findMembersByUnitId(unitId);
+        // Đăng ký khuôn mặt cho chủ cửa dùng một quan hệ thành viên nội bộ để đáp ứng khóa ngoại cũ.
+        List<UserAccess> members = memberships.findMembersByUnitId(unitId).stream()
+                .filter(m -> !m.getAccount().getAccountId().equals(managerId)).toList();
         Map<Long, MemberProfileService.ProfileInfo> profiles = memberProfiles.describe(unitId, members);
         return members.stream().map(member -> toResponse(member, profiles)).toList();
     }
