@@ -45,6 +45,8 @@ public class UnitService {
             result.add(toResponse(unit, "OWNER", unit.isRemoteUnlockEnabled()));
         }
         for (UserAccess membership : memberships.findByAccountWithUnit(accountId)) {
+            if (membership.getAccessUnit().getManager() != null
+                    && accountId.equals(membership.getAccessUnit().getManager().getAccountId())) continue;
             // Mở cửa từ xa hiện chỉ dành cho manager (RemoteUnlockService)
             result.add(toResponse(membership.getAccessUnit(), "USER", false));
         }
@@ -81,7 +83,10 @@ public class UnitService {
         boolean online = device != null && device.getLifecycleStatus() == DeviceLifecycleStatus.ACTIVE
                 && lastSeen != null
                 && lastSeen.isAfter(LocalDateTime.now().minusSeconds(ManagerAccessGuard.ONLINE_WINDOW_SEC));
+        long memberCount = memberships.countByAccessUnit_UnitId(unit.getUnitId());
+        if (unit.getManager() != null && memberships.existsById(new UserAccessId(unit.getManager().getAccountId(), unit.getUnitId())))
+            memberCount = Math.max(0, memberCount - 1);
         return new UnitResponse(unit.getUnitId(), unit.getUnitName(), role, online,
-                memberships.countByAccessUnit_UnitId(unit.getUnitId()), canRemoteUnlock, lastSeen);
+                memberCount, canRemoteUnlock, lastSeen);
     }
 }
