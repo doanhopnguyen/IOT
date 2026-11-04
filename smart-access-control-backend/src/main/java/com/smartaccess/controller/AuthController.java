@@ -33,4 +33,12 @@ public class AuthController {
     }
 
     public record CsrfResponse(String headerName, String token) {}
+
+    @PostMapping("/logout")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void logout(HttpServletRequest request) {
+        var session = request.getSession(false);
+        if (session != null) session.invalidate();
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
 }

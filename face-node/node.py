@@ -24,6 +24,8 @@ class Publisher:
                                   client_id="face-" + config.device_uid, clean_session=True)
         if config.mqtt_username:
             self.client.username_pw_set(config.mqtt_username, config.mqtt_password)
+        if config.mqtt_tls:
+            self.client.tls_set(ca_certs=config.mqtt_ca or None)
         self.client.max_inflight_messages_set(1)
         self.client.max_queued_messages_set(1)
         self.client.on_connect = self._connected

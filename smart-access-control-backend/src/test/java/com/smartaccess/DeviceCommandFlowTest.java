@@ -72,6 +72,7 @@ class DeviceCommandFlowTest {
     @Autowired CommandRepository commands;
     @Autowired AccessLogRepository accessLogs;
     @Autowired AuditLogRepository audits;
+    @Autowired AccessEventService localEvents;
     @Autowired PasswordEncoder encoder;
     @Autowired TransactionTemplate tx;
     @Autowired JdbcTemplate jdbc;
@@ -122,6 +123,37 @@ class DeviceCommandFlowTest {
     }
 
     CommandStatus status(String uuid) { return commands.findByCommandUuid(uuid).orElseThrow().getStatus(); }
+
+    @Test
+    void offlineLocalEventsAreIdempotentAndPreserveDeviceTime() throws Exception {
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        long before = accessLogs.count();
+        String eventUuid = java.util.UUID.randomUUID().toString();
+        var event = json.readTree("{\"eventUuid\":\"" + eventUuid
+                + "\",\"method\":\"PIN\",\"result\":\"GRANTED\",\"occurredAt\":1700000000}");
+        localEvents.recordLocal(uid, event); localEvents.recordLocal(uid, event);
+        assertThat(accessLogs.count()).isEqualTo(before + 1);
+        var saved = accessLogs.findByAccessUuid(eventUuid).orElseThrow();
+        assertThat(saved.getOccurredAt()).isEqualTo(LocalDateTime.ofInstant(
+                java.time.Instant.ofEpochSecond(1700000000), java.time.ZoneId.of("Asia/Ho_Chi_Minh")));
+        assertThat(saved.getMethod()).isEqualTo(AccessMethod.PIN);
+        assertThat(saved.getResult()).isEqualTo(AccessResult.GRANTED);
+        assertThatThrownBy(() -> localEvents.recordLocal(uid, json.readTree(
+                "{\"eventUuid\":\"invalid\",\"method\":\"RFID\",\"result\":\"GRANTED\"}")))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(accessLogs.count()).isEqualTo(before + 1);
+    }
+
+    @Test
+    void memberRemoteUnlockRequiresItsOwnExplicitPermission() {
+        assertThatThrownBy(() -> unlockService.unlock(userId, unitId))
+                .isInstanceOfSatisfying(BusinessException.class, ex -> assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN));
+        tx.executeWithoutResult(s -> memberships.findById(new UserAccessId(userId, unitId)).orElseThrow().setAllowRemoteUnlock(true));
+        var command = unlockService.unlock(userId, unitId);
+        assertThat(status(command.commandUuid())).isEqualTo(CommandStatus.SENT);
+        tx.executeWithoutResult(s -> memberships.findById(new UserAccessId(userId, unitId)).orElseThrow().setAllowRemoteUnlock(false));
+        assertThatThrownBy(() -> unlockService.unlock(userId, unitId)).isInstanceOf(BusinessException.class);
+    }
 
     @Test
     void pinChangesOnlyAfterAck() {

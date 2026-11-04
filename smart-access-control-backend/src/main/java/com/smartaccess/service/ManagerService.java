@@ -17,6 +17,10 @@ import java.util.Optional;
 @Service
 @Transactional(readOnly = true)
 public class ManagerService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private FaceEnrollmentService faceEnrollment;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private InvitationService invitationFlow;
     private final AccountRepository accounts;
     private final AccessUnitRepository units;
     private final UserAccessRepository memberships;
@@ -69,6 +73,7 @@ public class ManagerService {
     /** Thêm người chưa có ứng dụng: tạo tài khoản tối thiểu (mật khẩu mặc định 123456) rồi thêm thẳng vào cửa. */
     @Transactional
     public UnitUserResponse createMemberProfile(Long managerId, Long unitId, CreateMemberProfileRequest request) {
+        if(invitationFlow!=null)throw new BusinessException(HttpStatus.GONE,"Người dùng tự đăng ký tài khoản; chủ cửa gửi lời mời, không tạo tài khoản có mật khẩu chung");
         AccessUnit unit = validateManagerAccess(managerId, unitId, true);
         UserAccess membership = memberProfiles.create(unit, request);
         return UnitUserResponse.from(membership, request.room(), false, true);
@@ -83,6 +88,8 @@ public class ManagerService {
         }
         Device device = devices.findByDeviceUidForUpdate(code.trim())
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Device not found"));
+        if (device.getBootstrapSecretHash() != null)
+            throw new BusinessException(HttpStatus.CONFLICT, "Dùng mã kích hoạt riêng qua /api/activation/claim, không dùng device UID để nhận cửa");
         if (device.getAccessUnit() != null) {
             String message = unitId.equals(device.getAccessUnit().getUnitId())
                     ? "Device already belongs to this unit" : "Device already belongs to another unit";
@@ -103,6 +110,7 @@ public class ManagerService {
     /** Manager thêm thẳng thành viên (không có bảng lời mời); người đó có thể là manager của cửa khác. */
     @Transactional
     public UnitUserResponse addUser(Long managerId, Long unitId, Long userId) {
+        if(invitationFlow!=null)throw new BusinessException(HttpStatus.CONFLICT,"Gửi lời mời và chờ người nhận chấp nhận qua API invitations");
         AccessUnit unit = validateManagerAccess(managerId, unitId, true);
         Account user = requireAccount(userId, "User not found");
         if (user.isAdmin()) {
@@ -137,6 +145,8 @@ public class ManagerService {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "At least one permission is required");
         }
         Map<String, Object> before = permissionValues(membership);
+        if (Boolean.TRUE.equals(request.allowFace()) && faceEnrollment!=null && !faceEnrollment.hasApproval(userId,unitId))
+            throw new BusinessException(HttpStatus.CONFLICT,"Thành viên cần gửi yêu cầu khuôn mặt và được chủ cửa duyệt trước");
         if (request.allowFace() != null) { membership.setAllowFace(request.allowFace()); }
         if (request.allowFingerprint() != null) { membership.setAllowFingerprint(request.allowFingerprint()); }
         if (request.allowRfid() != null) { membership.setAllowRfid(request.allowRfid()); }

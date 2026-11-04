@@ -15,7 +15,11 @@ public class FaceController {
 
     @PostMapping("/requests")
     @ResponseStatus(HttpStatus.CREATED)
-    public RequestView create(@Valid @RequestBody CreateRequest request) { return service.create(request); }
+    public RequestView create(@Valid @RequestBody CreateRequest request) {
+        if(request.embedding()!=null || request.model()!=null) throw new org.springframework.web.server.ResponseStatusException(
+            HttpStatus.BAD_REQUEST,"Tải ảnh/video để đăng ký hồ sơ trước, sau đó gửi yêu cầu dùng hồ sơ tại cửa.");
+        return service.create(request);
+    }
 
     @GetMapping("/requests")
     public List<RequestView> list(@RequestParam(required = false) Long unitId) { return service.list(unitId); }

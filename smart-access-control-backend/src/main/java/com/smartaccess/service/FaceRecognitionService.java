@@ -13,6 +13,8 @@ import org.springframework.transaction.annotation.Transactional;
 /** Camera tin cậy nhận diện mẫu; chỉ máy chủ mới quyết định quyền mở cửa. */
 @Service
 public class FaceRecognitionService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private FaceEnrollmentService faceEnrollment;
     public static final String MODEL = "buffalo_l/w600k_r50:v1";
     private final DeviceRepository devices;
     private final CredentialRepository credentials;
@@ -72,8 +74,9 @@ public class FaceRecognitionService {
         else if (credential != null) {
             Account account = credential.getAccount();
             boolean owner = unit.getManager() != null && unit.getManager().getAccountId().equals(account.getAccountId());
-            boolean permitted = owner || memberships.findById(new UserAccessId(account.getAccountId(), unit.getUnitId()))
+            boolean permitted = memberships.findById(new UserAccessId(account.getAccountId(), unit.getUnitId()))
                     .map(UserAccess::isAllowFace).orElse(false);
+            if(faceEnrollment!=null)permitted=permitted && faceEnrollment.hasApproval(account.getAccountId(),unit.getUnitId());
             if (credential.getCredentialType() != CredentialType.FACE || credential.getStatus() != CredentialStatus.ACTIVE
                     || !MODEL.equals(credential.getEmbeddingModel())) reason = "CREDENTIAL_NOT_ACTIVE";
             else if (account.getStatus() != AccountStatus.ACTIVE || !permitted) reason = "ACCESS_REVOKED";

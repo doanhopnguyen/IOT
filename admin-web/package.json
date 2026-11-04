@@ -1,0 +1,1 @@
+{"name":"smartdoor-admin","private":true,"version":"1.0.0","type":"module","scripts":{"build":"node build.mjs"},"dependencies":{"qrcode":"1.5.4"},"devDependencies":{"esbuild":"0.25.12"}}

@@ -7,7 +7,8 @@ import { managerService } from '../services/api/managerService';
 import { colors } from '../theme/tokens';
 import { Button, Card } from './ui';
 import { FaceCapture } from './FaceCapture';
-import { FACE_MODEL } from '../services/face/faceMath';
+import type { ImagePickerAsset } from 'expo-image-picker';
+import { uploadFaceMedia } from '../services/api/faceMediaUpload';
 
 const message = (error: unknown) => error instanceof Error ? error.message : 'Không kết nối được hệ thống.';
 const emptyProfile: FaceProfile = { hasTemplate: false, credentialId: null, model: null };
@@ -60,9 +61,11 @@ function EnrollmentForm({ unitId, accountId, name, hasTemplate, onChanged }: {
   const [replace, setReplace] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [notice, setNotice] = useState('');
-  const submit = async (embedding: number[]) => {
+  const submit = async (asset: ImagePickerAsset) => {
     if (!consent) throw new Error('Cần đồng ý thu thập khuôn mặt trước khi gửi.');
-    const created = await faceService.create({ unitId, accountId, consent: true, model: FACE_MODEL, embedding });
+    if (accountId !== undefined) throw new Error('Thành viên cần tự đăng ký hồ sơ trong tài khoản của mình.');
+    await uploadFaceMedia(asset);
+    const created = await faceService.requestAccess(unitId);
     setCaptureOpen(false); setConsent(false); setReplace(false);
     setNotice(`Đã gửi mẫu cho yêu cầu #${created.id}. Mẫu có hiệu lực sau khi chủ cửa duyệt; máy chủ chỉ lưu đặc trưng khuôn mặt.`);
     onChanged();
@@ -72,7 +75,7 @@ function EnrollmentForm({ unitId, accountId, name, hasTemplate, onChanged }: {
     <Text style={s.caption}>Đăng ký một lần theo tài khoản. Camera chỉ nhận mẫu khi người này có quyền tại cửa tương ứng.</Text>
     {hasTemplate ? <><Text style={s.success}>Đã có mẫu; không cần đăng ký lại tại cửa khác.</Text>{accountId !== undefined ? <Text style={s.caption}>Chỉ thành viên được yêu cầu thay mẫu của mình. Chủ cửa quản lý quyền tại cửa này.</Text> : <View style={s.row}><Switch disabled={captureOpen} value={replace} onValueChange={setReplace} /><Text style={[s.caption, s.flex]}>Yêu cầu thay mẫu toàn tài khoản. Mẫu cũ vẫn có hiệu lực cho tới khi mẫu mới được duyệt.</Text></View>}</> : null}
     {(!hasTemplate || replace) ? <>
-      <Text style={s.caption}>Quét bằng camera trong app. Model chạy trên thiết bị của bạn, không gửi hoặc lưu ảnh trên máy chủ.</Text>
+      <Text style={s.caption}>Chọn ảnh/video hoặc chụp ảnh. Máy chủ xử lý hồ sơ; app không tải model. Chỉ chủ tài khoản được tải mẫu của mình.</Text>
       <View style={s.row}><Switch accessibilityLabel="Đồng ý thu thập khuôn mặt" disabled={captureOpen} value={consent} onValueChange={setConsent} /><Text style={[s.caption, s.flex]}>{accountId ? `Tôi xác nhận ${name} đồng ý đăng ký mẫu khuôn mặt và đồng bộ đến các cửa được cấp quyền.` : 'Tôi đồng ý đăng ký đặc trưng khuôn mặt và đồng bộ đến camera của các cửa được cấp quyền.'}</Text></View>
       {captureOpen ? <FaceCapture onSubmit={submit} onCancel={() => setCaptureOpen(false)} /> : <Button title={hasTemplate ? 'Quét để thay mẫu' : 'Quét khuôn mặt trong app'} disabled={!consent} onPress={() => { setNotice(''); setCaptureOpen(true); }} />}
     </> : null}
@@ -166,7 +169,7 @@ export function MemberFacePanel({ unitId, accountId, name, allowed, onChanged }:
       {loading ? <Text style={s.caption}>Đang tải trạng thái mẫu...</Text> : <Text style={profile.hasTemplate ? s.success : s.caption}>{profile.hasTemplate ? 'Đã có mẫu dùng chung. Camera của cửa này sẽ nhận mẫu khi được cấp quyền.' : 'Chưa có mẫu khuôn mặt đang hoạt động.'}</Text>}
       {error || permissionError ? <Text accessibilityRole="alert" style={s.error}>{permissionError || error}</Text> : null}
     </Card>
-    {!loading && !error ? unfinished(requests) ? <PendingNotice /> : <EnrollmentForm key={`${unitId}-${accountId}`} unitId={unitId} accountId={accountId} name={name} hasTemplate={profile.hasTemplate} onChanged={refresh} /> : null}
+    <Text style={s.caption}>Người dùng tự đăng ký khuôn mặt ở mục tài khoản và gửi yêu cầu cho cửa này. Chủ cửa duyệt yêu cầu bên dưới.</Text>
     {requests.map(item => <RequestCard key={item.id} item={item} manager onChanged={refresh} />)}
   </View>;
 }

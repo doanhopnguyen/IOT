@@ -1,4 +1,15 @@
-const baseUrl = resolveBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL?.replace(/\/$/, ''));
+let baseUrl = resolveBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL?.replace(/\/$/, ''));
+let serverRevision = 0;
+const activeRequests = new Set<AbortController>();
+const serverListeners = new Set<() => void>();
+export function getApiBaseUrl() { return baseUrl ?? ''; }
+export function onServerChange(listener: () => void) { serverListeners.add(listener); return () => { serverListeners.delete(listener); }; }
+export function setApiBaseUrl(origin: string) {
+  if (baseUrl === origin) return;
+  activeRequests.forEach(controller => controller.abort());
+  baseUrl = origin; serverRevision++; authorization = undefined; csrfToken = undefined;
+  serverListeners.forEach(listener => listener());
+}
 // Trên trình duyệt, cookie phiên (SameSite=Lax) chỉ được gửi khi backend cùng site với trang,
 // nên dùng hostname trang đang mở (localhost:8081 → localhost:8080) thay cho IP LAN trong .env.
 function resolveBaseUrl(configured?: string) {
@@ -29,9 +40,11 @@ export function apiUrl(path: string) {
 }
 // Token đổi sau khi đăng nhập, nên gọi lại sau login.
 export async function refreshCsrf() {
+  const revision = serverRevision;
   const response = await fetch(apiUrl('/api/auth/csrf'), { credentials: 'include', headers: { Accept: 'application/json' } });
   if (!response.ok) throw new ApiError(`Không lấy được CSRF token (lỗi ${response.status})`, response.status);
   const body = await response.json() as { token: string };
+  if (revision !== serverRevision) throw new Error('Máy chủ đã thay đổi, vui lòng đăng nhập lại.');
   csrfToken = body.token;
 }
 export function clearCsrf() {
@@ -42,11 +55,13 @@ function errorMessage(body: unknown, status: number) {
     if ('message' in body && typeof body.message === 'string') return body.message;
     if ('detail' in body && typeof body.detail === 'string') return body.detail;
   }
-  return `Backend trả lỗi ${status}`;
+  return `Dịch vụ trả về lỗi ${status}`;
 }
-export async function request<T>(path: string, init: RequestInit = {}, transport: typeof fetch = fetch): Promise<T> {
+export async function request<T>(path: string, init: RequestInit = {}, transport: typeof fetch = fetch, timeoutMs = 20000): Promise<T> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 20000);
+  const revision = serverRevision;
+  activeRequests.add(controller);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const headers = new Headers(init.headers);
     headers.set('Accept', 'application/json');
@@ -56,19 +71,22 @@ export async function request<T>(path: string, init: RequestInit = {}, transport
       if (!csrfToken) await refreshCsrf();
       if (csrfToken) headers.set('X-CSRF-TOKEN', csrfToken);
     }
+    if (revision !== serverRevision) throw new Error('Máy chủ đã thay đổi.');
     const response = await transport(apiUrl(path), { ...init, headers, credentials: 'include', signal: controller.signal });
+    if (revision !== serverRevision) throw new Error('Bỏ phản hồi từ máy chủ cũ.');
     if (!response.ok) {
-      if (response.status === 401 || response.status === 403) throw new ApiError('Chưa có phiên backend hợp lệ hoặc bạn không có quyền truy cập.', response.status);
+      if (response.status === 401 || response.status === 403) throw new ApiError('Phiên đăng nhập đã hết hạn hoặc bạn chưa có quyền truy cập.', response.status);
       const body: unknown = await response.json().catch(() => null);
       throw new ApiError(errorMessage(body, response.status), response.status);
     }
     if (response.status === 204) return undefined as T;
     return await response.json() as T;
   } catch (error) {
-    if (controller.signal.aborted) throw new Error('Backend không phản hồi trong 20 giây. Vui lòng thử lại.');
+    if (controller.signal.aborted) throw new Error('Dịch vụ chưa phản hồi. Kiểm tra kết nối Internet rồi thử lại.');
     throw error;
   } finally {
     clearTimeout(timer);
+    activeRequests.delete(controller);
   }
 }
 export interface PageResponse<T> { items: T[]; page: number; size: number; totalElements: number; hasNext: boolean; }

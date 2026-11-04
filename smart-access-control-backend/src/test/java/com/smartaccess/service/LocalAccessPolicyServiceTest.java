@@ -1,0 +1,42 @@
+package com.smartaccess.service;
+
+import com.smartaccess.model.*;
+import com.smartaccess.model.enumtype.*;
+import com.smartaccess.repository.*;
+import org.junit.jupiter.api.Test;
+import java.util.*;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+class LocalAccessPolicyServiceTest {
+    @Test
+    void snapshotFiltersLockedAccountsRevokedMembershipAndDisabledMethods() {
+        DeviceRepository devices = mock(DeviceRepository.class);
+        CredentialRepository credentials = mock(CredentialRepository.class);
+        UserAccessRepository memberships = mock(UserAccessRepository.class);
+        AccessUnit unit = new AccessUnit(); unit.setUnitId(1L);
+        Device device = new Device(); device.setDeviceId(2L); device.setAccessUnit(unit);
+        when(devices.findByDeviceUid("door")).thenReturn(Optional.of(device));
+        Account active = new Account(); active.setAccountId(3L);
+        Account locked = new Account(); locked.setAccountId(4L); locked.setStatus(AccountStatus.DISABLED);
+        Account removed = new Account(); removed.setAccountId(5L);
+        UserAccess a = new UserAccess(); a.setAccount(active); a.setAllowRfid(true); a.setAllowFingerprint(false);
+        UserAccess b = new UserAccess(); b.setAccount(locked); b.setAllowRfid(true);
+        when(memberships.findMembersByUnitId(1L)).thenReturn(List.of(a,b));
+        Credential c = card(active, "AA:BB"), d = card(locked, "CC:DD"), e = card(removed, "EE:FF");
+        Credential fp = card(active, null); fp.setLocalTemplateId((short) 7);
+        when(credentials.findByDevice_DeviceIdAndCredentialTypeAndStatus(2L, CredentialType.RFID, CredentialStatus.ACTIVE))
+                .thenReturn(List.of(c,d,e));
+        when(credentials.findByDevice_DeviceIdAndCredentialTypeAndStatus(2L, CredentialType.FINGERPRINT, CredentialStatus.ACTIVE))
+                .thenReturn(List.of(fp));
+        var service = new LocalAccessPolicyService(devices, credentials, memberships);
+        assertThat((List<?>)service.snapshot("door").get("rfid")).isEqualTo(List.of("AA:BB"));
+        assertThat((List<?>)service.snapshot("door").get("fingerprints")).isEmpty();
+        unit.setRfidEnabled(false);
+        assertThat((List<?>)service.snapshot("door").get("rfid")).isEmpty();
+        assertThat(service.snapshot("door")).doesNotContainKeys("accessPinHash", "passwordHash", "deviceSecret");
+    }
+    private Credential card(Account account, String uid) {
+        Credential c = new Credential(); c.setAccount(account); c.setRfidUid(uid); return c;
+    }
+}

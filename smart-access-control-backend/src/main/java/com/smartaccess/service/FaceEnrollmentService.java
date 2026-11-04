@@ -39,8 +39,8 @@ public class FaceEnrollmentService {
         Account target = accounts.findForUpdate(targetId).orElseThrow(() -> error(NOT_FOUND, "Không tìm thấy tài khoản."));
         AccessUnit unit = units.findById(input.unitId()).orElseThrow(() -> error(NOT_FOUND, "Không tìm thấy cửa."));
         if (!input.consent()) throw error(BAD_REQUEST, "Cần có sự đồng ý rõ ràng trước khi đăng ký khuôn mặt.");
-        if (!actor.getAccountId().equals(targetId) && !isManager(unit, actor.getAccountId()))
-            throw error(FORBIDDEN, "Chỉ chủ tài khoản hoặc chủ cửa mới được đăng ký khuôn mặt.");
+        if (!actor.getAccountId().equals(targetId))
+            throw error(FORBIDDEN, "Chỉ chính chủ tài khoản được đăng ký hoặc gửi yêu cầu khuôn mặt.");
         if (!actor.getAccountId().equals(targetId) && credentials.findByAccount_AccountId(targetId).stream()
                 .anyMatch(c -> c.getCredentialType() == CredentialType.FACE && c.getStatus() == CredentialStatus.ACTIVE))
             throw error(FORBIDDEN, "Chỉ chủ tài khoản mới được thay mẫu khuôn mặt dùng chung.");
@@ -49,17 +49,23 @@ public class FaceEnrollmentService {
         if (!memberships.existsById(new UserAccessId(targetId, unit.getUnitId()))) {
             if (!isManager(unit, targetId)) throw error(FORBIDDEN, "Tài khoản chưa là thành viên của cửa này.");
             UserAccess ownerMembership = new UserAccess();
-            ownerMembership.setAccount(target); ownerMembership.setAccessUnit(unit); ownerMembership.setAllowFace(true);
+            ownerMembership.setAccount(target); ownerMembership.setAccessUnit(unit); ownerMembership.setAllowFace(false);
             memberships.saveAndFlush(ownerMembership);
         }
         List<FaceRequest> pending = requests.findByAccount_AccountIdAndStatusIn(targetId,
                 List.of(FaceRequestStatus.PENDING, FaceRequestStatus.APPROVED));
-        if (!pending.isEmpty()) throw error(CONFLICT, "Tài khoản đang có yêu cầu đăng ký khuôn mặt chưa hoàn tất.");
-        byte[] embedding = FaceEmbedding.encode(input.model(), input.embedding());
-        Credential sample = new Credential();
-        sample.setAccount(target); sample.setCredentialType(CredentialType.FACE);
-        sample.setStatus(CredentialStatus.PENDING); sample.setEmbeddingModel(FaceEmbedding.MODEL);
-        sample.setFaceEmbedding(embedding); credentials.saveAndFlush(sample);
+        if (pending.stream().anyMatch(r -> r.getAccessUnit().getUnitId().equals(input.unitId())))
+            throw error(CONFLICT, "Cửa này đã có yêu cầu đang chờ.");
+        Credential sample;
+        if(input.embedding()==null) {
+            sample=active(targetId).orElseThrow(()->error(CONFLICT,"Đăng ký ảnh khuôn mặt một lần trước khi gửi yêu cầu"));
+        } else {
+            byte[] embedding = FaceEmbedding.encode(input.model(), input.embedding());
+            sample = new Credential();
+            sample.setAccount(target); sample.setCredentialType(CredentialType.FACE);
+            sample.setStatus(CredentialStatus.PENDING); sample.setEmbeddingModel(FaceEmbedding.MODEL);
+            sample.setFaceEmbedding(embedding); credentials.saveAndFlush(sample);
+        }
         FaceRequest request = new FaceRequest();
         request.setAccount(target); request.setAccessUnit(unit);
         request.setRequestType(active(targetId).isPresent() ? FaceRequestType.REENROLL : FaceRequestType.ENROLL);
@@ -87,14 +93,17 @@ public class FaceEnrollmentService {
         if (request.getStatus() != FaceRequestStatus.PENDING) throw error(CONFLICT, "Yêu cầu này đã được xử lý.");
         Credential sample = pendingSample(request).orElse(null);
         if (approved) {
-            if (sample == null || sample.getStatus() != CredentialStatus.PENDING)
+            if (sample == null || (sample.getStatus() != CredentialStatus.PENDING && sample.getStatus() != CredentialStatus.ACTIVE))
                 throw error(CONFLICT, "Cần quét khuôn mặt trong ứng dụng trước khi duyệt; hãy hủy yêu cầu cũ chưa có mẫu.");
             if (target.getStatus() != AccountStatus.ACTIVE) throw error(CONFLICT, "Tài khoản đã bị vô hiệu hóa.");
             UserAccess membership = memberships.findById(new UserAccessId(accountId, request.getAccessUnit().getUnitId()))
                     .orElseThrow(() -> error(CONFLICT, "Tài khoản không còn là thành viên của cửa này."));
             FaceEmbedding.decode(sample.getFaceEmbedding());
+            if(sample.getStatus()==CredentialStatus.ACTIVE && active(accountId).map(c->!c.getCredentialId().equals(sample.getCredentialId())).orElse(true))
+                throw error(CONFLICT,"Hồ sơ đã thay đổi, cần gửi yêu cầu mới");
             for (Credential old : credentials.findByAccount_AccountId(accountId)) {
-                if (old.getCredentialType() == CredentialType.FACE && old.getStatus() == CredentialStatus.ACTIVE) {
+                if (old.getCredentialType() == CredentialType.FACE && old.getStatus() == CredentialStatus.ACTIVE
+                        && !old.getCredentialId().equals(sample.getCredentialId())) {
                     old.setStatus(CredentialStatus.REVOKED); old.setRevokedAt(LocalDateTime.now());
                 }
             }
@@ -132,6 +141,27 @@ public class FaceEnrollmentService {
         return profileOf(current.requireAccount().getAccountId());
     }
 
+    @Transactional
+    public Profile registerProfile(ProfileInput input) {
+        Account actor=current.requireAccount();accounts.findForUpdate(actor.getAccountId()).orElseThrow();
+        if(!input.consent())throw error(BAD_REQUEST,"Cần đồng ý đăng ký khuôn mặt");
+        byte[] vector=FaceEmbedding.encode(input.model(),input.embedding());
+        for(Credential c:credentials.findByAccount_AccountId(actor.getAccountId()))
+            if(c.getCredentialType()==CredentialType.FACE){c.setStatus(CredentialStatus.REVOKED);c.setRevokedAt(LocalDateTime.now());}
+        for(UserAccess m:memberships.findByAccountWithUnit(actor.getAccountId()))m.setAllowFace(false);
+        for(FaceRequest r:requests.findByAccount_AccountIdAndStatusIn(actor.getAccountId(),List.of(FaceRequestStatus.PENDING,FaceRequestStatus.APPROVED)))r.setStatus(FaceRequestStatus.REJECTED);
+        Credential c=new Credential();c.setAccount(actor);c.setCredentialType(CredentialType.FACE);c.setEmbeddingModel(FaceEmbedding.MODEL);
+        c.setFaceEmbedding(vector);c.setStatus(CredentialStatus.ACTIVE);credentials.saveAndFlush(c);
+        return profileOf(actor.getAccountId());
+    }
+
+    public boolean hasApproval(Long accountId,Long unitId) {
+        Long activeId=active(accountId).map(Credential::getCredentialId).orElse(null);
+        return activeId!=null && requests.findByAccount_AccountIdOrderByRequestedAtDesc(accountId).stream()
+            .filter(r->r.getAccessUnit().getUnitId().equals(unitId) && r.getStatus()==FaceRequestStatus.COMPLETED)
+            .anyMatch(r->pendingSample(r).map(c->c.getCredentialId().equals(activeId)).orElse(false));
+    }
+
     public Profile profileForManager(Long accountId, Long unitId) {
         Account actor = current.requireAccount();
         AccessUnit unit = units.findById(unitId).orElseThrow(() -> error(NOT_FOUND, "Không tìm thấy cửa."));
@@ -160,6 +190,7 @@ public class FaceEnrollmentService {
                 List.of(FaceRequestStatus.PENDING, FaceRequestStatus.APPROVED))) {
             request.setStatus(FaceRequestStatus.REJECTED);
         }
+        for(UserAccess m:memberships.findByAccountWithUnit(actor.getAccountId()))m.setAllowFace(false);
         audit(actor, "REVOKE_FACE", actor.getAccountId(), Map.of());
     }
 
@@ -180,10 +211,8 @@ public class FaceEnrollmentService {
             for (UserAccess membership : memberships.findMembersByUnitId(unit.getUnitId()))
                 if (membership.isAllowFace() && membership.getAccount().getStatus() == AccountStatus.ACTIVE)
                     allowed.add(membership.getAccount().getAccountId());
-            if (unit.getManager() != null && unit.getManager().getStatus() == AccountStatus.ACTIVE)
-                allowed.add(unit.getManager().getAccountId());
             for (Long accountId : allowed)
-                active(accountId).ifPresent(c -> result.add(new Template(c.getCredentialId(), accountId, FaceEmbedding.decode(c.getFaceEmbedding()))));
+                if(hasApproval(accountId,unit.getUnitId()))active(accountId).ifPresent(c -> result.add(new Template(c.getCredentialId(), accountId, FaceEmbedding.decode(c.getFaceEmbedding()))));
         }
         return new Templates(FaceEmbedding.MODEL, result);
     }

@@ -27,11 +27,11 @@ public class DeviceAuthenticationService {
         if (uid == null || uid.length() > 64 || secret == null || secret.length() < 24 || secret.length() > 128)
             throw invalid();
         Device device = devices.findByDeviceUid(uid).orElseThrow(DeviceAuthenticationService::invalid);
-        if (device.getAccessUnit() == null || !ALLOWED.contains(device.getLifecycleStatus())
+        if ((device.getAccessUnit() == null && device.getBootstrapSecretHash() == null) || !ALLOWED.contains(device.getLifecycleStatus())
                 || device.getDeviceSecretHash() == null || !passwords.matches(secret, device.getDeviceSecretHash()))
             throw invalid();
         // Nạp cửa để có thể dùng quan hệ này sau khi giao dịch của bộ lọc kết thúc.
-        device.getAccessUnit().getUnitName();
+        if (device.getAccessUnit() != null) device.getAccessUnit().getUnitName();
         return device;
     }
 

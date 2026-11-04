@@ -22,6 +22,8 @@ import java.util.List;
 @Service
 @Transactional(readOnly = true)
 public class UnitService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private DeviceInventoryRepository inventory;
     private final AccountRepository accounts;
     private final AccessUnitRepository units;
     private final UserAccessRepository memberships;
@@ -47,8 +49,8 @@ public class UnitService {
         for (UserAccess membership : memberships.findByAccountWithUnit(accountId)) {
             if (membership.getAccessUnit().getManager() != null
                     && accountId.equals(membership.getAccessUnit().getManager().getAccountId())) continue;
-            // Mở cửa từ xa hiện chỉ dành cho manager (RemoteUnlockService)
-            result.add(toResponse(membership.getAccessUnit(), "USER", false));
+            result.add(toResponse(membership.getAccessUnit(), "USER",
+                    membership.isAllowRemoteUnlock() && membership.getAccessUnit().isRemoteUnlockEnabled()));
         }
         return result;
     }
@@ -86,7 +88,10 @@ public class UnitService {
         long memberCount = memberships.countByAccessUnit_UnitId(unit.getUnitId());
         if (unit.getManager() != null && memberships.existsById(new UserAccessId(unit.getManager().getAccountId(), unit.getUnitId())))
             memberCount = Math.max(0, memberCount - 1);
+        var state=inventory==null||device==null?null:inventory.findById(device.getDeviceId()).orElse(null);
         return new UnitResponse(unit.getUnitId(), unit.getUnitName(), role, online,
-                memberCount, canRemoteUnlock, lastSeen);
+                memberCount, canRemoteUnlock && (state==null||state.isSetupReady()) && (state==null||!state.getState().equals("RESETTING")), lastSeen,
+                online&&state!=null?state.getDoorClosed():null,online&&state!=null?state.getLatchReleased():null,
+                state==null?null:state.getState(),device==null?null:device.getDeviceUid());
     }
 }

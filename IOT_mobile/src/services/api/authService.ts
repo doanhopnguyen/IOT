@@ -31,7 +31,8 @@ export const authService = {
   },
   // Cookie phiên vẫn còn sau khi tải lại trang: dùng để khôi phục đăng nhập.
   me() { return request<AccountDto>('/api/accounts/me'); },
-  logout() {
-    clearCsrf();
+  async logout() {
+    try { await request<void>('/api/auth/logout', { method: 'POST' }); }
+    finally { clearCsrf(); }
   },
 };

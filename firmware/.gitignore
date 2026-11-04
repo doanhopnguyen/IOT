@@ -1,0 +1,3 @@
+.pio/
+include/smartdoor_config.h
+*.log

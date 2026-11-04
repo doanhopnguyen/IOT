@@ -20,6 +20,7 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
+      "output": "single",
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
@@ -29,7 +30,9 @@
           "cameraPermission": "Cho phép Smart Door dùng camera để đăng ký khuôn mặt.",
           "recordAudioAndroid": false
         }
-      ]
+      ],
+      "expo-router",
+      "expo-font"
     ]
   }
 }

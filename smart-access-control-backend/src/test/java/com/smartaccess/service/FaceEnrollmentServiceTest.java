@@ -142,11 +142,14 @@ class FaceEnrollmentServiceTest {
     }
     @Test void oneApprovedTemplateIsDistributedOnlyToAuthorizedDoors() {
         Credential active = sample(CredentialStatus.ACTIVE);
+        FaceRequest approval=request(active);approval.setStatus(FaceRequestStatus.COMPLETED);
+        when(requests.findByAccount_AccountIdOrderByRequestedAtDesc(2L)).thenReturn(List.of(approval));
         when(credentials.findByAccount_AccountId(2L)).thenReturn(List.of(active));
         membership.setAllowFace(true); when(memberships.findMembersByUnitId(10L)).thenReturn(List.of(membership));
         assertThat(service.templates("camera", "secret").templates()).extracting(Template::credentialId).containsExactly(20L);
-        unit.setUnitId(11L); when(memberships.findMembersByUnitId(11L)).thenReturn(List.of(membership));
-        assertThat(service.templates("camera", "secret").templates()).extracting(Template::credentialId).containsExactly(20L);
+        AccessUnit second=new AccessUnit();second.setUnitId(11L);second.setManager(owner);camera.setAccessUnit(second);
+        when(memberships.findMembersByUnitId(11L)).thenReturn(List.of(membership));
+        assertThat(service.templates("camera", "secret").templates()).isEmpty(); // Same profile needs a separate approval at this door.
         membership.setAllowFace(false); assertThat(service.templates("camera", "secret").templates()).isEmpty();
     }
     @Test void globalRevocationCancelsPendingSamplesAndRequests() {

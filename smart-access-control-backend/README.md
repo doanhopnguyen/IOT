@@ -1,7 +1,7 @@
 ﻿# Smart Access Control IoT — Backend
 
 Backend Spring Boot, Maven, Spring Data JPA, MySQL, Flyway và Lombok, package gốc `com.smartaccess`.
-Đã triển khai tầng database, một phần Manager API và phần tài khoản (đăng ký, đăng nhập, sửa thông tin, đổi mật khẩu, admin khóa/mở). Xác thực dùng HTTP session, giữ nguyên schema. Hướng dẫn chạy/kiểm tra tài khoản: [docs/account-api.md](docs/account-api.md); Manager API: [docs/manager-api.md](docs/manager-api.md). Giao tiếp thiết bị chưa triển khai.
+Đã có tài khoản/session/CSRF, Manager API, Face AI, điều khiển MQTT, đồng bộ quyền RFID/vân tay, ghi sự kiện offline chống trùng, quản trị thiết bị và WebSocket. Hướng dẫn tài khoản: [docs/account-api.md](docs/account-api.md); Manager API: [docs/manager-api.md](docs/manager-api.md); đấu nối và chạy toàn hệ thống: [../docs/integration.md](../docs/integration.md).
 
 ## Khởi chạy
 

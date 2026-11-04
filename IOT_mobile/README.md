@@ -1,5 +1,13 @@
 # Smart Door
 
+Mobile hiện dùng **Expo SDK 58**, React Native 0.88.1 và React 19.3. Mở bằng Expo Go 58 trên Android. Cần Node 22.13+, 24.3+ hoặc 26+; script của workspace ưu tiên Node 26 riêng trong `.local/node-runtime`.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\DEV\IOT\scripts\start-expo-go.ps1
+```
+
+Bật Tailscale trên điện thoại, quét QR hoặc mở `exp://100.111.90.116:8081`. App dùng dịch vụ cấu hình sẵn, mở thẳng đăng nhập; người mua không nhập backend. Quét QR sản phẩm để xem mạng thiết lập và mở trang chọn Wi-Fi tại cửa. Xem [hướng dẫn triển khai](../docs/HUONG_DAN_TRIEN_KHAI.md) để chạy backend/broker và cấu hình thiết bị.
+
 Ứng dụng di động Expo/React Native cho quản lý cửa thông minh. Toàn bộ giao diện mẫu dùng tiếng Việt và lớp dữ liệu demo được tách riêng, để có thể thay thế bằng backend thật.
 
 ## Chạy ứng dụng

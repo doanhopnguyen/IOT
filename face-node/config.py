@@ -32,6 +32,8 @@ class Config:
     mqtt_username: str = ""
     mqtt_password: str = ""
     mqtt_prefix: str = "smartdoor-iot"
+    mqtt_tls: bool = False
+    mqtt_ca: str = ""
     model_root: Path = Path("models")
     threshold: float = 0.50
     margin: float = 0.08
@@ -59,6 +61,8 @@ class Config:
             mqtt_username=os.getenv("MQTT_USERNAME", ""),
             mqtt_password=os.getenv("MQTT_PASSWORD", ""),
             mqtt_prefix=os.getenv("MQTT_TOPIC_PREFIX", cls.mqtt_prefix).strip("/"),
+            mqtt_tls=boolean("MQTT_TLS"),
+            mqtt_ca=os.getenv("MQTT_CA", ""),
             model_root=Path(os.getenv("FACE_MODEL_ROOT", "models")),
             threshold=float(os.getenv("FACE_THRESHOLD", "0.50")),
             margin=float(os.getenv("FACE_MARGIN", "0.08")),

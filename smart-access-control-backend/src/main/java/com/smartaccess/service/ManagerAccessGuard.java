@@ -15,6 +15,8 @@ import java.time.LocalDateTime;
 
 @Component
 public class ManagerAccessGuard {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private com.smartaccess.repository.DeviceInventoryRepository inventory;
     // Thiết bị được coi là online nếu có heartbeat trong 90 giây gần nhất
     static final long ONLINE_WINDOW_SEC = 90;
 
@@ -38,6 +40,17 @@ public class ManagerAccessGuard {
         return unit;
     }
 
+    public AccessUnit requireRemoteUnit(Long accountId, Long unitId) {
+        AccessUnit unit = units.findById(unitId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Cửa không tồn tại"));
+        if (unit.getManager() != null && unit.getManager().getAccountId().equals(accountId)) return unit;
+        boolean allowed = memberships.findById(new UserAccessId(accountId, unitId))
+                .filter(m -> m.getAccount().getStatus() == com.smartaccess.model.enumtype.AccountStatus.ACTIVE)
+                .map(com.smartaccess.model.UserAccess::isAllowRemoteUnlock).orElse(false);
+        if (!allowed) throw new BusinessException(HttpStatus.FORBIDDEN, "Bạn không có quyền mở cửa từ xa");
+        return unit;
+    }
+
     public void requireUserOfUnit(Long accountId, Long unitId) {
         if (!memberships.existsById(new UserAccessId(accountId, unitId))) {
             throw new BusinessException(HttpStatus.NOT_FOUND, "Người dùng không còn quyền truy cập cửa này");
@@ -47,6 +60,8 @@ public class ManagerAccessGuard {
     public Device requireOnlineController(Long unitId) {
         Device device = devices.findFirstByAccessUnit_UnitIdAndDeviceType(unitId, DeviceType.DOOR_CONTROLLER)
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Cửa chưa được gắn thiết bị"));
+        if(inventory!=null && inventory.findById(device.getDeviceId()).map(i->"RESETTING".equals(i.getState())).orElse(false))
+            throw new BusinessException(HttpStatus.CONFLICT,"Cửa đang reset; chờ hoàn tất trước khi gửi lệnh khác");
         LocalDateTime limit = LocalDateTime.now().minusSeconds(ONLINE_WINDOW_SEC);
         if (device.getLifecycleStatus() != DeviceLifecycleStatus.ACTIVE
                 || device.getLastSeenAt() == null

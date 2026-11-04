@@ -15,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.Locale;
 
-/** Gán thẻ RFID có sẵn cho thành viên; thẻ đã được cửa chấp nhận nên không cần gửi lệnh xuống thiết bị. */
+/** RFID changes are delivered in the next authenticated controller policy snapshot. */
 @Service
 public class RfidService {
     private final ManagerAccessGuard guard;
@@ -60,6 +60,8 @@ public class RfidService {
                 .filter(c -> c.getCredentialType() == CredentialType.RFID)
                 .filter(c -> c.getStatus() == CredentialStatus.ACTIVE)
                 .filter(c -> c.getAccount().getAccountId().equals(accountId))
+                .filter(c -> c.getDevice() != null && c.getDevice().getAccessUnit() != null
+                        && c.getDevice().getAccessUnit().getUnitId().equals(unitId))
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Thẻ RFID không tồn tại"));
         credential.setStatus(CredentialStatus.REVOKED);
         credential.setRevokedAt(LocalDateTime.now());

@@ -47,6 +47,8 @@ class FaceRecognitionFlowTest {
     @Autowired UserAccessRepository memberships;
     @Autowired CommandRepository commands;
     @Autowired AccessLogRepository logs;
+    @Autowired FaceRequestRepository faceRequests;
+    @Autowired AuditLogRepository audits;
     @Autowired TransactionTemplate tx;
     @Autowired JdbcTemplate jdbc;
     @Autowired ObjectMapper json;
@@ -67,6 +69,11 @@ class FaceRecognitionFlowTest {
             membership.setAllowFace(true); memberships.save(membership);
             Credential c = new Credential(); c.setAccount(member); c.setCredentialType(CredentialType.FACE);
             c.setEmbeddingModel(FaceEmbedding.MODEL); c.setFaceEmbedding(new byte[512 * Float.BYTES]); credentials.save(c);
+            FaceRequest approved=new FaceRequest();approved.setAccount(member);approved.setAccessUnit(unit);
+            approved.setRequestType(FaceRequestType.ENROLL);approved.setStatus(FaceRequestStatus.COMPLETED);faceRequests.saveAndFlush(approved);
+            AuditLog approvalLink=new AuditLog();approvalLink.setActor(member);approvalLink.setAction("REQUEST_FACE_ENROLLMENT");
+            approvalLink.setEntityType("FACE_REQUEST");approvalLink.setEntityId(approved.getRequestId());
+            approvalLink.setDetails(Map.of("credentialId",c.getCredentialId()));audits.saveAndFlush(approvalLink);
             accountId = member.getAccountId(); ownerId = owner.getAccountId(); unitId = unit.getUnitId();
             credentialId = c.getCredentialId(); cameraUid = camera.getDeviceUid(); controllerUid = controller.getDeviceUid();
         });

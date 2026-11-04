@@ -3,6 +3,7 @@ import { request } from './client';
 export interface UnitDto {
   unitId: number; unitName: string; role: 'OWNER' | 'USER'; online: boolean;
   memberCount: number; canRemoteUnlock: boolean; lastSeenAt: string | null;
+  doorClosed?: boolean | null; latchReleased?: boolean | null; activationState?: string; deviceUid?: string;
 }
 export const unitService = {
   listMine() { return request<UnitDto[]>('/api/units'); },
@@ -17,7 +18,8 @@ export const unitService = {
 export function toDoor(unit: UnitDto): Door {
   return {
     id: String(unit.unitId), name: unit.unitName, role: unit.role,
-    connectivity: unit.online ? 'ONLINE' : 'OFFLINE', lockState: 'LOCKED',
+    connectivity: unit.online ? 'ONLINE' : 'OFFLINE', lockState: unit.latchReleased == null ? 'UNKNOWN' : unit.latchReleased ? 'UNLOCKED' : 'LOCKED',
+    doorClosed: unit.doorClosed ?? null, activationState: unit.activationState, deviceUid: unit.deviceUid,
     members: unit.memberCount, canRemoteUnlock: unit.canRemoteUnlock,
     lastUpdate: unit.lastSeenAt ? new Date(unit.lastSeenAt).toLocaleString('vi-VN') : 'Chưa kết nối',
   };

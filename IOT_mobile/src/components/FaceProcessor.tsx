@@ -5,7 +5,7 @@ import { WebView } from 'react-native-webview';
 import { normalize, type FaceEngine } from '../services/face/faceMath';
 
 export function FaceProcessor({ onReady, onError }: { onReady: (engine: FaceEngine) => void; onError: (message: string) => void }) {
-  const view = useRef<WebView>(null);
+  const view = useRef<WebView<unknown>>(null);
   const sequence = useRef(0);
   const pending = useRef(new Map<number, { resolve: (values: number[]) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>());
   const host = Constants.expoConfig?.hostUri;
@@ -28,7 +28,7 @@ export function FaceProcessor({ onReady, onError }: { onReady: (engine: FaceEngi
     view.current?.postMessage(JSON.stringify({ type: 'EXTRACT', id, image }));
   });
   return <View pointerEvents="none" style={{ width: 1, height: 1, opacity: 0, overflow: 'hidden' }}>
-    <WebView ref={view} source={{ uri: source }} style={{ width: 1, height: 1 }} javaScriptEnabled
+    <WebView<unknown> ref={view} source={{ uri: source }} style={{ width: 1, height: 1 }} javaScriptEnabled
       originWhitelist={[new URL(source).origin]}
       onShouldStartLoadWithRequest={request => request.url === source || request.url === 'about:blank'}
       onError={() => onError('Không mở được model nhận diện. Kiểm tra kết nối tới máy chạy ứng dụng web.')}

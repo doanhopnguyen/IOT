@@ -8,6 +8,6 @@ public record DeviceResponse(Long deviceId, String deviceCode, String deviceName
         DeviceType deviceType, DeviceLifecycleStatus lifecycleStatus) {
     public static DeviceResponse from(Device device) {
         return new DeviceResponse(device.getDeviceId(), device.getDeviceUid(), device.getDeviceName(),
-                device.getAccessUnit().getUnitId(), device.getDeviceType(), device.getLifecycleStatus());
+                device.getAccessUnit() == null ? null : device.getAccessUnit().getUnitId(), device.getDeviceType(), device.getLifecycleStatus());
     }
 }

@@ -20,6 +20,12 @@ const id = (value: number) => {
 export function createFaceService(transport: Transport = request) {
   return {
     profile() { return transport<FaceProfile>('/api/faces/me'); },
+    registerProfile(embedding: number[]) {
+      return transport<FaceProfile>('/api/faces/me', { ...post({ consent: true, model: 'buffalo_l/w600k_r50:v1', embedding }), method: 'PUT' });
+    },
+    requestAccess(unitId: number) {
+      return transport<FaceRequestDto>('/api/faces/requests', post({ unitId: id(unitId), consent: true }));
+    },
     memberProfile(unitId: number, accountId: number) {
       return transport<FaceProfile>(`/api/faces/accounts/${id(accountId)}?unitId=${id(unitId)}`);
     },

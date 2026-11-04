@@ -1,0 +1,19 @@
+user backend
+topic read smartdoor-iot/+/status
+topic read smartdoor-iot/+/ack
+topic read smartdoor-iot/+/access
+topic read smartdoor-iot/+/face
+topic write smartdoor-iot/+/cmd
+topic write smartdoor-iot/+/config
+topic write smartdoor-iot/+/access-ack
+topic write smartdoor-iot/+/ack-confirm
+
+# Each device's broker username must equal its UID.
+pattern write smartdoor-iot/%u/status
+pattern write smartdoor-iot/%u/ack
+pattern write smartdoor-iot/%u/access
+pattern write smartdoor-iot/%u/face
+pattern read smartdoor-iot/%u/cmd
+pattern read smartdoor-iot/%u/config
+pattern read smartdoor-iot/%u/access-ack
+pattern read smartdoor-iot/%u/ack-confirm

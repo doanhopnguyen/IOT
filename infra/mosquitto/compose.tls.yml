@@ -1,0 +1,14 @@
+services:
+  mqtt:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "8883:8883"
+    volumes:
+      - ./mosquitto.tls.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./acl:/mosquitto/config/acl:ro
+      - ./private/passwords:/mosquitto/config/passwords:ro
+      - ./private/certs:/mosquitto/certs:ro
+      - mqtt-data:/mosquitto/data
+volumes:
+  mqtt-data:
