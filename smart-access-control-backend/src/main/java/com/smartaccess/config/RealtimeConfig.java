@@ -68,12 +68,16 @@ public class RealtimeConfig implements WebSocketConfigurer {
                 }
                 Object context = http.getAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY);
                 if (!(context instanceof SecurityContext security) || security.getAuthentication() == null
-                        || !(security.getAuthentication().getPrincipal() instanceof AccountPrincipal principal)
-                        || accounts.findById(principal.accountId()).filter(a -> a.getStatus() == AccountStatus.ACTIVE).isEmpty()) {
+                        || !(security.getAuthentication().getPrincipal() instanceof AccountPrincipal principal)) {
                     socket.close(CloseStatus.POLICY_VIOLATION); sessions.remove(socket.getId()); continue;
                 }
                 long current = revision.get();
                 if (!Objects.equals(socket.getAttributes().get("revision"), current)) {
+                    // Khóa tài khoản / đổi mật khẩu đã làm phiên hết hạn (kiểm tra ở trên mỗi giây);
+                    // chỉ đọc DB khi thật sự sắp gửi, không phải mỗi giây cho mỗi socket.
+                    if (accounts.findById(principal.accountId()).filter(a -> a.getStatus() == AccountStatus.ACTIVE).isEmpty()) {
+                        socket.close(CloseStatus.POLICY_VIOLATION); sessions.remove(socket.getId()); continue;
+                    }
                     socket.sendMessage(new TextMessage("{\"type\":\"refresh\"}"));
                     socket.getAttributes().put("revision", current);
                 }

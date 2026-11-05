@@ -75,7 +75,7 @@ class ModuleServiceTest {
         Account stranger = new Account();
         stranger.setAccountId(8L);
         when(current.requireAccount()).thenReturn(stranger);
-        var service = new AlertService(repository, devices, current);
+        var service = new AlertService(repository, devices, current, mock(AuditLogRepository.class));
         assertThatThrownBy(() -> service.detail(1L)).isInstanceOfSatisfying(ResponseStatusException.class,
                 e -> assertThat(e.getStatusCode().value()).isEqualTo(403));
         assertThatThrownBy(() -> service.recordForManager(input())).isInstanceOf(ResponseStatusException.class);
@@ -91,7 +91,7 @@ class ModuleServiceTest {
             Event e = invocation.getArgument(0); e.setEventId(4L); return e;
         }
         );
-        var service = new AlertService(repository, devices, current);
+        var service = new AlertService(repository, devices, current, mock(AuditLogRepository.class));
         var result = service.recordForManager(input());
         assertThat(result.severity()).isEqualTo(EventSeverity.CRITICAL);
         assertThat(result.status()).isEqualTo(AlertStatus.OPEN);
@@ -102,6 +102,38 @@ class ModuleServiceTest {
         assertThat(service.recordForManager(input()).id()).isEqualTo(4L);
         verify(repository, times(1)).save(any());
     }
+    @Test
+    void ownerAcknowledgesThenResolvesAndCannotReopen() {
+        EventRepository repository = mock(EventRepository.class);
+        AuditLogRepository audits = mock(AuditLogRepository.class);
+        Event event = new Event();
+        event.setDevice(device); event.setEventId(1L); event.setEventType("DEVICE_OFFLINE");
+        event.setSeverity(EventSeverity.WARNING); event.setAlertStatus(AlertStatus.OPEN);
+        when(repository.findById(1L)).thenReturn(Optional.of(event));
+        var service = new AlertService(repository, mock(DeviceRepository.class), current, audits);
+        assertThat(service.updateStatus(1L, AlertStatus.ACKNOWLEDGED).status()).isEqualTo(AlertStatus.ACKNOWLEDGED);
+        assertThat(service.updateStatus(1L, AlertStatus.RESOLVED).status()).isEqualTo(AlertStatus.RESOLVED);
+        assertThatThrownBy(() -> service.updateStatus(1L, AlertStatus.ACKNOWLEDGED)).isInstanceOfSatisfying(
+                ResponseStatusException.class, e -> assertThat(e.getStatusCode().value()).isEqualTo(409));
+        assertThatThrownBy(() -> service.updateStatus(1L, AlertStatus.OPEN)).isInstanceOfSatisfying(
+                ResponseStatusException.class, e -> assertThat(e.getStatusCode().value()).isEqualTo(409));
+        verify(audits, times(2)).save(any());
+    }
+
+    @Test
+    void foreignManagerCannotChangeAlertStatus() {
+        EventRepository repository = mock(EventRepository.class);
+        Event event = new Event();
+        event.setDevice(device); event.setEventId(1L); event.setAlertStatus(AlertStatus.OPEN);
+        when(repository.findById(1L)).thenReturn(Optional.of(event));
+        Account stranger = new Account(); stranger.setAccountId(8L);
+        when(current.requireAccount()).thenReturn(stranger);
+        var service = new AlertService(repository, mock(DeviceRepository.class), current, mock(AuditLogRepository.class));
+        assertThatThrownBy(() -> service.updateStatus(1L, AlertStatus.RESOLVED)).isInstanceOfSatisfying(
+                ResponseStatusException.class, e -> assertThat(e.getStatusCode().value()).isEqualTo(403));
+        assertThat(event.getAlertStatus()).isEqualTo(AlertStatus.OPEN);
+    }
+
     private EventInput input() {
         return new EventInput(9L,
                 "12345678-1234-1234-1234-123456789abc",

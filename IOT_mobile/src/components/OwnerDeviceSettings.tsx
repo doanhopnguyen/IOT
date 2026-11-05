@@ -4,6 +4,7 @@ import { request } from '../services/api/client';
 import { Button, Card, Input } from './ui';
 import type { InventoryDevice } from './ActivationWizard';
 import { CameraNodeSettings } from './CameraNodeSettings';
+import { DoorDashboard } from './DoorDashboard';
 
 export function OwnerDeviceSettings({ unitId, back }: { unitId: number; back: () => void }) {
   const [device, setDevice] = useState<InventoryDevice>(); const [password, setPassword] = useState('');
@@ -14,6 +15,7 @@ export function OwnerDeviceSettings({ unitId, back }: { unitId: number; back: ()
   const act = async (fn: () => Promise<void>) => { setBusy(true); try { await fn(); } catch (e) { setMessage(e instanceof Error ? e.message : 'Lỗi kết nối.'); } finally { setBusy(false); } };
   return <ScrollView contentContainerStyle={{ padding: 22, gap: 16, paddingBottom: 100 }}><Button title="← Quay lại" variant="ghost" onPress={back} /><Text style={{ fontSize: 25, fontWeight: '700' }}>Cài đặt cửa</Text>
     <Card><Text>{device ? `${device.deviceUid} · ${device.state}` : 'Đang lấy thông tin thiết bị...'}</Text><Text>Cánh cửa: {device?.doorClosed == null ? 'Chưa có dữ liệu' : device.doorClosed ? 'Đóng' : 'Mở'} · Lệnh chốt: {device?.latchReleased == null ? 'Không rõ' : device.latchReleased ? 'Nhả' : 'Khóa'}</Text><Button title="Cập nhật trạng thái" disabled={busy} onPress={() => { void act(reload); }} /><Button title="Trang Wi-Fi tại cửa" variant="ghost" onPress={() => { void Linking.openURL('http://192.168.4.1'); }} /></Card>
+    <DoorDashboard unitId={unitId} />
     <Card><Text>Đổi PIN mở cửa (không xem lại PIN cũ)</Text><Input value={pin} onChangeText={setPin} secureTextEntry keyboardType="numeric" placeholder="6 số mới" /><Button title="Gửi yêu cầu đổi PIN" disabled={busy || !/^\d{6}$/.test(pin)} onPress={() => { void act(async () => { await request(`/api/manager/units/${unitId}/pin`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin, confirmPin: pin }) }); setPin(''); setMessage('Đã gửi yêu cầu; chỉ áp dụng khi thiết bị ACK.'); }); }} /></Card>
     <Card><Text style={{ fontWeight: '700', color: '#b91c1c' }}>Reset toàn bộ / Chuyển giao</Text><Text>Xóa dữ liệu cửa, PIN, Wi-Fi, thẻ, vân tay, thành viên và lịch sử. Không thể khôi phục. Nhập email người nhận nếu chuyển giao; để trống nếu chỉ reset.</Text>
       <Input value={recipientEmail} onChangeText={setRecipient} placeholder="Email người nhận (nếu có)" />

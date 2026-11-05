@@ -5,6 +5,8 @@ import com.smartaccess.model.enumtype.*;
 import com.smartaccess.repository.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.persistence.EntityManager;
+import com.smartaccess.config.RealtimeConfig;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,12 +32,18 @@ public class DeploymentService {
     private final PasswordEncoder passwords;
     private final ManagerAccessGuard guard;
     private final DeviceCommandService commands;
+    private final CommandRepository commandRows;
+    private final ApplicationEventPublisher events;
     private final EntityManager em;
+    public static final String RESET_COMMAND="DEVICE_RESET";
+    private static final String RESET_VERIFIED="RESET_EMPTY_VERIFIED";
+    private static final int AUDIT_PAGE=500;
     public DeploymentService(DeviceInventoryRepository inventory,DeviceRepository devices,AccessUnitRepository units,
         AccountRepository accounts,CurrentAccountService current,PasswordEncoder passwords,ManagerAccessGuard guard,
-        DeviceCommandService commands,EntityManager em) {
+        DeviceCommandService commands,CommandRepository commandRows,ApplicationEventPublisher events,EntityManager em) {
         this.inventory=inventory;this.devices=devices;this.units=units;this.accounts=accounts;
-        this.current=current;this.passwords=passwords;this.guard=guard;this.commands=commands;this.em=em;
+        this.current=current;this.passwords=passwords;this.guard=guard;this.commands=commands;
+        this.commandRows=commandRows;this.events=events;this.em=em;
     }
     public static String digest(String value) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))); }
@@ -111,7 +119,7 @@ public class DeploymentService {
             i.setRecipientId(receiver.getAccountId());
         } else i.setRecipientId(null);
         String uuid=UUID.randomUUID().toString();i.setOperationUuid(uuid);i.setOperationActorId(a.getAccountId());i.setOperationGeneration(i.getGeneration());i.setState("RESETTING");
-        commands.dispatchWithUuid(d,a.getAccountId(),"DEVICE_RESET",Map.of("unitId",d.getAccessUnit().getUnitId()),
+        commands.dispatchWithUuid(d,a.getAccountId(),RESET_COMMAND,Map.of("unitId",d.getAccessUnit().getUnitId()),
             Map.of("generation",i.getGeneration(),"nextGeneration",i.getGeneration()+1),uuid);
         return view(i);
     }
@@ -120,6 +128,8 @@ public class DeploymentService {
         DeviceInventory i=inventory.lock(d.getDeviceId()).orElse(null);
         if(i==null) return Map.of();
         if(state.path("generation").asLong(-1)!=i.getGeneration()) return Map.of("generation",i.getGeneration(),"generationMismatch",true);
+        // Chỉ báo client làm mới khi trạng thái người dùng thấy được thay đổi, không phải mỗi heartbeat.
+        List<Object> before=Arrays.asList(i.getDoorClosed(),i.getLatchReleased(),i.getState(),i.isSetupReady());
         if(state.has("doorClosed"))i.setDoorClosed(state.hasNonNull("doorClosed")?state.path("doorClosed").asBoolean():null);
         if(state.has("unlocked"))i.setLatchReleased(state.path("unlocked").asBoolean());
         i.setStateUpdatedAt(LocalDateTime.now());
@@ -129,6 +139,8 @@ public class DeploymentService {
             boolean ready=localReady && d.getAccessUnit()!=null && d.getAccessUnit().isPinEnabled();
             i.setSetupReady(ready);i.setState(ready?"ACTIVE":"CLAIMED");
         }
+        if(!before.equals(Arrays.asList(i.getDoorClosed(),i.getLatchReleased(),i.getState(),i.isSetupReady())))
+            events.publishEvent(new RealtimeConfig.DeviceUpdated());
         Map<String,Object> out=new LinkedHashMap<>();out.put("generation",i.getGeneration());
         out.put("activationState",i.getState());out.put("claimed",d.getAccessUnit()!=null);
         if(i.getState().equals("RESETTING"))out.put("resetCommand",i.getOperationUuid());
@@ -139,28 +151,33 @@ public class DeploymentService {
         if(i==null)return true;
         long gen=message.path("generation").asLong(-1);
         if(gen==i.getGeneration())return true;
+        // Ack thất bại không thay đổi dữ liệu, nên vẫn nhận để lệnh bị firmware từ chối
+        // (ví dụ GENERATION_MISMATCH) chuyển FAILED thay vì treo SENT; handleAck kiểm tra lệnh thuộc thiết bị.
+        if(message.hasNonNull("commandUuid") && message.has("success") && !message.path("success").asBoolean(true))return true;
         return message.has("commandUuid") && Objects.equals(i.getOperationUuid(),message.path("commandUuid").asText())
             && Objects.equals(i.getOperationGeneration(),gen);
     }
+    /**
+     * Trả true khi ack đã được xử lý trọn vẹn tại đây (gateway gửi ack-confirm, bỏ qua handleAck).
+     * Reset thất bại hoặc thiếu bằng chứng thì đưa cửa về CLAIMED thay vì kẹt RESETTING; operationUuid được giữ
+     * để một ack RESET_EMPTY_VERIFIED đến muộn (thiết bị thật sự đã xóa) vẫn hoàn tất được việc dọn dữ liệu.
+     */
     public boolean resetAck(String uid,JsonNode message) {
         Device d=devices.findByDeviceUidForUpdate(uid).orElseThrow();
         DeviceInventory i=inventory.lock(d.getDeviceId()).orElse(null);
-        if(i==null || !Objects.equals(i.getOperationUuid(),message.path("commandUuid").asText()))return false;
+        String uuid=message.path("commandUuid").asText();
+        if(i==null || !Objects.equals(i.getOperationUuid(),uuid))return false;
         if(i.getState().equals("INVENTORY"))return true; // Idempotent late ACK after a committed cleanup.
-        if(!i.getState().equals("RESETTING") || !message.path("success").asBoolean())return false;
-        if(!"RESET_EMPTY_VERIFIED".equals(message.path("message").asText()))throw error(CONFLICT,"Reset chưa có bằng chứng xóa đầy đủ");
+        if(!message.path("success").asBoolean()) {abortReset(i);return false;}
+        if(!RESET_VERIFIED.equals(message.path("message").asText())) {
+            abortReset(i);failCommand(uuid,"Reset chưa có bằng chứng xóa đầy đủ");return true;
+        }
+        if(!Set.of("RESETTING","CLAIMED","ACTIVE").contains(i.getState()))return false;
         AccessUnit u=d.getAccessUnit();Long unitId=u==null?null:u.getUnitId();
         if(unitId!=null) {
             var requestIds=em.createQuery("select r.requestId from FaceRequest r where r.accessUnit.unitId=:id",Long.class).setParameter("id",unitId).getResultList();
             var credentialIds=em.createQuery("select c.credentialId from Credential c where c.device.accessUnit.unitId=:id",Long.class).setParameter("id",unitId).getResultList();
-            for(AuditLog audit:em.createQuery("select a from AuditLog a",AuditLog.class).getResultList()) {
-                Object linked=audit.getDetails()==null?null:audit.getDetails().get("unitId");
-                boolean linkedUnit=linked!=null && unitId.toString().equals(linked.toString());
-                boolean linkedRequest="FACE_REQUEST".equals(audit.getEntityType()) && requestIds.contains(audit.getEntityId());
-                boolean linkedCredential="CREDENTIAL".equals(audit.getEntityType()) && credentialIds.contains(audit.getEntityId());
-                if(linkedUnit||linkedRequest||linkedCredential)em.remove(audit);
-            }
-            em.flush();
+            deleteLinkedAudits(u,new HashSet<>(requestIds),new HashSet<>(credentialIds));
             em.createQuery("delete from DoorInvitation i where i.unit.unitId=:id").setParameter("id",unitId).executeUpdate();
             // Delete in FK order, preserving global accounts/FACE profiles and other doors.
             em.createQuery("delete from AccessLog l where l.accessUnit.unitId=:id").setParameter("id",unitId).executeUpdate();
@@ -178,6 +195,49 @@ public class DeploymentService {
         }
         i.setGeneration(i.getGeneration()+1);i.setSetupReady(false);i.setDoorClosed(null);i.setLatchReleased(null);i.setState("INVENTORY");i.setClaimHash(null);
         return true;
+    }
+    /** Gọi khi lệnh DEVICE_RESET bị đánh TIMEOUT: thiết bị không phản hồi thì cửa không được kẹt ở RESETTING. */
+    public void expireReset(Long deviceId,String uuid) {
+        inventory.lock(deviceId).filter(i->Objects.equals(i.getOperationUuid(),uuid)).ifPresent(this::abortReset);
+    }
+    private void abortReset(DeviceInventory i) {
+        if(!i.getState().equals("RESETTING"))return;
+        // Heartbeat kế tiếp tính lại ACTIVE/CLAIMED qua wireConfig từ localReady và PIN.
+        i.setState("CLAIMED");i.setSetupReady(false);
+        events.publishEvent(new RealtimeConfig.DeviceUpdated());
+    }
+    private void failCommand(String uuid,String message) {
+        commandRows.findForUpdate(uuid).ifPresent(c->{
+            if(c.getStatus()!=CommandStatus.PENDING && c.getStatus()!=CommandStatus.SENT && c.getStatus()!=CommandStatus.TIMEOUT)return;
+            c.setStatus(CommandStatus.FAILED);c.setAcknowledgedAt(LocalDateTime.now());c.setResultMessage(message);
+        });
+    }
+    /**
+     * Xóa audit log gắn với cửa mà không nạp cả bảng: chỉ quét bản ghi tạo sau khi cửa tồn tại, theo trang
+     * và dạng projection (không đưa entity vào persistence context). Không dùng hàm JSON của MySQL để vẫn chạy trên H2.
+     */
+    private void deleteLinkedAudits(AccessUnit u,Set<Long> requestIds,Set<Long> credentialIds) {
+        String unitId=u.getUnitId().toString();
+        LocalDateTime since=u.getCreatedAt()==null?LocalDateTime.of(1970,1,1,0,0):u.getCreatedAt().minusMinutes(1);
+        List<Long> doomed=new ArrayList<>();long cursor=0;
+        while(true) {
+            List<Object[]> page=em.createQuery("select a.auditLogId,a.entityType,a.entityId,a.details from AuditLog a "
+                    +"where a.createdAt>=:since and a.auditLogId>:cursor order by a.auditLogId",Object[].class)
+                .setParameter("since",since).setParameter("cursor",cursor).setMaxResults(AUDIT_PAGE).getResultList();
+            for(Object[] row:page) {
+                Long id=(Long)row[0];String type=(String)row[1];Long entityId=(Long)row[2];
+                Object linked=row[3] instanceof Map<?,?> details?details.get("unitId"):null;
+                boolean linkedUnit=linked!=null && unitId.equals(linked.toString());
+                boolean linkedRequest="FACE_REQUEST".equals(type) && requestIds.contains(entityId);
+                boolean linkedCredential="CREDENTIAL".equals(type) && credentialIds.contains(entityId);
+                if(linkedUnit||linkedRequest||linkedCredential)doomed.add(id);
+                cursor=id;
+            }
+            if(page.size()<AUDIT_PAGE)break;
+        }
+        for(int from=0;from<doomed.size();from+=AUDIT_PAGE)
+            em.createQuery("delete from AuditLog a where a.auditLogId in :ids")
+                .setParameter("ids",doomed.subList(from,Math.min(from+AUDIT_PAGE,doomed.size()))).executeUpdate();
     }
     public Issued issueAfterReset(String uid,String password) {
         Device d=devices.findByDeviceUidForUpdate(uid).orElseThrow();Account actor=current.requireAccount();

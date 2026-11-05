@@ -5,6 +5,7 @@ import com.smartaccess.model.enumtype.CommandStatus;
 import com.smartaccess.repository.CommandRepository;
 import com.smartaccess.repository.AccessLogRepository;
 import com.smartaccess.model.enumtype.AccessResult;
+import com.smartaccess.service.DeploymentService;
 import com.smartaccess.service.RemoteUnlockService;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -19,9 +20,10 @@ public class CommandTimeoutScheduler {
 
     private final CommandRepository commands;
     private final AccessLogRepository logs;
+    private final DeploymentService deployment;
 
-    public CommandTimeoutScheduler(CommandRepository commands, AccessLogRepository logs) {
-        this.commands = commands; this.logs = logs;
+    public CommandTimeoutScheduler(CommandRepository commands, AccessLogRepository logs, DeploymentService deployment) {
+        this.commands = commands; this.logs = logs; this.deployment = deployment;
     }
 
     @Scheduled(fixedDelay = 5000)
@@ -41,6 +43,9 @@ public class CommandTimeoutScheduler {
                         logs.findByAccessUuid(locked.getCommandUuid()).ifPresent(log -> {
                             log.setResult(AccessResult.ERROR); log.setReasonCode("ACK_TIMEOUT");
                         });
+                    }
+                    if (DeploymentService.RESET_COMMAND.equals(locked.getCommandType())) {
+                        deployment.expireReset(locked.getDevice().getDeviceId(), locked.getCommandUuid());
                     }
                 });
     }

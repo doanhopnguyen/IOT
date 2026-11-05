@@ -10,17 +10,20 @@ import com.smartaccess.model.enumtype.CredentialType;
 import com.smartaccess.repository.AccessLogRepository;
 import com.smartaccess.repository.CredentialRepository;
 import com.smartaccess.repository.DeviceRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
-import java.util.UUID;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.List;
 
-/** Ghi lượt quét vân tay mà thiết bị đã tự so khớp tại chỗ. */
+/**
+ * Ghi lượt ra vào mà thiết bị đã tự quyết định tại chỗ (vân tay, RFID, PIN).
+ * IllegalArgumentException nghĩa là sự kiện hỏng vĩnh viễn: gửi lại cũng không hợp lệ hơn.
+ */
 @Service
 public class AccessEventService {
-    private static final Logger log = LoggerFactory.getLogger(AccessEventService.class);
+    private static final ZoneId ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
 
     private final DeviceRepository devices;
     private final CredentialRepository credentials;
@@ -54,63 +57,42 @@ public class AccessEventService {
         }
         if (device.getAccessUnit() == null) throw new IllegalArgumentException("Unassigned controller");
         Credential credential = null;
-        if (method != AccessMethod.PIN) {
-            CredentialType type = method == AccessMethod.RFID ? CredentialType.RFID : CredentialType.FINGERPRINT;
+        if (method == AccessMethod.FINGERPRINT) {
+            int templateId = event.path("templateId").asInt(-1);
+            if (templateId > 0 && templateId <= Short.MAX_VALUE)
+                credential = credentials.findFirstByDevice_DeviceIdAndCredentialTypeAndLocalTemplateIdAndStatus(
+                        device.getDeviceId(), CredentialType.FINGERPRINT, (short) templateId, CredentialStatus.ACTIVE)
+                        .orElse(null);
+        } else if (method == AccessMethod.RFID) {
+            // UID thẻ có thể được lưu kèm dấu ":" hoặc "-", nên so khớp sau khi chuẩn hóa.
+            String rfidUid = normalizeUid(event.path("rfidUid").asText());
             credential = credentials.findByDevice_DeviceIdAndCredentialTypeAndStatus(
-                    device.getDeviceId(), type, CredentialStatus.ACTIVE).stream().filter(c ->
-                    method == AccessMethod.RFID
-                            ? normalizeUid(c.getRfidUid()).equals(normalizeUid(event.path("rfidUid").asText()))
-                            : c.getLocalTemplateId() != null && c.getLocalTemplateId().intValue() == event.path("templateId").asInt(-1))
-                    .findFirst().orElse(null);
+                    device.getDeviceId(), CredentialType.RFID, CredentialStatus.ACTIVE).stream()
+                    .filter(c -> normalizeUid(c.getRfidUid()).equals(rfidUid)).findFirst().orElse(null);
         }
         AccessLog entry = new AccessLog();
         entry.setAccessUuid(uuid); entry.setAccessUnit(device.getAccessUnit()); entry.setSourceDevice(device);
         entry.setMethod(method); entry.setResult(result);
+        // Giữ mọi lý do cùng lúc để lịch sử không mất việc thời điểm là do máy chủ thay thế.
+        List<String> reasons = new ArrayList<>();
         long epoch = event.path("occurredAt").asLong(0);
-        if (epoch < 0 || epoch > java.time.Instant.now().getEpochSecond() + 60)
-            throw new IllegalArgumentException("Invalid event time");
-        entry.setOccurredAt(epoch == 0 ? LocalDateTime.now() : LocalDateTime.ofInstant(
-                java.time.Instant.ofEpochSecond(epoch), java.time.ZoneId.of("Asia/Ho_Chi_Minh")));
-        if (epoch == 0) entry.setReasonCode("DEVICE_CLOCK_UNSYNCED");
-        if (result == AccessResult.DENIED) entry.setReasonCode("LOCAL_ACCESS_DENIED");
+        long now = java.time.Instant.now().getEpochSecond();
+        if (epoch <= 0) {
+            entry.setOccurredAt(LocalDateTime.now()); reasons.add("DEVICE_CLOCK_UNSYNCED");
+        } else if (epoch > now + 60) {
+            // Không từ chối sự kiện: thiết bị sẽ gửi lại mãi nếu không nhận được access-ack.
+            entry.setOccurredAt(LocalDateTime.now()); reasons.add("DEVICE_CLOCK_INVALID");
+        } else {
+            entry.setOccurredAt(LocalDateTime.ofInstant(java.time.Instant.ofEpochSecond(epoch), ZONE));
+        }
+        if (result == AccessResult.DENIED) reasons.add("LOCAL_ACCESS_DENIED");
         if (credential != null) { entry.setCredential(credential); entry.setAccount(credential.getAccount()); }
-        else if (method != AccessMethod.PIN && result == AccessResult.GRANTED) entry.setReasonCode("OFFLINE_CREDENTIAL_CHANGED");
+        else if (method != AccessMethod.PIN && result == AccessResult.GRANTED) reasons.add("OFFLINE_CREDENTIAL_CHANGED");
+        entry.setReasonCode(reasons.isEmpty() ? null : String.join(",", reasons));
         accessLogs.saveAndFlush(entry);
     }
 
     private static String normalizeUid(String uid) {
         return uid == null ? "" : uid.replace(":", "").replace("-", "").toUpperCase(java.util.Locale.ROOT);
-    }
-
-    @Transactional
-    public void recordFingerprint(String deviceUid, Integer templateId, boolean deviceGranted) {
-        Device device = devices.findByDeviceUid(deviceUid).orElse(null);
-        if (device == null || device.getAccessUnit() == null) {
-            log.warn("Bỏ qua lượt quét từ thiết bị {} chưa gắn cửa", deviceUid);
-            return;
-        }
-        Credential credential = templateId == null ? null : credentials
-                .findFirstByDevice_DeviceIdAndCredentialTypeAndLocalTemplateIdAndStatus(device.getDeviceId(),
-                        CredentialType.FINGERPRINT, templateId.shortValue(), CredentialStatus.ACTIVE)
-                .orElse(null);
-
-        AccessLog entry = new AccessLog();
-        entry.setAccessUuid(UUID.randomUUID().toString());
-        entry.setAccessUnit(device.getAccessUnit());
-        entry.setSourceDevice(device);
-        entry.setMethod(AccessMethod.FINGERPRINT);
-        entry.setOccurredAt(LocalDateTime.now());
-        if (!deviceGranted) {
-            entry.setResult(AccessResult.DENIED);
-            entry.setReasonCode("NO_MATCH");
-        } else if (credential == null) {
-            entry.setResult(AccessResult.DENIED);
-            entry.setReasonCode("CREDENTIAL_NOT_ACTIVE");
-        } else {
-            entry.setResult(AccessResult.GRANTED);
-            entry.setAccount(credential.getAccount());
-            entry.setCredential(credential);
-        }
-        accessLogs.save(entry);
     }
 }

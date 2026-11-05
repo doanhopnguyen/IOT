@@ -95,3 +95,34 @@ Theo yêu cầu mới, đã xóa dữ liệu của cửa cũ và nạp lại COM
 - Kiểm thử mobile web: vào thẳng đăng nhập; QR sản phẩm hiện SSID/mật khẩu đúng; form cuộn được; không tiêu thụ mã nhận cửa khi thử. Bundle Android SDK 58 được kiểm tra riêng; camera/quét QR thực trên điện thoại cần sử dụng để xác nhận.
 
 Mã nhận cửa mới còn hiệu lực ở trạng thái INVENTORY lúc bàn giao, không nhận hộ vào tài khoản admin. Hướng dẫn chuẩn: LUONG_SAN_PHAM.md. Chưa có broker/VPS Internet nên triển khai khác LAN vẫn là phần hạ tầng cần hoàn thiện; không chuyển việc cấu hình dịch vụ cho người mua. Kiểm tra cơ khí và cảm biến từ vẫn cần hoàn tất khi nối phần cứng.
+
+## Lượt thử 05/11/2026 (máy D:\STUDY\IoT\IOT, ESP32 MAC `80:B5:4E:C8:14:9C`)
+
+### Phần mềm
+
+| Hạng mục | Kết quả |
+|---|---|
+| Backend `mvn test` | 249 bài: 239 đạt, 10 bỏ qua (cần MySQL thật), 0 lỗi |
+| Mobile `npm run typecheck` + `npm test` | Đạt; 29/29 bài |
+| Face node / scripts unit test | 9/9 và 5/5 đạt (`test_usb_mac_helper` cần `pyserial`) |
+| Firmware `pio run -c platformio.connected.ini` | Build thành công (RAM 15.2 %, Flash 15.7 %) |
+
+### Thiết bị thật
+
+- Firmware 1.1.0 nạp qua USB, cấp phát lại cho backend mới (xóa flash vì chip còn khóa thiết bị của backend cũ).
+- Kết nối Wi-Fi qua hotspot 2.4 GHz, MQTT tới broker 1884: heartbeat được nhận; bảng `devices` ghi `firmware_version=1.1.0`, `hardware_version=esp32s3-n16r8`; bảng `telemetry` có `rssi`, `freeHeap`, `uptime`, `droppedEvents`, `fingerReady`, `unlocked`, `doorClosed` (= `unknown` vì cảm biến từ chưa hiệu chỉnh).
+- Thêm vân tay từ app: lần đầu thất bại vì cảm biến còn **1 mẫu cũ ở ô 1** (xóa flash ESP32 không xóa cảm biến). Dùng firmware bảo trì xóa, đọc lại `FINGERPRINT_COUNT_AFTER=0`; sau đó đăng ký thành công (`ENROLLED`, credential ACTIVE ô 1). RC522 không phản hồi trong lần bảo trì này.
+- Đã sửa sau lượt thử: firmware tự chọn ô trống khác nếu ô đề nghị còn mẫu cũ và báo `templateId` thực tế trong ACK; đọc bảng ô nhớ thử lại 3 lần; tách mã lỗi `DEVICE_BUSY`, `SENSOR_NOT_READY`, `SENSOR_READ_FAILED`, `SENSOR_FULL`; app hiển thị hướng dẫn quét 2 lần và lỗi tiếng Việt.
+- Chưa thử: mở cửa bằng vân tay/PIN/RFID (cửa chưa ACTIVE vì chưa có màn hình TFT để hiệu chỉnh cảm ứng, đặt PIN quản trị, hiệu chỉnh cảm biến từ); servo; đo độ trễ 30 lần mở từ xa.
+
+### Kiểm thử bảo mật broker (`scripts/broker_security_check.py`, broker 1884)
+
+| # | Ca kiểm thử | Mong đợi | Thực tế | Kết quả |
+|---|---|---|---|---|
+| 1 | Kết nối ẩn danh được chấp nhận | Không | Không | Đạt |
+| 2 | Đăng nhập sai mật khẩu được chấp nhận | Không | Không | Đạt |
+| 3 | Thiết bị gửi status của chính nó, backend nhận | Có | Có | Đạt |
+| 4 | Thiết bị giả mạo status của thiết bị khác, backend nhận | Không | Không | Đạt |
+| 5 | Thiết bị nghe trộm lệnh cmd của thiết bị khác | Không | Không | Đạt |
+
+Nhận xét: broker bắt buộc xác thực và ACL theo `%u` (username = UID) chặn thiết bị đọc/ghi topic của thiết bị khác. Kênh LAN chưa mã hóa; triển khai qua Internet dùng cấu hình TLS trong `infra/mosquitto`.

@@ -23,6 +23,8 @@ import java.util.Map;
 
 @Service
 public class CommandAckService {
+    /** Firmware chỉ đọc bảng ô 0..255 của cảm biến. */
+    static final int MAX_TEMPLATE_ID = 255;
     private final CommandRepository commands;
     private final AccessUnitRepository units;
     private final AccountRepository accounts;
@@ -43,6 +45,16 @@ public class CommandAckService {
 
     @Transactional
     public void handleAck(String deviceUid, String commandUuid, boolean success, String message) {
+        handleAck(deviceUid, commandUuid, success, message, null);
+    }
+
+    /**
+     * reportedTemplateId: ô vân tay firmware thực sự đã lưu (firmware mới có thể chọn ô khác ô đề nghị
+     * khi cảm biến còn mẫu cũ). Null với firmware cũ hoặc lệnh không phải FP_ENROLL.
+     */
+    @Transactional
+    public void handleAck(String deviceUid, String commandUuid, boolean success, String message,
+            Integer reportedTemplateId) {
         Command command = commands.findForUpdate(commandUuid).orElse(null);
         if (command == null
                 || !command.getDevice().getDeviceUid().equals(deviceUid)
@@ -73,7 +85,14 @@ public class CommandAckService {
                 entityType = "ACCESS_UNIT";
                 entityId = applyUnlock(command);
             }
-            case FingerprintService.FP_ENROLL -> entityId = applyEnroll(command);
+            case FingerprintService.FP_ENROLL -> {
+                entityId = applyEnroll(command, reportedTemplateId);
+                if (entityId == null) {
+                    command.setStatus(CommandStatus.FAILED);
+                    command.setResultMessage("SLOT_CONFLICT");
+                    return;
+                }
+            }
             case FingerprintService.FP_DELETE -> entityId = applyDelete(command);
             default -> { }
         }
@@ -90,13 +109,28 @@ public class CommandAckService {
         return unitId;
     }
 
-    private Long applyEnroll(Command command) {
+    /** Trả null nếu ô firmware báo về đang thuộc một vân tay ACTIVE khác của thiết bị. */
+    private Long applyEnroll(Command command, Integer reportedTemplateId) {
         Map<String, Object> p = command.getPayload();
+        int slot = ((Number) p.get("templateId")).intValue();
+        if (reportedTemplateId != null && reportedTemplateId >= 1 && reportedTemplateId <= MAX_TEMPLATE_ID) {
+            slot = reportedTemplateId;
+        }
+        final int chosen = slot;
+        boolean taken = credentials.findByDevice_DeviceIdAndCredentialTypeAndStatus(
+                        command.getDevice().getDeviceId(), CredentialType.FINGERPRINT, CredentialStatus.ACTIVE)
+                .stream().anyMatch(c -> c.getLocalTemplateId() != null && c.getLocalTemplateId() == chosen);
+        if (taken) return null;
         Credential credential = new Credential();
         credential.setAccount(accounts.getReferenceById(((Number) p.get("accountId")).longValue()));
         credential.setCredentialType(CredentialType.FINGERPRINT);
         credential.setDevice(command.getDevice());
-        credential.setLocalTemplateId(((Number) p.get("templateId")).shortValue());
+        credential.setLocalTemplateId((short) chosen);
+        if (chosen != ((Number) p.get("templateId")).intValue()) {
+            Map<String, Object> updated = new java.util.HashMap<>(p);
+            updated.put("templateId", chosen);
+            command.setPayload(updated);
+        }
         return credentials.save(credential).getCredentialId();
     }
 

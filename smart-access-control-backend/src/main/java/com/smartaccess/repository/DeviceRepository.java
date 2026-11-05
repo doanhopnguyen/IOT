@@ -18,4 +18,7 @@ public interface DeviceRepository extends JpaRepository<Device, Long> {
     Optional<Device> findByDeviceUidForUpdate(@Param("deviceUid") String deviceUid);
 
     Optional<Device> findFirstByAccessUnit_UnitIdAndDeviceType(Long unitId, DeviceType deviceType);
+
+    java.util.List<Device> findByDeviceTypeAndLifecycleStatusAndAccessUnitIsNotNull(
+            DeviceType deviceType, com.smartaccess.model.enumtype.DeviceLifecycleStatus lifecycleStatus);
 }

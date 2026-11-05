@@ -21,7 +21,13 @@ const reasonLabels: Record<string, string> = {
   DEVICE_FAILED: 'Thiết bị báo không thể mở cửa',
   SEND_FAILED: 'Không gửi được lệnh đến thiết bị',
   ACK_TIMEOUT: 'Thiết bị không phản hồi kịp thời',
+  LOCAL_ACCESS_DENIED: 'Thiết bị từ chối tại cửa',
+  OFFLINE_CREDENTIAL_CHANGED: 'Mẫu xác thực đã thay đổi khi thiết bị mất mạng',
+  DEVICE_CLOCK_UNSYNCED: 'Giờ thiết bị chưa đồng bộ, dùng giờ máy chủ',
+  DEVICE_CLOCK_INVALID: 'Giờ thiết bị sai, dùng giờ máy chủ',
 };
+// Backend có thể ghi nhiều lý do cùng lúc, cách nhau bằng dấu phẩy.
+const reasonText = (code: string) => code.split(',').map(c => reasonLabels[c] ?? 'Không xác định nguyên nhân').join(' · ');
 const methodLabels: Record<string, string> = {
   FACE: 'Khuôn mặt', FINGERPRINT: 'Vân tay', RFID: 'Thẻ RFID', PIN: 'Mã PIN', REMOTE_UNLOCK: 'Mở từ xa',
 };
@@ -58,7 +64,7 @@ export function AccessHistory({ doorId, back }: { doorId?: string; back: () => v
           <Text style={{ fontSize: 12, color: l.result === 'GRANTED' ? colors.success : colors.error}}>
             {new Date(l.occurredAt).toLocaleString('vi-VN')} · {l.result === 'GRANTED' ? 'Cho phép' : l.result === 'ERROR' ? 'Lỗi' : 'Từ chối'}
           </Text>
-          {l.reasonCode && <Text>{reasonLabels[l.reasonCode] ?? 'Không xác định nguyên nhân'}</Text>}
+          {l.reasonCode && <Text>{reasonText(l.reasonCode)}</Text>}
         </View>
       </Card>
     ))}

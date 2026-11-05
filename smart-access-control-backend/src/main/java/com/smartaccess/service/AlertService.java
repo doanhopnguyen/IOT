@@ -20,10 +20,13 @@ public class AlertService {
     private final EventRepository events;
     private final DeviceRepository devices;
     private final CurrentAccountService current;
-    public AlertService(EventRepository events, DeviceRepository devices, CurrentAccountService current) {
+    private final AuditLogRepository audits;
+    public AlertService(EventRepository events, DeviceRepository devices, CurrentAccountService current,
+            AuditLogRepository audits) {
         this.events = events;
         this.devices = devices;
         this.current = current;
+        this.audits = audits;
     }
     public PageResponse<Alert> list(Long unitId, LocalDateTime from, LocalDateTime to, EventSeverity severity, int page, int size) {
         AccessLogService.validate(from, to, page, size);
@@ -40,6 +43,29 @@ public class AlertService {
         Long accountId = current.requireAccount().getAccountId();
         Event event = events.findById(id).orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Alert not found"));
         requireManager(event.getDevice(), accountId);
+        return dto(event);
+    }
+    /**
+     * Chủ cửa xác nhận đã xem (OPEN→ACKNOWLEDGED) hoặc đã xử lý (OPEN/ACKNOWLEDGED→RESOLVED).
+     * Chuyển trạng thái khác (mở lại, lùi trạng thái) trả 409; ghi audit ALERT_<STATUS>.
+     */
+    @Transactional
+    public Alert updateStatus(Long id, AlertStatus target) {
+        Account actor = current.requireAccount();
+        Event event = events.findById(id).orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Alert not found"));
+        requireManager(event.getDevice(), actor.getAccountId());
+        AlertStatus from = event.getAlertStatus();
+        boolean allowed = (target == AlertStatus.ACKNOWLEDGED && from == AlertStatus.OPEN)
+                || (target == AlertStatus.RESOLVED && (from == AlertStatus.OPEN || from == AlertStatus.ACKNOWLEDGED));
+        if (!allowed) throw new ResponseStatusException(CONFLICT, "Không thể chuyển cảnh báo từ " + from + " sang " + target);
+        event.setAlertStatus(target);
+        AuditLog audit = new AuditLog();
+        audit.setActor(actor);
+        audit.setAction("ALERT_" + target);
+        audit.setEntityType("EVENT");
+        audit.setEntityId(event.getEventId());
+        audit.setDetails(java.util.Map.of("from", from.name(), "to", target.name(), "eventType", event.getEventType()));
+        audits.save(audit);
         return dto(event);
     }
     private static void requireManager(Device device, Long accountId) {

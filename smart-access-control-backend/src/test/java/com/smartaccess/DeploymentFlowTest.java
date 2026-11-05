@@ -30,6 +30,7 @@ class DeploymentFlowTest {
  @Autowired AccessUnitRepository units;@Autowired UserAccessRepository members;@Autowired DeviceInventoryRepository inventory;
  @Autowired PasswordEncoder passwords;@Autowired TransactionTemplate tx;@Autowired ObjectMapper json;
  @Autowired CredentialRepository credentials;
+ @Autowired CommandRepository commandRows;@Autowired AuditLogRepository audits;
  @Autowired FaceEnrollmentService faces;
  @Autowired InvitationService invitations;
  Long admin,owner,stranger;static int seq;
@@ -105,7 +106,11 @@ class DeploymentFlowTest {
   assertThat(pending.state()).isEqualTo("RESETTING");
   assertThatThrownBy(()->deployment.issueAfterReset(mine.deviceUid(),"StrongPass!123")).isInstanceOf(RuntimeException.class);
   assertThat(deployment.resetAck(mine.deviceUid(),json.createObjectNode().put("commandUuid",pending.operationUuid()).put("success",false))).isFalse();
-  assertThatThrownBy(()->deployment.resetAck(mine.deviceUid(),json.createObjectNode().put("commandUuid",pending.operationUuid()).put("success",true).put("message","not-verified"))).isInstanceOf(RuntimeException.class);
+  // Thiếu bằng chứng xóa: không throw (firmware sẽ gửi lại mãi), cửa trở lại CLAIMED và lệnh FAILED.
+  assertThat(deployment.resetAck(mine.deviceUid(),json.createObjectNode().put("commandUuid",pending.operationUuid()).put("success",true).put("message","not-verified"))).isTrue();
+  assertThat(deployment.status(mine.deviceUid()).state()).isEqualTo("CLAIMED");
+  assertThat(commandRows.findByCommandUuid(pending.operationUuid()).orElseThrow().getStatus()).isEqualTo(CommandStatus.FAILED);
+  // Ack xác minh đến muộn (thiết bị thật sự đã xóa) vẫn hoàn tất việc dọn dữ liệu.
   assertThat(deployment.resetAck(mine.deviceUid(),json.createObjectNode().put("commandUuid",pending.operationUuid()).put("success",true).put("message","RESET_EMPTY_VERIFIED"))).isTrue();
   var after=deployment.status(mine.deviceUid());assertThat(after.state()).isEqualTo("INVENTORY");assertThat(after.generation()).isEqualTo(2);assertThat(after.unitId()).isNull();
   assertThat(units.findById(mine.unitId())).isEmpty();assertThat(accounts.findById(owner)).isPresent();
@@ -113,5 +118,37 @@ class DeploymentFlowTest {
   Device d=devices.findById(mine.deviceId()).orElseThrow();assertThat(deployment.acceptGeneration(d,json.createObjectNode().put("generation",1))).isFalse();
   assertThat(deployment.resetAck(mine.deviceUid(),json.createObjectNode().put("commandUuid",pending.operationUuid()).put("success",true).put("message","RESET_EMPTY_VERIFIED"))).isTrue();
   assertThat(deployment.status(mine.deviceUid()).generation()).isEqualTo(2);
+ }
+ @Test void failedOrTimedOutResetReturnsDoorToServiceInsteadOfStayingResetting(){
+  var mine=claimed(registered());online(mine);
+  var first=deployment.startReset(mine.deviceUid(),"StrongPass!123",mine.deviceUid(),null);
+  assertThat(deployment.resetAck(mine.deviceUid(),json.createObjectNode().put("commandUuid",first.operationUuid()).put("success",false))).isFalse();
+  assertThat(deployment.status(mine.deviceUid()).state()).isEqualTo("CLAIMED");
+  // Không còn bị chặn "Cửa đang reset": chủ cửa thử reset lại được với lệnh mới.
+  online(mine);
+  var second=deployment.startReset(mine.deviceUid(),"StrongPass!123",mine.deviceUid(),null);
+  assertThat(second.state()).isEqualTo("RESETTING");assertThat(second.operationUuid()).isNotEqualTo(first.operationUuid());
+  deployment.expireReset(mine.deviceId(),first.operationUuid()); // uuid cũ không ảnh hưởng thao tác mới
+  assertThat(deployment.status(mine.deviceUid()).state()).isEqualTo("RESETTING");
+  deployment.expireReset(mine.deviceId(),second.operationUuid());
+  assertThat(deployment.status(mine.deviceUid()).state()).isEqualTo("CLAIMED");
+ }
+ @Test void failureAckFromOldGenerationIsAcceptedButSuccessIsNot(){
+  var mine=claimed(registered());Device d=devices.findById(mine.deviceId()).orElseThrow();
+  assertThat(deployment.acceptGeneration(d,json.createObjectNode().put("generation",99).put("commandUuid","x").put("success",false))).isTrue();
+  assertThat(deployment.acceptGeneration(d,json.createObjectNode().put("generation",99).put("commandUuid","x").put("success",true))).isFalse();
+  assertThat(deployment.acceptGeneration(d,json.createObjectNode().put("generation",99))).isFalse();
+ }
+ @Test void resetDeletesOnlyAuditLogsOfThatDoor(){
+  var mine=claimed(registered());login(admin);
+  var other=claimed(deployment.register(String.format("%012X",seq+20000),"Other chip"));
+  Long mineAudit=audit(mine.unitId()),otherAudit=audit(other.unitId());
+  online(mine);var pending=deployment.startReset(mine.deviceUid(),"StrongPass!123",mine.deviceUid(),null);
+  assertThat(deployment.resetAck(mine.deviceUid(),json.createObjectNode().put("commandUuid",pending.operationUuid()).put("success",true).put("message","RESET_EMPTY_VERIFIED"))).isTrue();
+  assertThat(audits.findById(mineAudit)).isEmpty();assertThat(audits.findById(otherAudit)).isPresent();
+ }
+ Long audit(Long unitId){
+  AuditLog a=new AuditLog();a.setAction("UPDATE_PERMISSION");a.setEntityType("USER_ACCESS");a.setEntityId(owner);
+  a.setDetails(Map.of("unitId",unitId));return audits.saveAndFlush(a).getAuditLogId();
  }
 }
