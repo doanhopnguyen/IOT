@@ -208,17 +208,20 @@ File cấp phát phải có `factoryMac`, `deviceUid`, `generation`, `deviceSecr
 
 Thành công sẽ in `FACTORY_PROVISIONED <MAC>`, chip khởi động lại. Chạy `device_tool.py info` kiểm tra `productPrepared=1`, sau đó in/dán QR sản phẩm. UID/MAC công khai không thay thế mã nhận cửa hoặc khóa thiết bị.
 
-### 5.4. Trạng thái chip sau khi xóa sạch
+### 5.4. Trạng thái sau khi nạp dữ liệu xuất xưởng
 
-| File trong `.local` | Vai trò |
+Ngày 06/11/2026, chip COM5 (MAC `80B54EC8149C`, UID `ESP32-80B54EC8149C`) đã nhận bộ cấp phát mới qua USB. Backend xác nhận mã kích hoạt hợp lệ; thiết bị trong kho đang ở trạng thái `INVENTORY`, generation 1.
+
+`device_tool.py info` xác nhận `productPrepared=1`, `ui=WIFI_SETUP`, `setupStage=WIFI`, `appPins=0`, `templates=0`. Màn hình thiết lập có đủ danh tính để hiện QR sản phẩm và thông tin Wi-Fi thiết lập. Chưa cài Wi-Fi của người mua hoặc PIN admin.
+
+| File trong `.local` | Vai trò hiện tại |
 | --- | --- |
-| `FACTORY_ESP32-80B54EC8149C.json` | Cấp phát cũ; không dùng sau khi database/chip đã reset |
-| `FACTORY_CONNECTION.json` | Cấu hình broker cũ; cần tạo lại cho UID mới |
-| `PRODUCT_QR_ESP32-80B54EC8149C.png` | QR cũ; mã nhận không còn trong database |
+| `FACTORY_ESP32-80B54EC8149C.json` | Bộ cấp phát riêng đã nạp vào chip; không chia sẻ |
+| `FACTORY_CONNECTION.json` | Cấu hình MQTT riêng cho thiết bị, broker `10.18.0.194:1884` |
+| `PRODUCT_QR_ESP32-80B54EC8149C.png` | Tem QR sản phẩm khớp với mã kích hoạt vừa cấp |
 | `ADMIN_ACCESS.txt` | Thông tin tài khoản admin |
-| `BUYER_RESET_STATUS.md` | Nhật ký reset trước đây |
 
-Ngày 06/11/2026, COM5 đã xóa toàn bộ flash 16 MB, xóa mẫu vân tay còn lại và nạp lại firmware connected 1.4.0. MAC/eFuse giữ nguyên; `productPrepared=0`, Wi-Fi/PIN chưa thiết lập, cảm biến vân tay còn 0 mẫu. Vì database đã được làm sạch, các JSON/QR cũ phía trên không còn ghép được; đăng ký chip và tạo cấp phát/QR mới trước khi chạy `device_tool.py provision`.
+Backend và broker dự án đã được dừng sau khi cấp phát. Khi thử app hoặc kết nối MQTT, khởi động lại các thành phần theo hướng dẫn ở mục 7.
 
 ## 6. Build lại khi sửa code
 
