@@ -24,6 +24,7 @@ public class DeploymentService {
         String owner,String state,long generation,boolean setupReady,Boolean doorClosed,Boolean latchReleased,
         LocalDateTime lastSeenAt,String operationUuid) {}
     public record Issued(InventoryView device,String activationCode,String deviceSecret,String setupSsid,String setupPassword) {}
+    public record ClaimPreview(String deviceUid,String name,boolean online) {}
     private final DeviceInventoryRepository inventory;
     private final DeviceRepository devices;
     private final AccessUnitRepository units;
@@ -80,6 +81,18 @@ public class DeploymentService {
             i.getDevice().getAccessUnit().getManager()!=null && id.equals(i.getDevice().getAccessUnit().getManager().getAccountId()))
             .map(this::view).toList();
     }
+    public ClaimPreview inspect(String code) {
+        Account actor=current.requireAccount();
+        if(code==null || code.length()<24 || code.length()>128)throw error(BAD_REQUEST,"Mã nhận cửa không hợp lệ");
+        DeviceInventory i=inventory.claimForUpdate(digest(code.trim())).orElseThrow(()->error(NOT_FOUND,"Mã không hợp lệ hoặc đã dùng"));
+        if(!"INVENTORY".equals(i.getState()) || i.getDevice().getAccessUnit()!=null)throw error(CONFLICT,"Cửa đã được nhận");
+        if(i.getRecipientId()!=null && !i.getRecipientId().equals(actor.getAccountId()))throw error(FORBIDDEN,"Mã dành cho người nhận bàn giao");
+        return new ClaimPreview(i.getDevice().getDeviceUid(),i.getDevice().getDeviceName(),online(i.getDevice()));
+    }
+    private boolean online(Device d) {
+        return d.getLifecycleStatus()==DeviceLifecycleStatus.ACTIVE && d.getLastSeenAt()!=null
+                && d.getLastSeenAt().isAfter(LocalDateTime.now().minusSeconds(90));
+    }
     public InventoryView claim(String code,String name) {
         Account actor=current.requireAccount();
         if(code==null || code.length()<24 || code.length()>128 || name==null || name.isBlank() || name.length()>100) throw error(BAD_REQUEST,"Mã nhận cửa/tên không hợp lệ");
@@ -87,6 +100,7 @@ public class DeploymentService {
         Device d=i.getDevice();
         if(!i.getState().equals("INVENTORY") || d.getAccessUnit()!=null) throw error(CONFLICT,"Cửa đã được nhận");
         if(i.getRecipientId()!=null && !i.getRecipientId().equals(actor.getAccountId())) throw error(FORBIDDEN,"Mã dành cho tài khoản nhận bàn giao");
+        if(!online(d))throw error(CONFLICT,"Cần kết nối Wi-Fi và chờ cửa online với dịch vụ trước khi nhận cửa");
         AccessUnit u=new AccessUnit();u.setManager(actor);u.setUnitName(name.trim());units.saveAndFlush(u);
         d.setAccessUnit(u);d.setLifecycleStatus(DeviceLifecycleStatus.PROVISIONED);
         UserAccess member=new UserAccess();member.setAccount(actor);member.setAccessUnit(u);
@@ -105,9 +119,13 @@ public class DeploymentService {
         if(!a.isAdmin() && (u==null || u.getManager()==null || !u.getManager().getAccountId().equals(a.getAccountId()))) throw error(FORBIDDEN,"Chỉ chủ cửa hoặc admin");
         return a;
     }
-    public InventoryView startReset(String uid,String password,String confirmation,String recipientEmail) {
+    public InventoryView startReset(String uid,String password,String adminPin,String confirmation,String recipientEmail) {
         Device d=devices.findByDeviceUidForUpdate(uid).orElseThrow(()->error(NOT_FOUND,"Device not found"));
         Account a=requireOwnerOrAdmin(d);reauthenticate(a,password);
+        if(!d.isLocalAdminPinEnabled() || d.getLocalAdminPinHash()==null)
+            throw error(CONFLICT,"Cửa chưa xác nhận PIN admin từ app; cần hoàn tất bước đặt PIN trước khi reset");
+        if(adminPin==null || !adminPin.matches("[0-9]{6}") || !passwords.matches(adminPin,d.getLocalAdminPinHash()))
+            throw error(FORBIDDEN,"PIN admin của cửa chưa đúng");
         if(!uid.equals(confirmation)) throw error(BAD_REQUEST,"Nhập đúng device UID để xác nhận xóa");
         DeviceInventory i=inventory.lock(d.getDeviceId()).orElseThrow();
         if(i.getState().equals("RESETTING")) return view(i);
@@ -131,9 +149,10 @@ public class DeploymentService {
         // Chỉ báo client làm mới khi trạng thái người dùng thấy được thay đổi, không phải mỗi heartbeat.
         List<Object> before=Arrays.asList(i.getDoorClosed(),i.getLatchReleased(),i.getState(),i.isSetupReady());
         if(state.has("doorClosed"))i.setDoorClosed(state.hasNonNull("doorClosed")?state.path("doorClosed").asBoolean():null);
-        if(state.has("unlocked"))i.setLatchReleased(state.path("unlocked").asBoolean());
+        if(state.has("unlocked"))i.setLatchReleased(state.hasNonNull("unlocked")?state.path("unlocked").asBoolean():null);
         i.setStateUpdatedAt(LocalDateTime.now());
         boolean localReady=state.path("localReady").asBoolean(false);
+        if(state.has("servoCalibrated"))localReady=localReady && state.path("servoCalibrated").asBoolean(false);
         if(state.path("hasDoorPin").asBoolean(false) && d.getAccessUnit()!=null)d.getAccessUnit().setPinEnabled(true);
         if(i.getState().equals("CLAIMED") || i.getState().equals("ACTIVE")) {
             boolean ready=localReady && d.getAccessUnit()!=null && d.getAccessUnit().isPinEnabled();
@@ -190,7 +209,11 @@ public class DeploymentService {
             em.createQuery("delete from AuditLog a where (a.entityType='ACCESS_UNIT' and a.entityId=:id) or (a.entityType='DEVICE' and a.entityId in :ids)")
                 .setParameter("id",unitId).setParameter("ids",deviceIds).executeUpdate();
             em.createQuery("delete from UserAccess m where m.accessUnit.unitId=:id").setParameter("id",unitId).executeUpdate();
-            for(Long deviceId:deviceIds) {Device item=devices.findById(deviceId).orElseThrow();item.setAccessUnit(null);item.setLifecycleStatus(DeviceLifecycleStatus.REGISTERED);item.setLastSeenAt(null);}
+            for(Long deviceId:deviceIds) {
+                Device item=devices.findById(deviceId).orElseThrow();item.setAccessUnit(null);
+                item.setLocalAdminPinEnabled(false);item.setLocalAdminPinHash(null);
+                item.setLifecycleStatus(DeviceLifecycleStatus.REGISTERED);item.setLastSeenAt(null);
+            }
             em.flush();units.delete(u);em.flush();
         }
         i.setGeneration(i.getGeneration()+1);i.setSetupReady(false);i.setDoorClosed(null);i.setLatchReleased(null);i.setState("INVENTORY");i.setClaimHash(null);

@@ -603,13 +603,14 @@ function confirmAction(title, description, label, danger = false) {
   });
 }
 function resetDialog(uid) {
-  createDialog(
+  const dialog = createDialog(
     'Đặt lại / Chuyển giao thiết bị',
     'Xóa PIN, Wi-Fi, thẻ, vân tay, thành viên và lịch sử của cửa. Không thể hoàn tác. Chỉ hoàn tất khi thiết bị và backend xác nhận đã xóa.',
     `<div class="dialog-uid">${esc(uid)}</div><label>Nhập lại UID để xác nhận<input name="confirmation" placeholder="Nhập đúng mã thiết bị bên trên" pattern="${esc(uid.replace(/[.*+?^$\{\}()|[\]\\]/g, '\\$&'))}" required autocomplete="off"></label><label>Mật khẩu admin hiện tại<input name="password" type="password" autocomplete="current-password" required></label><label>Email người nhận · không bắt buộc<input name="recipientEmail" type="email" placeholder="Để trống nếu chỉ đặt lại"></label>`,
     'Xác nhận xóa toàn bộ',
     async (body) => {
       if (body.confirmation !== uid) throw Error('UID xác nhận chưa khớp với thiết bị.');
+      if (!/^[0-9]{6}$/.test(body.adminPin)) throw Error('Nhập PIN admin của cửa gồm đúng 6 số.');
       await api(`/api/admin/inventory/${encodeURIComponent(uid)}/reset`, 'POST', body);
       notify('Đã gửi yêu cầu đặt lại. Thiết bị cần xác nhận trước khi hoàn tất.');
       setTimeout(() => {
@@ -618,6 +619,14 @@ function resetDialog(uid) {
     },
     true,
   );
+  const accountPassword = dialog.querySelector('[name="password"]');
+  const label = document.createElement('label');
+  label.textContent = 'PIN admin của cửa · 6 số';
+  const pin = document.createElement('input');
+  pin.id = 'factory-admin-pin'; pin.name = 'adminPin'; pin.type = 'password';
+  pin.inputMode = 'numeric'; pin.pattern = '[0-9]{6}'; pin.maxLength = 6;
+  pin.required = true; pin.autocomplete = 'off'; label.append(pin);
+  accountPassword.closest('label').after(label);
 }
 function issueCode(uid) {
   createDialog(

@@ -875,6 +875,7 @@ function Detail({
       {owner ? (
         <>
           <Text style={x.section}>Quản lý cửa</Text>
+          {door.activationState && door.activationState !== 'ACTIVE' ? <Button title="Tiếp tục thiết lập PIN và hiệu chỉnh" icon="construct-outline" onPress={settings} /> : null}
           <Menu icon="people-outline" label="Thành viên" onPress={members} />
           <Menu
             icon="shield-checkmark-outline"

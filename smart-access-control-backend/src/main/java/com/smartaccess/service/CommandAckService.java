@@ -77,7 +77,7 @@ public class CommandAckService {
         String entityType = "CREDENTIAL";
         Long entityId = null;
         switch (command.getCommandType()) {
-            case PinService.PIN_SET -> {
+            case PinService.PIN_SET, OnboardingService.SETUP_CREDENTIALS -> {
                 entityType = "ACCESS_UNIT";
                 entityId = applyPin(command);
             }
@@ -94,6 +94,7 @@ public class CommandAckService {
                 }
             }
             case FingerprintService.FP_DELETE -> entityId = applyDelete(command);
+            case OnboardingService.SERVO_SET -> { entityType="DEVICE"; entityId=command.getDevice().getDeviceId(); }
             default -> { }
         }
         command.setStatus(CommandStatus.ACKNOWLEDGED);
@@ -105,6 +106,9 @@ public class CommandAckService {
         AccessUnit unit = units.findById(unitId).orElseThrow();
         unit.setAccessPinHash((String) command.getPayload().get("pinHash"));
         unit.setPinEnabled(true);
+        if (command.getPayload().get("adminPinHash") instanceof String hash) {
+            command.getDevice().setLocalAdminPinHash(hash); command.getDevice().setLocalAdminPinEnabled(true);
+        }
         command.setPayload(Map.of("unitId", unitId)); // bỏ hash khỏi lịch sử lệnh
         return unitId;
     }

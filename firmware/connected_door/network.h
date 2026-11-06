@@ -8,6 +8,7 @@
 #include <atomic>
 #include <qrcode.h>
 #include "setup_page.h"
+#include "setup_logic.h"
 #include <time.h>
 #include <sys/time.h>
 
@@ -18,7 +19,8 @@ PubSubClient broker(localTransport);
 WebServer setupWeb(80);
 String deviceUid,deviceSecret,brokerHost,brokerUser,brokerPassword,brokerCa,wifiSsid,wifiPassword;
 String setupSsid,setupPassword,setupCsrf,serialLine,requestNonce;
-String resetReceipt,remoteEnrollUuid,activationCode;
+String resetReceipt,resetIntent,remoteEnrollUuid,activationCode;
+uint32_t lastResetAttempt=0;
 String rfidScanUuid;uint32_t rfidScanStarted=0;
 DNSServer setupDns;
 bool setupApActive=false;
@@ -32,6 +34,10 @@ uint16_t brokerPort=8883;
 uint16_t remoteSlot=0;uint8_t remoteStage=0;uint32_t remoteStarted=0,remotePollAt=0;
 uint16_t queueHead=0,queueTail=0;uint32_t droppedEvents=0;
 uint32_t lastSensorRetry=0;
+bool appPinsReady=false;
+uint32_t wifiPermitUntil=0,wifiOfflineSince=0,lastSetupDraw=0;
+uint32_t lastStatusBarDraw=0;
+String setupError;
 
 String randomId() {
   uint8_t b[16];esp_fill_random(b,16);b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;
@@ -40,7 +46,21 @@ String randomId() {
 String factoryMac() {uint8_t bytes[6];esp_efuse_mac_get_default(bytes);char out[13];for(int i=0;i<6;i++)snprintf(out+i*2,3,"%02X",bytes[i]);return out;}
 String topic(const char *suffix){return "smartdoor-iot/"+deviceUid+"/"+suffix;}
 bool connectedManaged(){return claimed;}
-bool connectedAccessReady(){return claimed && !resetPending;}
+bool connectedAccessReady(){return !storageFault && SetupLogic::localAccessAllowed(claimed,appPinsReady,configured(),resetPending);}
+bool connectedCredentialsReady(){return appPinsReady;}
+void connectedDrawStatusBar(bool force) {
+  if(!force && millis()-lastStatusBarDraw<1000)return;lastStatusBarDraw=millis();
+  bool wifi=WiFi.status()==WL_CONNECTED,service=wifi && broker.connected(),local=connectedAccessReady();
+  int rssi=wifi?WiFi.RSSI():-127,bars=wifi?SetupLogic::signalBars(rssi):0;
+  tft.fillRect(0,0,240,14,BLACK);
+  for(int i=0;i<4;i++){
+    int height=3+i*3;uint16_t color=i<bars?(bars>1?GREEN:YELLOW):GRAY;
+    tft.fillRect(4+i*5,13-height,3,height,color);
+  }
+  text(30,3,wifi?String(rssi)+"dBm":"WiFi OFF",wifi?WHITE:YELLOW);
+  text(103,3,service?"NET":"NO SERVER",service?GREEN:YELLOW);
+  text(187,3,local?(wifi&&service?"ONLINE":"OFFLINE"):"SETUP",local?GREEN:YELLOW);
+}
 bool connectedIsEnrolling(){return remoteStage!=0 || !rfidScanUuid.isEmpty();}
 bool publishDocument(const char *suffix,JsonDocument &doc) {
   doc["deviceSecret"]=deviceSecret;doc["generation"]=generation;
@@ -78,6 +98,7 @@ String productQr() {
   return "smartdoor://activate?code="+activationCode+"&uid="+deviceUid+"&ssid="+setupSsid+"&key="+setupPassword;
 }
 void connectedNetworkPage() {
+  if(adminSession)wifiPermitUntil=millis()+600000;
   enableSetupAp();networkPage=true;screen=DEVICE_STATUS;title("SMART DOOR SETUP");
   row(33,deviceUid.isEmpty()?"ESP32-"+factoryMac():deviceUid);
   String value=productQr();
@@ -89,21 +110,50 @@ void connectedNetworkPage() {
     }else row(90,"Use the QR label on product",YELLOW);
   }else {row(85,claimed?"Door already activated":"Factory setup not completed",YELLOW);row(115,"Use setup Wi-Fi below");}
   row(234,"Wi-Fi: "+setupSsid,CYAN);row(254,"Key: "+setupPassword,YELLOW);
-  row(274,"Browser: 192.168.4.1");button(5,295,230,22,cfg.touch.valid?"SETUP ON SCREEN":"TOUCH SCREEN TO SETUP");
+  row(274,"Browser: 192.168.4.1");
+  button(5,295,230,22,configured()?"BACK TO PIN / OFFLINE":cfg.touch.valid?"BACK":"SET WIFI, THEN USE MOBILE APP");
+}
+String setupStage() {
+  return SetupLogic::stage(resetPending,WiFi.status()==WL_CONNECTED,broker.connected(),claimed,appPinsReady,
+    cfg.touch.valid,sensorCycleVerified && cfg.closedLevel>=0,calStep,doorCalClosedSample>=0,networkPage,servoCycleVerified,servoSetup.step>0);
+}
+bool connectedContinueSetup() {
+  if(resetPending){
+    adminSession=false;networkPage=false;screen=APP_SETUP;title("FACTORY RESET");
+    row(65,"Reset in progress",YELLOW);row(100,"Keep power and Wi-Fi connected");
+    row(135,"Waiting for erase confirmation");row(180,"Setup restarts after reset");return true;
+  }
+  if(configured())return false;
+  if(!claimed || !appPinsReady) {
+    if(adminSession && screen==ADMIN_LOGIN){connectedNetworkPage();return true;}
+    screen=APP_SETUP;networkPage=false;title("SETUP IN MOBILE APP");
+    row(60,WiFi.status()==WL_CONNECTED?"Wi-Fi connected":"Connect to SmartDoor Wi-Fi",YELLOW);
+    row(90,broker.connected()?"Service connected":"Waiting for service connection");
+    row(125,!claimed?"Claim this door in the app":"Set both PINs in the owner app");
+    row(160,"Calibration starts after app setup");
+    row(195,"Wi-Fi portal: 192.168.4.1");
+    if(cfg.touch.valid && cfg.admin.valid)button(8,260,224,40,"ADMIN / CHANGE WI-FI");
+    return true;
+  }
+  networkPage=false;adminSession=true;adminStarted=adminActivity=millis();
+  if(!cfg.touch.valid)beginCalibration();
+  else if(!sensorCycleVerified || cfg.closedLevel<0)go(DOOR_CAL);
+  else if(!servoCycleVerified && screen!=SERVO_CAL)beginServoCalibration();
+  return true;
 }
 bool connectedSetupTouch(int x,int y) {
+  if(resetPending)return true;
+  if(screen==APP_SETUP){if(cfg.touch.valid && cfg.admin.valid && y>=260)go(ADMIN_LOGIN);return true;}
   if(!networkPage || screen!=DEVICE_STATUS)return false;
-  if(!cfg.touch.valid || y>=290){networkPage=false;if(!cfg.touch.valid)beginCalibration();else if(!cfg.admin.valid)go(SET_ADMIN);else if(!configured())go(ADMIN_LOGIN);else go(HOME);}
+  if(cfg.touch.valid && y>=290){networkPage=false;if(!connectedContinueSetup())go(HOME);}
   return true;
 }
 bool localHttp(){return setupApActive && setupWeb.client().localIP()==WiFi.softAPIP();}
 void setupReply(int code,const String &message){DynamicJsonDocument doc(384);doc["message"]=message;String body;serializeJson(doc,body);setupWeb.sendHeader("Cache-Control","no-store");setupWeb.send(code,"application/json",body);}
 bool setupAuthorized() {
   if(!localHttp() || resetPending || storageFault || setupWeb.arg("csrf")!=setupCsrf){setupReply(403,"Phiên thiết lập không hợp lệ. Mở lại trang tại cửa.");return false;}
-  if(!cfg.admin.valid)return true;
-  if(setupBadPins>=5 && millis()-setupBlockedAt<30000){setupReply(429,"Nhập sai PIN nhiều lần. Vui lòng chờ 30 giây.");return false;}
-  if(!pinMatches(cfg.admin,setupWeb.arg("adminAuth"))){setupBadPins++;setupBlockedAt=millis();setupReply(403,"PIN quản trị hiện tại chưa đúng.");return false;}
-  setupBadPins=0;return true;
+  if(SetupLogic::wifiAllowed(claimed,wifiPermitUntil,millis()))return true;
+  setupReply(403,"Mở Đổi Wi-Fi trong app, hoặc đăng nhập ADMIN trên cửa rồi chọn WI-FI để cho phép thay đổi trong 10 phút.");return false;
 }
 void startSetupScan(bool refresh) {
   if(setupScanPending)return;
@@ -130,9 +180,11 @@ void startSetupWeb() {
   setupWeb.on("/",HTTP_GET,[]{if(!localHttp()){setupReply(403,"Kết nối mạng thiết lập của cửa để tiếp tục.");return;}setupWeb.sendHeader("Cache-Control","no-store");setupWeb.send_P(200,"text/html; charset=utf-8",SETUP_PAGE);});
   setupWeb.on("/api/setup/status",HTTP_GET,[]{
     if(!localHttp()){setupReply(403,"Kết nối mạng thiết lập của cửa.");return;}
-    DynamicJsonDocument doc(768);doc["deviceUid"]=deviceUid;doc["csrf"]=setupCsrf;doc["adminPinSet"]=cfg.admin.valid;
+    DynamicJsonDocument doc(1024);doc["deviceUid"]=deviceUid;doc["csrf"]=setupCsrf;
+    doc["authorized"]=SetupLogic::wifiAllowed(claimed,wifiPermitUntil,millis());
     bool connected=WiFi.status()==WL_CONNECTED && WiFi.SSID()==wifiSsid;
     doc["wifiConnected"]=connected;doc["ssid"]=wifiSsid;doc["connecting"]=!connected&&setupConnectStarted&&millis()-setupConnectStarted<35000;
+    doc["serviceConnected"]=broker.connected();doc["message"]=setupError;
     doc["localReady"]=configured();doc["activated"]=claimed;String body;serializeJson(doc,body);setupWeb.sendHeader("Cache-Control","no-store");setupWeb.send(200,"application/json",body);
   });
   setupWeb.on("/api/wifi/scan",HTTP_GET,[]{
@@ -144,20 +196,20 @@ void startSetupWeb() {
   setupWeb.on("/setup",HTTP_POST,[]{
     if(!setupAuthorized())return;String ssid=setupWeb.arg("ssid"),password=setupWeb.arg("password");
     if(ssid.isEmpty()||ssid.length()>32||password.length()>63||(!password.isEmpty()&&password.length()<8)){setupReply(400,"Tên Wi-Fi hoặc mật khẩu chưa hợp lệ.");return;}
-    wifiSsid=ssid;wifiPassword=password;setupConnectStarted=millis();WiFi.begin(ssid.c_str(),password.c_str());
+    wifiSsid=ssid;wifiPassword=password;setupConnectStarted=millis();setupError="";WiFi.begin(ssid.c_str(),password.c_str());
     setupReply(200,"Đang kết nối Wi-Fi. Chỉ lưu khi kết nối thành công.");
   });
+  setupWeb.on("/api/wifi/authorize",HTTP_POST,[]{
+    if(!localHttp() || resetPending || setupWeb.arg("csrf")!=setupCsrf){setupReply(403,"Phiên thiết lập không hợp lệ.");return;}
+    if(setupBadPins>=5 && millis()-setupBlockedAt<30000){setupReply(429,"Nhập sai nhiều lần. Chờ 30 giây.");return;}
+    if(!cfg.admin.valid || !pinMatches(cfg.admin,setupWeb.arg("adminAuth"))){setupBadPins++;setupBlockedAt=millis();setupReply(403,"PIN quản trị chưa đúng.");return;}
+    setupBadPins=0;wifiPermitUntil=millis()+600000;setupReply(200,"Đã cho phép đổi Wi-Fi trong 10 phút.");
+  });
   setupWeb.on("/api/setup/pin",HTTP_POST,[]{
-    if(!setupAuthorized())return;String pin=setupWeb.arg("doorPin"),admin=setupWeb.arg("adminPin");
-    bool valid=pin.length()==6 && pin==setupWeb.arg("doorConfirm");for(char c:pin)valid=valid&&isdigit(c);
-    if(!cfg.admin.valid){valid=valid && admin.length()==6 && admin==setupWeb.arg("adminConfirm");for(char c:admin)valid=valid&&isdigit(c);}
-    if(!valid){setupReply(400,"PIN cần đủ 6 chữ số và hai lần nhập phải giống nhau.");return;}
-    Config next=cfg;next.user=makePin(pin);if(!cfg.admin.valid)next.admin=makePin(admin);
-    if(!saveConfig(next)){setupReply(500,"Chưa lưu được PIN. Kiểm tra thiết bị rồi thử lại.");return;}
-    setupReply(200,"Đã lưu PIN tại cửa. Tiếp tục hiệu chỉnh cảm ứng và cảm biến trên màn hình sản phẩm.");
+    setupReply(410,"PIN chỉ được thiết lập trong ứng dụng của chủ cửa sau khi cửa đã online.");
   });
   setupWeb.on("/api/setup/finish",HTTP_POST,[]{
-    if(!setupAuthorized())return;if(WiFi.status()!=WL_CONNECTED){setupReply(409,"Cửa chưa kết nối Wi-Fi. Kiểm tra lại trước khi hoàn tất.");return;}
+    if(!setupAuthorized())return;if(WiFi.status()!=WL_CONNECTED || WiFi.SSID()!=wifiSsid){setupReply(409,"Cửa chưa kết nối Wi-Fi đã chọn. Kiểm tra lại trước khi hoàn tất.");return;}
     setupApCloseAt=millis()+3000;setupReply(200,"Đã lưu Wi-Fi. Mạng thiết lập sẽ tắt; mở lại Smart Door để hoàn tất nhận cửa.");
   });
   setupWeb.onNotFound([]{if(localHttp()){setupWeb.sendHeader("Location","http://192.168.4.1/",true);setupWeb.send(302,"text/plain","");}else setupReply(403,"Kết nối mạng thiết lập của cửa.");});
@@ -199,9 +251,15 @@ void pollRemoteEnroll() {
   if(millis()-remoteStarted>=45000){finishRemoteEnroll(false,"ENROLL_TIMEOUT");return;}
   uint8_t r=finger.getImage();
   if(r==FINGERPRINT_NOFINGER){if(remoteStage==2){remoteStage=3;tell("Scan SAME finger #2");}return;}
+  if(r==FINGERPRINT_PACKETRECIEVEERR || r==FINGERPRINT_TIMEOUT){fingerReady=false;finishRemoteEnroll(false,"SENSOR_COMMUNICATION_FAILED");return;}
   if(r!=FINGERPRINT_OK || remoteStage==2)return;
   if(finger.image2Tz(remoteStage==1?1:2)!=FINGERPRINT_OK){tell("Lift finger and try again");return;}
-  if(remoteStage==1){remoteStage=2;tell("Lift finger completely");return;}
+  if(remoteStage==1){
+    uint8_t search=finger.fingerFastSearch();
+    if(search==FINGERPRINT_OK){finishRemoteEnroll(false,"FINGER_ALREADY_ENROLLED");return;}
+    if(search!=FINGERPRINT_NOTFOUND){finishRemoteEnroll(false,"SENSOR_SEARCH_FAILED");return;}
+    remoteStage=2;tell("Lift finger completely");return;
+  }
   if(finger.createModel()!=FINGERPRINT_OK){finishRemoteEnroll(false,"FINGER_MISMATCH");return;}
   uint8_t bitmap[32];
   if(!readFingerBitmapRetry(bitmap)){finishRemoteEnroll(false,"SENSOR_READ_FAILED");return;}
@@ -210,20 +268,43 @@ void pollRemoteEnroll() {
   finishRemoteEnroll(true,"ENROLLED");
 }
 void executeReset(const String &uuid,uint32_t nextGeneration) {
+  if(uuid.length()!=36 || nextGeneration!=generation+1){sendAck(uuid,false,"RESET_INVALID_GENERATION",false);return;}
+  if(resetIntent.length() && resetIntent!=uuid){sendAck(uuid,false,"RESET_ALREADY_RUNNING",false);return;}
   resetPending=true;
+  lastResetAttempt=millis();adminSession=false;remoteStage=0;rfidScanUuid="";networkPage=false;
+  if(actuatorReady){xSemaphoreTake(motorMutex,portMAX_DELAY);motor.enabled=false;motor.pending=false;motor.calibrating=false;motor.pulsing=false;servo.detach();xSemaphoreGive(motorMutex);}
+  // Persist intent before destructive work. Boot/poll resumes it after a power loss.
+  if(!factoryPrefs.putUInt("nextGen",nextGeneration) || !factoryPrefs.putString("resetIntent",uuid)) {
+    storageFault=true;sendAck(uuid,false,"RESET_STORAGE_FAILED",false);return;
+  }
+  resetIntent=uuid;
   if(!fingerReady)probeSensors();
   if(!fingerReady || finger.emptyDatabase()!=FINGERPRINT_OK || finger.getTemplateCount()!=FINGERPRINT_OK || finger.templateCount!=0) {
-    sendAck(uuid,false,"FINGERPRINT_ERASE_NOT_VERIFIED");return;
+    sendAck(uuid,false,"FINGERPRINT_ERASE_NOT_VERIFIED",false);return;
   }
-  // Keep only factory identity and reset receipt; no local user credentials survive.
-  if(!nvs.clear() || !networkPrefs.clear() || !eventPrefs.clear()) {sendAck(uuid,false,"RESET_STORAGE_FAILED",false);return;}
-  queueHead=queueTail=0;
-  if(actuatorReady){xSemaphoreTake(motorMutex,portMAX_DELAY);motor.enabled=false;motor.pending=false;servo.detach();xSemaphoreGive(motorMutex);}
-  cfg={};cfg.magic=CONFIG_MAGIC;cfg.version=1;cfg.closedLevel=-1;cfg.lockAngle=30;cfg.openAngle=100;
-  resetReceipt=uuid;
-  if(!factoryPrefs.putString("resetAck",uuid) || !factoryPrefs.putUInt("nextGen",nextGeneration)) {sendAck(uuid,false,"RESET_STORAGE_FAILED",false);return;}
+  // Keep the network only until the server commits the reset, so a reboot can
+  // reconnect and resend the erase receipt. Commit then wipes Wi-Fi as well.
+  if(!nvs.clear() || !eventPrefs.clear()) {sendAck(uuid,false,"RESET_STORAGE_FAILED",false);return;}
+  queueHead=queueTail=0;droppedEvents=0;
+  cfg={};cfg.magic=CONFIG_MAGIC;cfg.version=2;cfg.closedLevel=-1;cfg.lockAngle=100;cfg.openAngle=30;
+  appPinsReady=false;sensorCycleVerified=false;servoCycleVerified=false;
+  digits="";firstPin="";notice="";enrollStage=0;enrollSlot=0;
+  selectedCard=Card{};selectedFinger=0;pendingCal=Calibration{};
+  doorCalClosedSample=-1;servoSetup=ServoSetup::State{};
+  if(!factoryPrefs.putString("resetAck",uuid)) {sendAck(uuid,false,"RESET_STORAGE_FAILED",false);return;}
+  resetReceipt=uuid;go(APP_SETUP);
   sendAck(uuid,true,"RESET_EMPTY_VERIFIED",false);
   tell("Reset pending backend confirmation");
+}
+bool finishResetCommit() {
+  if(!factoryPrefs.getBool("resetCommit",false))return false;
+  uint32_t next=factoryPrefs.getUInt("nextGen",generation);
+  if(!factoryPrefs.putUInt("gen",next) || !factoryPrefs.putBool("claimed",false) ||
+     !nvs.clear() || !eventPrefs.clear() || !networkPrefs.clear())return false;
+  generation=next;claimed=false;wifiSsid="";wifiPassword="";
+  factoryPrefs.remove("resetAck");factoryPrefs.remove("resetIntent");
+  factoryPrefs.remove("resetCommit");factoryPrefs.remove("nextGen");
+  resetReceipt="";resetIntent="";return true;
 }
 void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
   if(length>14000)return;DynamicJsonDocument doc(16384);if(deserializeJson(doc,bytes,length))return;
@@ -231,8 +312,7 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
   if(incomingTopic==topic("ack-confirm")) {
     String uuid=doc["commandUuid"]|"";
     if(!resetReceipt.isEmpty()&&uuid==resetReceipt){
-      generation=factoryPrefs.getUInt("nextGen",generation+1);factoryPrefs.putUInt("gen",generation);
-      factoryPrefs.remove("resetAck");resetReceipt="";claimed=false;factoryPrefs.putBool("claimed",false);
+      if(!factoryPrefs.putBool("resetCommit",true) || !finishResetCommit()){tell("Reset storage retry pending");return;}
       broker.disconnect();WiFi.disconnect(true);delay(200);ESP.restart();
     }
     for(int i=0;i<16;i++){String key="ack"+String(i);DynamicJsonDocument saved(512);if(!deserializeJson(saved,eventPrefs.getString(key.c_str(),""))&&saved["commandUuid"].as<String>()==uuid)eventPrefs.remove(key.c_str());}
@@ -262,6 +342,7 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
     }
     for(JsonVariant v:doc["fingerprints"].as<JsonArray>()){int id=v.as<int>();if(id>0&&id<256&&next.fingerCount<MAX_FINGERS)next.fingers[next.fingerCount++]=id;}
     if(memcmp(next.cards,cfg.cards,sizeof(cfg.cards)) || memcmp(next.fingers,cfg.fingers,sizeof(cfg.fingers)) ||next.cardCount!=cfg.cardCount||next.fingerCount!=cfg.fingerCount)saveConfig(next);
+    if(!appPinsReady && !networkPage)connectedContinueSetup();
     return;
   }
   if(incomingTopic!=topic("cmd"))return;
@@ -274,6 +355,41 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
   if(!eventPrefs.putString("started",uuid)){sendAck(uuid,false,"STORAGE_ERROR",false);return;}
   if(type=="DEVICE_RESET"){executeReset(uuid,doc["data"]["nextGeneration"]|generation+1);return;}
   if(!claimed || resetPending){sendAck(uuid,false,"NOT_READY");return;}
+  if(type=="WIFI_SETUP") {
+    if(screen==SERVO_CAL){sendAck(uuid,false,"DEVICE_BUSY");return;}
+    wifiPermitUntil=millis()+600000;connectedNetworkPage();sendAck(uuid,true,"WIFI_SETUP_ENABLED");return;
+  }
+  if(type=="SETUP_CREDENTIALS") {
+    MotorState active=snapshot();
+    if(remoteStage || !rfidScanUuid.isEmpty() || active.door.released || active.pending || active.pulsing || screen==SERVO_CAL){sendAck(uuid,false,"DEVICE_BUSY");return;}
+    String pin=doc["data"]["pin"]|"",admin=doc["data"]["adminPin"]|"";
+    bool valid=pin.length()==6 && admin.length()==6 && pin!=admin;
+    for(char c:pin)valid=valid&&isdigit(c);for(char c:admin)valid=valid&&isdigit(c);
+    if(!valid){sendAck(uuid,false,"INVALID_PINS");return;}
+    Config next=cfg;next.user=makePin(pin);next.admin=makePin(admin);
+    if(!appPinsReady){next.touch.valid=0;next.closedLevel=-1;sensorCycleVerified=false;servoCycleVerified=false;
+      if(!nvs.putBool("reedVerified",false) || !nvs.putBool("servoVerified",false)){sendAck(uuid,false,"STORAGE_ERROR");return;}}
+    if(!saveConfig(next) || !nvs.putBool("appPins",true)){storageFault=true;sendAck(uuid,false,"STORAGE_ERROR");return;}
+    appPinsReady=true;applyMotorConfig();sendAck(uuid,true,"PINS_CONFIGURED");
+    if(!connectedContinueSetup())go(HOME);return;
+  }
+  if(type=="SETUP_CALIBRATE") {
+    MotorState active=snapshot();
+    if(!appPinsReady || remoteStage || !rfidScanUuid.isEmpty() || active.door.released || active.pending || active.pulsing || screen==SERVO_CAL){sendAck(uuid,false,"DEVICE_BUSY_OR_PINS_REQUIRED");return;}
+    Config next=cfg;next.touch.valid=0;next.closedLevel=-1;sensorCycleVerified=false;servoCycleVerified=false;
+    if(!nvs.putBool("reedVerified",false) || !nvs.putBool("servoVerified",false) || !saveConfig(next)){sendAck(uuid,false,"STORAGE_ERROR");return;}
+    sendAck(uuid,true,"CALIBRATION_STARTED");connectedContinueSetup();return;
+  }
+  if(type=="SERVO_SET") {
+    MotorState state=snapshot();
+    if(state.door.released || state.pending || state.pulsing || state.calibrating || screen==SERVO_CAL || remoteStage || !rfidScanUuid.isEmpty()){sendAck(uuid,false,"DEVICE_BUSY");return;}
+    if(!doc["data"]["lockAngle"].is<int>() || !doc["data"]["openAngle"].is<int>()) {sendAck(uuid,false,"INVALID_SERVO_ANGLES");return;}
+    int lockAngle=doc["data"]["lockAngle"].as<int>(),openAngle=doc["data"]["openAngle"].as<int>();
+    if(!validServoAngles(lockAngle,openAngle)){sendAck(uuid,false,"INVALID_SERVO_ANGLES");return;}
+    Config next=cfg;next.lockAngle=lockAngle;next.openAngle=openAngle;
+    // Saving changes the next command's angles; it never requests a servo move.
+    bool saved=saveConfig(next);sendAck(uuid,saved,saved?"SERVO_ANGLES_SAVED":"SERVO_STORAGE_FAILED");return;
+  }
   if(type=="RFID_SCAN") {
     if(remoteStage || !rfidScanUuid.isEmpty() || !rfidReady || !configured() || screen!=HOME){sendAck(uuid,false,"RFID_BUSY_OR_NOT_READY");return;}
     rfidScanUuid=uuid;rfidScanStarted=millis();tell("Tap card for mobile registration");return;
@@ -304,13 +420,21 @@ void connectedSetup() {
   String json=factoryPrefs.getString("config","");DynamicJsonDocument doc(8192);
   if(!json.isEmpty() && !deserializeJson(doc,json))loadFactoryJson(doc);
   generation=factoryPrefs.getUInt("gen",1);claimed=factoryPrefs.getBool("claimed",false);
-  resetReceipt=factoryPrefs.getString("resetAck","");resetPending=!resetReceipt.isEmpty();
+  appPinsReady=nvs.getBool("appPins",false);applyMotorConfig();
+  resetReceipt=factoryPrefs.getString("resetAck","");resetIntent=factoryPrefs.getString("resetIntent","");
+  resetPending=resetReceipt.length() || resetIntent.length() || factoryPrefs.getBool("resetCommit",false);
+  if(factoryPrefs.getBool("resetCommit",false) && finishResetCommit()){ESP.restart();return;}
+  if(resetPending){adminSession=false;if(actuatorReady){xSemaphoreTake(motorMutex,portMAX_DELAY);motor.enabled=false;motor.pending=false;motor.calibrating=false;servo.detach();xSemaphoreGive(motorMutex);}}
   queueHead=eventPrefs.getUShort("head",0);queueTail=eventPrefs.getUShort("tail",0);droppedEvents=eventPrefs.getUInt("dropped",0);
   wifiSsid=networkPrefs.getString("ssid","");wifiPassword=networkPrefs.getString("password","");
   broker.setBufferSize(16384);broker.setSocketTimeout(2);broker.setCallback(handleBroker);
   WiFi.onEvent([](WiFiEvent_t event,WiFiEventInfo_t info){if(event==ARDUINO_EVENT_WIFI_SCAN_DONE){setupScanEventStatus=info.wifi_scan_done.status;setupScanEventCount=info.wifi_scan_done.number;}});
   configTime(0,0,"pool.ntp.org","time.cloudflare.com");startSetupWeb();
-  if(!wifiSsid.isEmpty())WiFi.begin(wifiSsid.c_str(),wifiPassword.c_str());else connectedNetworkPage();
+  WiFi.persistent(false);WiFi.setAutoReconnect(true);
+  if(!wifiSsid.isEmpty())WiFi.begin(wifiSsid.c_str(),wifiPassword.c_str());
+  if(connectedAccessReady()){if(wifiSsid.isEmpty())enableSetupAp();go(HOME);}
+  else if(!claimed || wifiSsid.isEmpty())connectedNetworkPage();
+  else if(!connectedContinueSetup())go(HOME);
   Serial.println("CONNECTED_READY factoryMac="+factoryMac());
 }
 void handleFactorySerial() {
@@ -335,7 +459,7 @@ void handleFactorySerial() {
       bool countOk=finger.getTemplateCount()==FINGERPRINT_OK;
       Serial.println("FACTORY_INFO mac="+factoryMac()+" uid="+deviceUid+" gen="+String(generation)+" wifi="+String(WiFi.status())+" mqtt="+String(broker.connected())+
         " fingerReady="+String(fingerReady)+" authenticated="+String(authenticated)+" parameters="+String(parameterStatus)+" capacity="+String(finger.capacity)+" bitmapOK="+String(bitmapOk)+" slot1empty="+String(bitmapOk&&!(bitmap[0]&2))+" templates="+String(countOk?int(finger.templateCount):-1)+
-        " motorEnabled="+String(state.enabled)+" motorFault="+String(state.fault)+" released="+String(state.door.released)+" reedVerified="+String(sensorCycleVerified)+" productPrepared="+String(!deviceUid.isEmpty()&&activationCode.length()>=24&&setupPassword.length()>=8));
+        " motorEnabled="+String(state.enabled)+" motorFault="+String(state.fault)+" motorCommanded="+String(state.commanded)+" lockAngle="+String(cfg.lockAngle)+" openAngle="+String(cfg.openAngle)+" lastServoAngle="+String(state.lastAngle)+" servoReady="+String(servoCycleVerified)+" released="+String(state.door.released)+" reedVerified="+String(sensorCycleVerified)+" appPins="+String(appPinsReady)+" offlineReady="+String(connectedAccessReady())+" ui="+String(screen==HOME?"KEYPAD":screen==SERVO_CAL?"SERVO_GUIDE":networkPage?"WIFI_SETUP":"SETUP")+" wifiBars="+String(WiFi.status()==WL_CONNECTED?SetupLogic::signalBars(WiFi.RSSI()):0)+" setupStage="+setupStage()+" productPrepared="+String(!deviceUid.isEmpty()&&activationCode.length()>=24&&setupPassword.length()>=8));
     }
     serialLine="";
   }
@@ -347,13 +471,33 @@ bool connectedCaptureCard(const String &uid) {
   sendAck(uuid,true,"RFID_UID:"+uid);tell("Card read - confirm in mobile app");return true;
 }
 void connectedPoll() {
+  if(factoryPrefs.getBool("resetCommit",false) && finishResetCommit()){broker.disconnect();WiFi.disconnect(true);delay(200);ESP.restart();return;}
+  if(resetIntent.length() && resetReceipt.isEmpty() && millis()-lastResetAttempt>15000)
+    executeReset(resetIntent,factoryPrefs.getUInt("nextGen",generation+1));
+  // AP recovery runs in the background; a configured door keeps its offline keypad.
+  if(connectedAccessReady() && screen==APP_SETUP && !networkPage)go(HOME);
   if(!rfidScanUuid.isEmpty() && millis()-rfidScanStarted>=30000){String uuid=rfidScanUuid;rfidScanUuid="";sendAck(uuid,false,"RFID_SCAN_TIMEOUT");tell("Card scan timed out");}
   handleFactorySerial();pollSetupScan();if(setupApActive)setupDns.processNextRequest();setupWeb.handleClient();pollRemoteEnroll();
-  if(setupApCloseAt && int32_t(millis()-setupApCloseAt)>=0){setupApCloseAt=0;setupDns.stop();WiFi.softAPdisconnect(true);setupApActive=false;networkPage=false;if(!cfg.touch.valid)beginCalibration();else if(!cfg.admin.valid)go(SET_ADMIN);else if(!configured())go(ADMIN_LOGIN);else go(HOME);}
+  if(setupApCloseAt && int32_t(millis()-setupApCloseAt)>=0){setupApCloseAt=0;setupDns.stop();WiFi.softAPdisconnect(true);setupApActive=false;networkPage=false;wifiPermitUntil=0;if(!connectedContinueSetup())go(HOME);}
   if(!fingerReady && !remoteStage && !resetPending && serialLine.isEmpty() && millis()-lastSensorRetry>15000){lastSensorRetry=millis();probeSensors();}
-  if(WiFi.status()!=WL_CONNECTED){if(!wifiSsid.isEmpty() && millis()-lastWifiAttempt>20000){lastWifiAttempt=millis();WiFi.begin(wifiSsid.c_str(),wifiPassword.c_str());}return;}
-  if(!resetPending && WiFi.SSID()==wifiSsid && (networkPrefs.getString("ssid","")!=wifiSsid || networkPrefs.getString("password","")!=wifiPassword)){networkPrefs.putString("ssid",wifiSsid);networkPrefs.putString("password",wifiPassword);}
-  if(networkPage && !cfg.touch.valid){networkPage=false;beginCalibration();}
+  if(SetupLogic::wifiAttemptExpired(setupConnectStarted,millis(),WiFi.status()==WL_CONNECTED && WiFi.SSID()==wifiSsid)) {
+    setupConnectStarted=0;setupError="Không kết nối được mạng mới. Đã giữ cấu hình Wi-Fi trước đó; hãy chọn lại mạng/mật khẩu.";
+    wifiSsid=networkPrefs.getString("ssid","");wifiPassword=networkPrefs.getString("password","");
+    if(!wifiSsid.isEmpty())WiFi.begin(wifiSsid.c_str(),wifiPassword.c_str());
+  }
+  if(WiFi.status()!=WL_CONNECTED){
+    if(!wifiOfflineSince)wifiOfflineSince=millis();
+    if(millis()-wifiOfflineSince>30000)enableSetupAp();
+    if(!setupConnectStarted && !wifiSsid.isEmpty() && millis()-lastWifiAttempt>15000){lastWifiAttempt=millis();WiFi.begin(wifiSsid.c_str(),wifiPassword.c_str());}
+    return;
+  }
+  wifiOfflineSince=0;
+  if(!resetPending && WiFi.SSID()==wifiSsid){
+    if(networkPrefs.getString("ssid","")!=wifiSsid || networkPrefs.getString("password","")!=wifiPassword)
+      if(!networkPrefs.putString("ssid",wifiSsid) || (!wifiPassword.isEmpty() && !networkPrefs.putString("password",wifiPassword)))storageFault=true;
+    if(wifiPassword.isEmpty())networkPrefs.remove("password");
+    setupConnectStarted=0;
+  }
   if(brokerHost.isEmpty()||deviceSecret.isEmpty())return;
   if(!broker.connected() && millis()-lastBrokerAttempt>10000){
     lastBrokerAttempt=millis();
@@ -363,12 +507,21 @@ void connectedPoll() {
     if(broker.connect(deviceUid.c_str(),brokerUser.c_str(),brokerPassword.c_str()))for(const char *suffix:{"cmd","config","ack-confirm","access-ack"})broker.subscribe(topic(suffix).c_str(),1);
   }
   broker.loop();if(!broker.connected())return;
+  if(screen==APP_SETUP && millis()-lastSetupDraw>1000){lastSetupDraw=millis();if(!connectedContinueSetup())go(HOME);}
+  if(wifiPermitUntil && int32_t(wifiPermitUntil-millis())<=0){wifiPermitUntil=0;if(setupApActive && claimed)setupApCloseAt=millis()+1000;}
   if(!resetReceipt.isEmpty()&&millis()-lastStatusAt>3000){lastStatusAt=millis();sendAck(resetReceipt,true,"RESET_EMPTY_VERIFIED",false);return;}
   if(millis()-lastStatusAt>5000){
-    lastStatusAt=millis();requestNonce=randomId();MotorState state=snapshot();DynamicJsonDocument status(768);
-    status["requestId"]=requestNonce;status["localReady"]=configured();status["hasDoorPin"]=cfg.user.valid;status["fingerReady"]=fingerReady;
+    lastStatusAt=millis();requestNonce=randomId();MotorState state=snapshot();DynamicJsonDocument status(2048);
+    status["requestId"]=requestNonce;status["localReady"]=configured();status["hasDoorPin"]=appPinsReady && cfg.user.valid;status["fingerReady"]=fingerReady;
+    status["adminPinSet"]=appPinsReady && cfg.admin.valid;status["touchCalibrated"]=bool(cfg.touch.valid);
+    status["doorCalibrated"]=sensorCycleVerified;status["setupStage"]=setupStage();status["wifiSsid"]=wifiSsid;
+    status["lockAngle"]=cfg.lockAngle;status["openAngle"]=cfg.openAngle;
+    status["servoCalibrated"]=servoCycleVerified;
+    if(state.lastAngle>=0)status["servoCommandAngle"]=state.lastAngle;else status["servoCommandAngle"]=nullptr;
+    status["servoDirection"]=ServoSetup::direction(state.previousAngle,state.lastAngle);
     if(sensorCycleVerified)status["doorClosed"]=isClosed(state,millis());else status["doorClosed"]=nullptr;
-    status["unlocked"]=state.door.released;status["droppedEvents"]=droppedEvents;
+    if(state.commanded && !state.calibrating)status["unlocked"]=state.door.released;else status["unlocked"]=nullptr;
+    status["droppedEvents"]=droppedEvents;
     // Telemetry chẩn đoán: cường độ Wi-Fi (dBm), RAM trống (bytes), thời gian chạy (s), phiên bản.
     status["rssi"]=WiFi.RSSI();status["freeHeap"]=ESP.getFreeHeap();status["uptime"]=millis()/1000;
     status["fw"]=FIRMWARE_VERSION;status["hw"]=HARDWARE_VERSION;

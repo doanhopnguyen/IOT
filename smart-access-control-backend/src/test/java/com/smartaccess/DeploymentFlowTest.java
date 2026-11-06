@@ -33,18 +33,20 @@ class DeploymentFlowTest {
  @Autowired CommandRepository commandRows;@Autowired AuditLogRepository audits;
  @Autowired FaceEnrollmentService faces;
  @Autowired InvitationService invitations;
+ @Autowired OnboardingService onboarding;@Autowired CommandAckService acknowledgements;
  Long admin,owner,stranger;static int seq;
  @BeforeEach void seed(){int n=++seq;admin=create("admin"+n,true);owner=create("owner"+n,false);stranger=create("other"+n,false);login(admin);}
  @AfterEach void clear(){SecurityContextHolder.clearContext();}
  Long create(String name,boolean admin){Account a=new Account();a.setFullName(name);a.setEmail(name+"@deploy.test");a.setAdmin(admin);a.setPasswordHash(passwords.encode("StrongPass!123"));return accounts.saveAndFlush(a).getAccountId();}
  void login(Long id){SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new AccountPrincipal(id),null,List.of()));}
  DeploymentService.Issued registered(){return deployment.register(String.format("%012X",seq),"Physical door");}
- DeploymentService.InventoryView claimed(DeploymentService.Issued issued){login(owner);return deployment.claim(issued.activationCode(),"My door");}
- void online(DeploymentService.InventoryView view){tx.executeWithoutResult(s->{Device d=devices.findById(view.deviceId()).orElseThrow();d.setLifecycleStatus(DeviceLifecycleStatus.ACTIVE);d.setLastSeenAt(LocalDateTime.now());d.getAccessUnit().setPinEnabled(true);});}
+ void onlineInventory(DeploymentService.Issued issued){tx.executeWithoutResult(s->{Device d=devices.findById(issued.device().deviceId()).orElseThrow();d.setLifecycleStatus(DeviceLifecycleStatus.ACTIVE);d.setLastSeenAt(LocalDateTime.now());});}
+ DeploymentService.InventoryView claimed(DeploymentService.Issued issued){onlineInventory(issued);login(owner);return deployment.claim(issued.activationCode(),"My door");}
+ void online(DeploymentService.InventoryView view){tx.executeWithoutResult(s->{Device d=devices.findById(view.deviceId()).orElseThrow();d.setLifecycleStatus(DeviceLifecycleStatus.ACTIVE);d.setLastSeenAt(LocalDateTime.now());d.getAccessUnit().setPinEnabled(true);d.setLocalAdminPinEnabled(true);d.setLocalAdminPinHash(passwords.encode("654321"));});}
  @Test void deviceUidCannotClaimAndActivationCodeIsOneTime(){
   var issued=registered();login(owner);
   assertThatThrownBy(()->deployment.claim(issued.device().deviceUid(),"Forged")).isInstanceOf(RuntimeException.class);
-  var mine=deployment.claim(issued.activationCode(),"My door");assertThat(mine.state()).isEqualTo("CLAIMED");
+  onlineInventory(issued);var mine=deployment.claim(issued.activationCode(),"My door");assertThat(mine.state()).isEqualTo("CLAIMED");
   login(stranger);assertThatThrownBy(()->deployment.claim(issued.activationCode(),"Other door")).isInstanceOf(RuntimeException.class);
   assertThat(units.findByManager_AccountIdOrderByUnitId(stranger)).isEmpty();
  }
@@ -96,13 +98,13 @@ class DeploymentFlowTest {
  }
  @Test void resetRequiresOwnerOrAdminPasswordConfirmationAndOnlineDevice(){
   var mine=claimed(registered());login(stranger);
-  assertThatThrownBy(()->deployment.startReset(mine.deviceUid(),"StrongPass!123",mine.deviceUid(),null)).isInstanceOf(RuntimeException.class);
-  login(owner);assertThatThrownBy(()->deployment.startReset(mine.deviceUid(),"wrong",mine.deviceUid(),null)).isInstanceOf(RuntimeException.class);
-  assertThatThrownBy(()->deployment.startReset(mine.deviceUid(),"StrongPass!123",mine.deviceUid(),null)).isInstanceOf(RuntimeException.class);
+  assertThatThrownBy(()->deployment.startReset(mine.deviceUid(),"StrongPass!123","654321",mine.deviceUid(),null)).isInstanceOf(RuntimeException.class);
+  login(owner);assertThatThrownBy(()->deployment.startReset(mine.deviceUid(),"wrong","654321",mine.deviceUid(),null)).isInstanceOf(RuntimeException.class);
+  assertThatThrownBy(()->deployment.startReset(mine.deviceUid(),"StrongPass!123","654321",mine.deviceUid(),null)).isInstanceOf(RuntimeException.class);
  }
  @Test void resetWaitsForVerifiedSensorAckThenDeletesDoorDataAndRejectsOldGeneration(){
   var mine=claimed(registered());online(mine);
-  var pending=deployment.startReset(mine.deviceUid(),"StrongPass!123",mine.deviceUid(),null);
+  var pending=deployment.startReset(mine.deviceUid(),"StrongPass!123","654321",mine.deviceUid(),null);
   assertThat(pending.state()).isEqualTo("RESETTING");
   assertThatThrownBy(()->deployment.issueAfterReset(mine.deviceUid(),"StrongPass!123")).isInstanceOf(RuntimeException.class);
   assertThat(deployment.resetAck(mine.deviceUid(),json.createObjectNode().put("commandUuid",pending.operationUuid()).put("success",false))).isFalse();
@@ -116,17 +118,37 @@ class DeploymentFlowTest {
   assertThat(units.findById(mine.unitId())).isEmpty();assertThat(accounts.findById(owner)).isPresent();
   var code=deployment.issueAfterReset(mine.deviceUid(),"StrongPass!123");assertThat(code.activationCode()).isNotBlank();
   Device d=devices.findById(mine.deviceId()).orElseThrow();assertThat(deployment.acceptGeneration(d,json.createObjectNode().put("generation",1))).isFalse();
+  assertThat(d.isLocalAdminPinEnabled()).isFalse();assertThat(d.getLocalAdminPinHash()).isNull();
   assertThat(deployment.resetAck(mine.deviceUid(),json.createObjectNode().put("commandUuid",pending.operationUuid()).put("success",true).put("message","RESET_EMPTY_VERIFIED"))).isTrue();
   assertThat(deployment.status(mine.deviceUid()).generation()).isEqualTo(2);
  }
+ @Test void resetRequiresBothCredentialsAndNeverPersistsThem(){
+  var mine=claimed(registered());online(mine);
+  for(String pin:new String[]{"123456","000000","65432","6543210","", "abcdef"})
+   assertThatThrownBy(()->deployment.startReset(mine.deviceUid(),"StrongPass!123",pin,mine.deviceUid(),null)).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+  assertThatThrownBy(()->deployment.startReset(mine.deviceUid(),"StrongPass!123",null,mine.deviceUid(),null)).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+  assertThatThrownBy(()->deployment.startReset(mine.deviceUid(),"wrong","654321",mine.deviceUid(),null)).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+  assertThat(deployment.status(mine.deviceUid()).state()).isEqualTo("CLAIMED");
+  assertThat(commandRows.findAll().stream().filter(c->c.getDevice().getDeviceId().equals(mine.deviceId()))).isEmpty();
+  var pending=deployment.startReset(mine.deviceUid(),"StrongPass!123","654321",mine.deviceUid(),null);
+  assertThat(commandRows.findByCommandUuid(pending.operationUuid()).orElseThrow().getPayload()).containsOnlyKeys("unitId");
+ }
+ @Test void resetRefusesUnconfirmedAdminPinAndAdminAlsoNeedsDoorPin(){
+  var mine=claimed(registered());online(mine);login(admin);
+  assertThatThrownBy(()->deployment.startReset(mine.deviceUid(),"StrongPass!123","123456",mine.deviceUid(),null)).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+  tx.executeWithoutResult(s->devices.findById(mine.deviceId()).orElseThrow().setLocalAdminPinEnabled(false));
+  assertThatThrownBy(()->deployment.startReset(mine.deviceUid(),"StrongPass!123","654321",mine.deviceUid(),null)).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+  tx.executeWithoutResult(s->devices.findById(mine.deviceId()).orElseThrow().setLocalAdminPinEnabled(true));
+  assertThat(deployment.startReset(mine.deviceUid(),"StrongPass!123","654321",mine.deviceUid(),null).state()).isEqualTo("RESETTING");
+ }
  @Test void failedOrTimedOutResetReturnsDoorToServiceInsteadOfStayingResetting(){
   var mine=claimed(registered());online(mine);
-  var first=deployment.startReset(mine.deviceUid(),"StrongPass!123",mine.deviceUid(),null);
+  var first=deployment.startReset(mine.deviceUid(),"StrongPass!123","654321",mine.deviceUid(),null);
   assertThat(deployment.resetAck(mine.deviceUid(),json.createObjectNode().put("commandUuid",first.operationUuid()).put("success",false))).isFalse();
   assertThat(deployment.status(mine.deviceUid()).state()).isEqualTo("CLAIMED");
   // Không còn bị chặn "Cửa đang reset": chủ cửa thử reset lại được với lệnh mới.
   online(mine);
-  var second=deployment.startReset(mine.deviceUid(),"StrongPass!123",mine.deviceUid(),null);
+  var second=deployment.startReset(mine.deviceUid(),"StrongPass!123","654321",mine.deviceUid(),null);
   assertThat(second.state()).isEqualTo("RESETTING");assertThat(second.operationUuid()).isNotEqualTo(first.operationUuid());
   deployment.expireReset(mine.deviceId(),first.operationUuid()); // uuid cũ không ảnh hưởng thao tác mới
   assertThat(deployment.status(mine.deviceUid()).state()).isEqualTo("RESETTING");
@@ -143,9 +165,42 @@ class DeploymentFlowTest {
   var mine=claimed(registered());login(admin);
   var other=claimed(deployment.register(String.format("%012X",seq+20000),"Other chip"));
   Long mineAudit=audit(mine.unitId()),otherAudit=audit(other.unitId());
-  online(mine);var pending=deployment.startReset(mine.deviceUid(),"StrongPass!123",mine.deviceUid(),null);
+  online(mine);var pending=deployment.startReset(mine.deviceUid(),"StrongPass!123","654321",mine.deviceUid(),null);
   assertThat(deployment.resetAck(mine.deviceUid(),json.createObjectNode().put("commandUuid",pending.operationUuid()).put("success",true).put("message","RESET_EMPTY_VERIFIED"))).isTrue();
   assertThat(audits.findById(mineAudit)).isEmpty();assertThat(audits.findById(otherAudit)).isPresent();
+ }
+ @Test void cannotClaimBeforeOnlineAndInspectDoesNotConsumeCode(){
+  var issued=registered();login(owner);
+  assertThat(deployment.inspect(issued.activationCode()).online()).isFalse();
+  assertThatThrownBy(()->deployment.claim(issued.activationCode(),"My door")).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+  assertThat(inventory.findById(issued.device().deviceId()).orElseThrow().getClaimHash()).isNotNull();
+  onlineInventory(issued);assertThat(deployment.inspect(issued.activationCode()).online()).isTrue();
+  assertThat(deployment.claim(issued.activationCode(),"My door").state()).isEqualTo("CLAIMED");
+ }
+ @Test void appPinsBecomeEffectiveOnlyAfterDeviceAcknowledgement(){
+  var mine=claimed(registered());online(mine);
+  tx.executeWithoutResult(s->units.findById(mine.unitId()).orElseThrow().setPinEnabled(false));
+  var cmd=onboarding.credentials(owner,mine.unitId(),"123456","123456","654321","654321");
+  assertThat(units.findById(mine.unitId()).orElseThrow().isPinEnabled()).isFalse();
+  var row=commandRows.findByCommandUuid(cmd.commandUuid()).orElseThrow();
+  assertThat(row.getPayload()).doesNotContainKeys("pin","adminPin");
+  acknowledgements.handleAck(mine.deviceUid(),cmd.commandUuid(),true,"PINS_CONFIGURED");
+  assertThat(units.findById(mine.unitId()).orElseThrow().isPinEnabled()).isTrue();
+  Device d=devices.findById(mine.deviceId()).orElseThrow();assertThat(d.isLocalAdminPinEnabled()).isTrue();
+  assertThat(passwords.matches("654321",d.getLocalAdminPinHash())).isTrue();
+  assertThat(commandRows.findByCommandUuid(cmd.commandUuid()).orElseThrow().getPayload()).containsOnlyKeys("unitId");
+ }
+ @Test void servoConfirmationIsRequiredWhenDeviceReportsGuidedSetup(){
+  var mine=claimed(registered());online(mine);
+  deployment.wireConfig(mine.deviceUid(),json.createObjectNode().put("generation",1).put("localReady",true).put("hasDoorPin",true).put("servoCalibrated",false));
+  assertThat(deployment.status(mine.deviceUid()).setupReady()).isFalse();
+  deployment.wireConfig(mine.deviceUid(),json.createObjectNode().put("generation",1).put("localReady",true).put("hasDoorPin",true).put("servoCalibrated",true));
+  assertThat(deployment.status(mine.deviceUid()).setupReady()).isTrue();
+ }
+ @Test void latchWithoutAnyCommandRemainsUnknownAfterHeartbeat(){
+  var mine=claimed(registered());
+  deployment.wireConfig(mine.deviceUid(),json.createObjectNode().put("generation",1).putNull("unlocked"));
+  assertThat(deployment.status(mine.deviceUid()).latchReleased()).isNull();
  }
  Long audit(Long unitId){
   AuditLog a=new AuditLog();a.setAction("UPDATE_PERMISSION");a.setEntityType("USER_ACCESS");a.setEntityId(owner);

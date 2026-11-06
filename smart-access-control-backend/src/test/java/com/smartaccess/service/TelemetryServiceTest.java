@@ -63,6 +63,36 @@ class TelemetryServiceTest {
         assertThat(rssi.getOccurredAt()).isAfter(LocalDateTime.now().minusMinutes(1));
     }
 
+    @Test void storesGuidedSetupProgressButNeverPinOrWifiPassword() {
+        service.record(door,status().put("setupStage","TOUCH_3").put("wifiSsid","Home 2.4")
+                .put("hasDoorPin",true).put("adminPinSet",true).put("touchCalibrated",false).put("doorCalibrated",false)
+                .put("pin","123456").put("adminPin","654321").put("wifiPassword","private").putNull("unlocked"),requestId);
+        assertThat(saved()).extracting(Telemetry::getMetricName).containsExactlyInAnyOrder(
+                "setupStage","wifiSsid","hasDoorPin","adminPinSet","touchCalibrated","doorCalibrated","unlocked");
+        assertThat(saved("setupStage").getMetricValue()).isEqualTo("TOUCH_3");
+        assertThat(saved("unlocked").getMetricValue()).isEqualTo("unknown");
+    }
+    @Test void rejectsMalformedSetupStageAndOverlongNetworkName() {
+        service.record(door,status().put("setupStage","<bad>").put("wifiSsid","x".repeat(33)).put("adminPinSet","true"),requestId);
+        assertThat(saved()).isEmpty();
+    }
+    @Test void servoAnglesMayBeEqualButMustStayWithinRange() {
+        service.record(door,status().put("lockAngle",90).put("openAngle",90),requestId);
+        assertThat(saved("lockAngle").getMetricValue()).isEqualTo("90");
+        assertThat(saved("openAngle").getMeasurementUnit()).isEqualTo("deg");
+    }
+    @Test void servoCalibrationReportsCommandsAndDirectionWithoutClaimingPositionFeedback() {
+        service.record(door,status().put("setupStage","SERVO_OPEN").put("servoCalibrated",false)
+                .put("servoCommandAngle",100).put("servoDirection","DECREASE"),requestId);
+        assertThat(saved("setupStage").getMetricValue()).isEqualTo("SERVO_OPEN");
+        assertThat(saved("servoCommandAngle").getMetricValue()).isEqualTo("100");
+        assertThat(saved("servoDirection").getMetricValue()).isEqualTo("DECREASE");
+        assertThat(saved("servoCalibrated").getMetricValue()).isEqualTo("false");
+    }
+    @Test void missingServoPositionRemainsUnknown() {
+        service.record(door,status().putNull("servoCommandAngle").put("servoDirection","UNKNOWN"),requestId);
+        assertThat(saved("servoCommandAngle").getMetricValue()).isEqualTo("unknown");
+    }
     @Test void unchangedValuesAreNotStoredAgainWithinKeepalive() {
         last("doorClosed", "true", 60);
         service.record(door, status().put("doorClosed", true), requestId);

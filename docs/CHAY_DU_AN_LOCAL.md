@@ -1,5 +1,7 @@
 # Chạy lại dự án trên máy hiện tại
 
+Firmware connected 1.2.0 dùng [luồng thiết lập bằng app](THIET_LAP_APP_VA_WIFI.md): Wi-Fi trước, app kiểm tra online rồi nhận cửa/đặt PIN; chip chỉ dẫn hiệu chỉnh. Không tạo PIN trên portal hoặc chip. Các ghi chú reset/firmware cũ bên dưới là lịch sử trước thay đổi này.
+
 Các lệnh dưới đây dùng những dependency, DB, file cấu hình và bản backend đã build sẵn trong D:\DEV\IOT. Không chạy lại script khởi tạo/xóa DB để khởi động hằng ngày.
 
 ## Chuẩn bị

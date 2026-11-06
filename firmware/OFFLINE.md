@@ -22,8 +22,8 @@ Mặc định ST7789 240×320 theo bản đã hiển thị trong README. Nếu p
 2. Giữ ngón tay trên từng dấu cộng rồi nhấc ra. Có ba điểm đo và một điểm giữa để kiểm chứng; nếu sai, màn hình yêu cầu làm lại.
 3. Tạo **PIN quản trị 6 số**, nhấn `E`, nhập lại để xác nhận. `C` xóa ô nhập. Không có PIN mặc định.
 4. Tạo **PIN mở cửa 6 số** khác PIN quản trị, nhập hai lần.
-5. Đóng cửa/đặt nam châm đúng vị trí cửa đóng, nhấn `SAVE CLOSED LEVEL`. Khi cấu hình hoàn tất, servo nhận lệnh khóa nếu cảm biến đang báo cửa đóng.
-6. Trong `SERVO SETUP`, chỉnh góc khóa/mở theo cơ cấu bằng bước 5°, dùng `TEST OPEN` / `LOCK NOW` để thử. Mặc định khóa 30°, mở 100°; đây là góc khởi điểm, không đảm bảo khớp mọi cơ cấu.
+5. Hiệu chỉnh cảm biến theo hướng dẫn: xác nhận khi cửa đóng rồi khi cửa mở. Tiếp theo là SERVO LOCK / SERVO OPEN: đóng cửa, chỉnh góc khóa, TEST rồi CONFIRM LOCK; chỉnh góc mở, TEST rồi CONFIRM OPEN / FINISH. Chỉ nút TEST mới quay servo; phải đợi xung thử kết thúc và quan sát chốt trước khi xác nhận. Hai góc được lưu thành cặp sau bước cuối; góc lệnh và dấu tăng/giảm được hiển thị, không phải số đo vị trí thực.
+6. Trong `SERVO SETUP`, chỉnh góc khóa/mở theo cơ cấu bằng bước 5°, dùng `TEST OPEN` / `LOCK NOW` để thử. Hai góc có thể bằng nhau để chỉnh qua vị trí giữa, được lưu và đọc lại sau reboot. Mặc định khóa 100°, mở 30°. Cấu hình phiên bản 1 được chuyển một lần sang góc khóa 100°/mở 30° và lưu thành phiên bản 2, giữ PIN/quyền/hiệu chỉnh; các lần chỉnh góc tiếp theo vẫn được giữ qua khởi động lại. Firmware cũ chỉ đọc phiên bản 1 không đọc được cấu hình phiên bản 2.
 7. Thêm thẻ và vân tay bằng menu, rồi `EXIT ADMIN` để về màn hình sử dụng.
 
 Nếu mất điện giữa thiết lập, lần sau tiếp tục từ phần còn thiếu. Sau khi đã tạo PIN quản trị, cần PIN này để tiếp tục thiết lập các quyền khác. PIN chỉ lưu salt/hash; dữ liệu NVS chưa mã hóa. NVS riêng `offlinedoor`, không lấy quyền của bản firmware mạng.
@@ -32,7 +32,7 @@ Nếu mất điện giữa thiết lập, lần sau tiếp tục từ phần cò
 
 - Nhập PIN mở cửa rồi `E`, quẹt thẻ được cấp quyền hoặc chạm vân tay được đăng ký tại menu này.
 - Mở hợp lệ: servo nhả chốt. Không mở cửa trong 5 giây thì tự khóa; nếu đã mở cửa thì chờ đóng ổn định 1 giây mới khóa. Cửa mở quá 20 giây có nhắc trên màn hình, không đẩy chốt khi cảm biến báo mở.
-- Lúc bật nguồn lại: cửa đóng thì phát lệnh khóa; cửa đang mở thì nhả chốt và đợi đóng lại. SG90 nhận PWM khoảng 900 ms rồi nhả lực; cơ cấu phải tự giữ vị trí sau đó.
+- Lúc bật nguồn lại hoặc hoàn tất thiết lập: không phát lệnh xoay servo. Đóng/mở cánh cửa khi chưa có lượt mở hợp lệ cũng không làm servo xoay. Dùng mở cửa hợp lệ hoặc `LOCK NOW` để điều khiển; trước lệnh đầu tiên màn hình báo `Latch:UNKNOWN`. SG90 nhận PWM khoảng 900 ms mỗi lệnh rồi nhả lực; cơ cấu phải tự giữ vị trí sau đó.
 - `ADMIN` → PIN quản trị: thêm/xóa tối đa **32 thẻ + 32 vân tay**, đổi từng PIN, hiệu chuẩn cảm ứng/cửa, chỉnh góc servo và xem trạng thái. Phiên quản trị hết sau 90 giây không thao tác hoặc tối đa 5 phút.
 - `DELETE CARD` / `DELETE FINGER`: chọn UID/ID trong danh sách, dùng `PREV`/`NEXT`, xác nhận `REVOKE ACCESS`. Có thể thu hồi thẻ bị mất mà không cần quẹt lại. Cũng có thể quẹt thẻ/chạm vân tay trên trang xóa để chọn đúng mục.
 - Đăng ký vân tay: chạm lần 1, nhấc hẳn, chạm cùng ngón lần 2; timeout 45 giây. Chỉ dùng ô trống được xác nhận qua bitmap, không ghi đè mẫu có sẵn. Mẫu đã có từ firmware cũ không tự được cấp quyền. Có thể xóa mẫu đó tại trang xóa bằng cách chạm đúng ngón tay rồi xác nhận, sau đó đăng ký lại.

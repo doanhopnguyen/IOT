@@ -29,6 +29,7 @@
 #include <MFRC522.h>
 #include <Adafruit_Fingerprint.h>
 #include <ESP32Servo.h>
+#include "../include/servo_setup_logic.h"
 #include <mbedtls/sha256.h>
 #include <esp_system.h>
 #include <math.h>
@@ -80,6 +81,13 @@ bool heldOpen(const State &s, uint32_t now, bool closed) {
 constexpr int TFT_CS=47, TOUCH_CS=48, RFID_CS=10, RFID_RST=9;
 constexpr int TFT_DC=2, TFT_RST=1, DOOR_PIN=6, SERVO_PIN=4;
 constexpr int FP_RX=17, FP_TX=18;
+#ifdef CONNECTED_DOOR
+constexpr int HEADER_BUTTON_Y=16;
+constexpr int HEADER_BUTTON_H=17;
+#else
+constexpr int HEADER_BUTTON_Y=2;
+constexpr int HEADER_BUTTON_H=29;
+#endif
 constexpr uint32_t FP_BAUD=57600, ADMIN_IDLE_MS=90000, ADMIN_MAX_MS=300000;
 constexpr uint16_t BLACK=0x0000, WHITE=0xffff, CYAN=0x07ff;
 constexpr uint16_t GREEN=0x07e0, RED=0xf800, YELLOW=0xffe0, GRAY=0x4208;
@@ -124,14 +132,16 @@ struct MotorState {
   DoorLogic::State door;
   int raw=HIGH, stable=HIGH, closedLevel=-1;
   uint32_t changedAt=0;
-  bool enabled=false, pending=false, fault=false;
-  int target=30, lockAngle=30, openAngle=100;
+  bool enabled=false, pending=false, fault=false, commanded=false,calibrating=false,pulsing=false;
+  int target=100, lockAngle=100, openAngle=30;
+  int lastAngle=-1,previousAngle=-1;
+  uint32_t commandSequence=0;
 } motor;
 
 enum Screen : uint8_t {
   HOME, ADMIN_LOGIN, SET_ADMIN, CONFIRM_ADMIN, SET_USER, CONFIRM_USER,
   MENU, ADD_CARD, REMOVE_CARD, ENROLL, REMOVE_FINGER, TOUCH_CAL,
-  DOOR_CAL, MOTOR, DEVICE_STATUS, DELETE_CONFIRM
+  DOOR_CAL, MOTOR, DEVICE_STATUS, DELETE_CONFIRM, APP_SETUP, SERVO_CAL
 };
 Screen screen=HOME;
 bool adminSession=false;
@@ -139,6 +149,7 @@ uint32_t adminStarted=0, adminActivity=0;
 String digits, firstPin, notice;
 bool fingerHeld=false, touchDown=false;
 uint32_t lastTouch=0, lastRfid=0, lastFinger=0, lastRefresh=0;
+uint32_t lastServoUiRefresh=0;
 bool lastStateValid=false, lastReleased=false, lastDoorClosed=false;
 uint8_t enrollStage=0;
 uint16_t enrollSlot=0;
@@ -159,8 +170,17 @@ uint32_t touchReleaseAt=0, touchDiagnosticAt=0, lastTouchDiagnostic=0;
 bool touchDiagnostics=false;
 
 bool sensorCycleVerified=false;
+bool servoCycleVerified=false;
+ServoSetup::State servoSetup;
+bool servoPreviouslyVerified=false;
+uint32_t servoTestSequence=0;
 int8_t doorCalClosedSample=-1;
-bool configured() { return cfg.admin.valid && cfg.user.valid && cfg.touch.valid && cfg.closedLevel>=0 && sensorCycleVerified; }
+bool configured() {
+#ifdef CONNECTED_DOOR
+  if (!connectedCredentialsReady()) return false;
+#endif
+  return cfg.admin.valid && cfg.user.valid && cfg.touch.valid && cfg.closedLevel>=0 && sensorCycleVerified && servoCycleVerified;
+}
 bool isClosed(const MotorState &m,uint32_t now) {
   return m.closedLevel>=0 && m.stable==m.closedLevel && m.raw==m.stable &&
          uint32_t(now-m.changedAt)>=40;
@@ -172,7 +192,6 @@ MotorState snapshot() {
   return out;
 }
 void motorTask(void *) {
-  bool pulsing=false;
   uint32_t pulseAt=0;
   for (;;) {
     uint32_t now=millis();
@@ -181,17 +200,18 @@ void motorTask(void *) {
     if (raw!=motor.raw) { motor.raw=raw; motor.changedAt=now; }
     if (now-motor.changedAt>=40) motor.stable=raw;
     bool closed=isClosed(motor,now);
-    if (motor.enabled && DoorLogic::tick(motor.door,now,closed)) {
+    if (motor.enabled && !motor.calibrating && DoorLogic::tick(motor.door,now,closed)) {
       motor.target=motor.lockAngle; motor.pending=true;
     }
-    if (motor.pending && motor.enabled) {
+    if (motor.pending && (motor.enabled || motor.calibrating)) {
       motor.pending=false;
       if (!servo.attached()) servo.attach(SERVO_PIN,1000,2000);
       if (servo.attached()) {
-        servo.write(motor.target); pulseAt=now; pulsing=true;
+        servo.write(motor.target); motor.previousAngle=motor.lastAngle;motor.lastAngle=motor.target;motor.commandSequence++;
+        motor.commanded=true; pulseAt=now; motor.pulsing=true;
       } else motor.fault=true;
     }
-    if (pulsing && uint32_t(now-pulseAt)>=900) { servo.detach(); pulsing=false; }
+    if (motor.pulsing && uint32_t(now-pulseAt)>=900) { servo.detach(); motor.pulsing=false; }
     xSemaphoreGive(motorMutex);
     vTaskDelay(pdMS_TO_TICKS(10));
   }
@@ -203,12 +223,11 @@ void applyMotorConfig() {
   motor.closedLevel=cfg.closedLevel;
   motor.lockAngle=cfg.lockAngle; motor.openAngle=cfg.openAngle;
   motor.enabled=configured();
-  if (motor.enabled && !wasEnabled) {
-    bool closed=isClosed(motor,millis());
-    if (closed) motor.door=DoorLogic::State{};
-    else DoorLogic::release(motor.door,millis(),false);
-    motor.target=closed ? motor.lockAngle : motor.openAngle;
-    motor.pending=true;
+  if (!motor.enabled || !wasEnabled) {
+    // Boot/setup only arms the controller. A door sensor is not authorization
+    // to move the latch, even when the door is already open.
+    motor.door=DoorLogic::State{};
+    motor.pending=false;
   }
   xSemaphoreGive(motorMutex);
 }
@@ -218,7 +237,7 @@ bool requestOpen() {
 #endif
   if (storageFault || !actuatorReady || !configured()) return false;
   xSemaphoreTake(motorMutex,portMAX_DELAY);
-  bool ok=motor.enabled && !motor.fault;
+  bool ok=motor.enabled && !motor.fault && !motor.calibrating;
   if (ok && !motor.door.released) {
     DoorLogic::release(motor.door,millis(),isClosed(motor,millis()));
     motor.target=motor.openAngle; motor.pending=true;
@@ -229,7 +248,7 @@ bool requestOpen() {
 bool requestLock() {
   if (!actuatorReady) return false;
   xSemaphoreTake(motorMutex,portMAX_DELAY);
-  bool ok=motor.enabled && isClosed(motor,millis()) && !motor.fault;
+  bool ok=motor.enabled && isClosed(motor,millis()) && !motor.fault && !motor.calibrating;
   if (ok) {
     motor.door.released=false; motor.target=motor.lockAngle; motor.pending=true;
   }
@@ -264,11 +283,26 @@ bool validCal(const Calibration &c) {
     isfinite(c.d) && isfinite(c.e) && isfinite(c.f) &&
     fabsf(c.a*c.e-c.b*c.d)>0.00001f;
 }
+// NVS calibration stays in the original rotation-0 coordinate system.
+// A half turn is its own inverse, so existing calibration remains usable.
+Calibration halfTurnCalibration(Calibration c) {
+  c.a=-c.a; c.b=-c.b; c.c=239-c.c;
+  c.d=-c.d; c.e=-c.e; c.f=319-c.f;
+  return c;
+}
+Config upgradeServoAngles(Config c) {
+  if (c.version==1) {
+    c.version=2; c.lockAngle=100; c.openAngle=30;
+  }
+  return c;
+}
+bool validServoAngles(int lockAngle,int openAngle) {
+  return lockAngle>=5 && lockAngle<=175 && openAngle>=5 && openAngle<=175;
+}
 bool validConfig(const Config &c) {
-  if (c.magic!=CONFIG_MAGIC || c.version!=1 || c.admin.valid>1 || c.user.valid>1 ||
+  if (c.magic!=CONFIG_MAGIC || (c.version!=1 && c.version!=2) || c.admin.valid>1 || c.user.valid>1 ||
       c.cardCount>MAX_CARDS || c.fingerCount>MAX_FINGERS ||
-      c.closedLevel < -1 || c.closedLevel>1 || c.lockAngle<5 || c.lockAngle>175 ||
-      c.openAngle<5 || c.openAngle>175 || c.lockAngle==c.openAngle ||
+      c.closedLevel < -1 || c.closedLevel>1 || !validServoAngles(c.lockAngle,c.openAngle) ||
       c.touch.valid>1 || (c.touch.valid && !validCal(c.touch))) return false;
   for (int i=0;i<c.cardCount;i++)
     if (c.cards[i].size!=4 && c.cards[i].size!=7 && c.cards[i].size!=10) return false;
@@ -288,8 +322,8 @@ bool saveConfig(Config next) {
   cfg=next; applyMotorConfig(); return true;
 }
 void loadConfig() {
-  cfg={}; cfg.magic=CONFIG_MAGIC; cfg.version=1;
-  cfg.closedLevel=-1; cfg.lockAngle=30; cfg.openAngle=100;
+  cfg={}; cfg.magic=CONFIG_MAGIC; cfg.version=2;
+  cfg.closedLevel=-1; cfg.lockAngle=100; cfg.openAngle=30;
   if (!nvs.begin("offlinedoor",false)) { storageFault=true; return; }
   sensorCycleVerified=nvs.getBool("reedVerified",false);
   size_t size=nvs.getBytesLength("config");
@@ -298,9 +332,18 @@ void loadConfig() {
     if (size!=sizeof(stored) || nvs.getBytes("config",&stored,sizeof(stored))!=sizeof(stored) ||
         !validConfig(stored)) { storageFault=true; return; }
     cfg=stored;
+    // Persist the requested angles once; later SERVO SETUP edits survive reboot.
+    if (stored.version==1 && !saveConfig(upgradeServoAngles(stored))) return;
   }
   failedPins=nvs.getUChar("badpin",0);
   if (failedPins>=5) { pinBlocked=true; blockedSince=millis(); }
+  // Existing working doors retain offline access after upgrading; new setup
+  // explicitly writes false before calibration starts.
+  bool legacyReady=cfg.admin.valid && cfg.user.valid && cfg.touch.valid && sensorCycleVerified;
+#ifdef CONNECTED_DOOR
+  legacyReady=legacyReady && nvs.getBool("appPins",false);
+#endif
+  servoCycleVerified=nvs.getBool("servoVerified",legacyReady);
 }
 bool setFailures(uint8_t count) {
   if (storageFault || nvs.putUChar("badpin",count)!=1) { storageFault=true; return false; }
@@ -340,9 +383,15 @@ void button(int x,int y,int w,int h,const String &label,uint16_t color=CYAN) {
   text(x+max(3,(w-int(label.length())*6*size)/2),y+(h-8*size)/2,label,color,size);
 }
 void title(const String &label) {
-  tft.fillScreen(BLACK); text(5,10,label,CYAN,2);
+  tft.fillScreen(BLACK);
+#ifdef CONNECTED_DOOR
+  text(5,16,label,CYAN,2);connectedDrawStatusBar(true);
+#else
+  text(5,10,label,CYAN,2);
+#endif
 }
 void draw();
+void storageError();
 void go(Screen next) {
   if(next==DOOR_CAL)doorCalClosedSample=-1;
   screen=next; digits=""; fingerHeld=true; enrollStage=0;
@@ -377,7 +426,67 @@ void drawCalibration() {
   row(105,"Point "+String(calStep+1)+" / 4");
   row(125,"Serial s: status, r: retry devices");
 }
+void drawServoCalibration() {
+  title(servoSetup.step==0?"SERVO LOCK":"SERVO OPEN");
+  row(35,servoSetup.step==0?"CLOSE door before LOCK test":"Adjust OPEN, test, then confirm",YELLOW);
+  row(62,"LOCK: "+String(servoSetup.lockAngle)+" deg / OPEN: "+String(servoSetup.openAngle)+" deg");
+  MotorState m=snapshot();
+  row(86,m.lastAngle<0?"Last command: unknown":"Last command: "+String(m.lastAngle)+" deg");
+  int delta=servoSetup.openAngle-servoSetup.lockAngle;
+  row(110,"Open direction: "+String(delta>0?"+":"")+String(delta)+" deg",CYAN);
+  row(131,"Confirm only after checking latch");
+  button(8,153,105,36,"ANGLE -5");button(127,153,105,36,"ANGLE +5");
+  button(8,199,224,38,servoSetup.step==0?"TEST LOCK POSITION":"TEST OPEN POSITION");
+  button(8,249,224,38,servoSetup.step==0?"CONFIRM LOCK":"CONFIRM OPEN / FINISH");
+  if(servoSetup.step>0 || servoPreviouslyVerified)button(8,292,224,25,servoSetup.step>0?"BACK TO LOCK":"CANCEL");
+}
+void beginServoCalibration() {
+  if(!adminSession || !actuatorReady || !sensorCycleVerified){tell("Finish door sensor setup first");return;}
+  MotorState m=snapshot();
+  if(m.door.released || m.pending || m.pulsing){tell("Close/relock before calibration");return;}
+  servoPreviouslyVerified=servoCycleVerified;
+  if(!nvs.putBool("servoVerified",false)){storageError();return;}
+  servoCycleVerified=false;applyMotorConfig();
+  servoSetup=ServoSetup::State{};servoSetup.lockAngle=cfg.lockAngle;servoSetup.openAngle=cfg.openAngle;
+  go(SERVO_CAL);
+}
+void cancelServoCalibration() {
+  xSemaphoreTake(motorMutex,portMAX_DELAY);
+  motor.calibrating=false;motor.pending=false;motor.commanded=false;
+  xSemaphoreGive(motorMutex);
+  if(servoPreviouslyVerified){
+    if(!nvs.putBool("servoVerified",true)){storageError();return;}
+    servoCycleVerified=true;applyMotorConfig();go(MENU);tell("Canceled - check latch position");
+  }
+}
+bool testServoCalibration() {
+  if(!adminSession || storageFault || !actuatorReady)return false;
+  xSemaphoreTake(motorMutex,portMAX_DELAY);
+  bool ok=!motor.fault && !motor.pending && !motor.pulsing &&
+    (servoSetup.step!=0 || isClosed(motor,millis()));
+  if(ok){servoTestSequence=motor.commandSequence;motor.calibrating=true;motor.target=ServoSetup::angle(servoSetup);motor.pending=true;servoSetup.tested=true;}
+  xSemaphoreGive(motorMutex);return ok;
+}
+void confirmServoCalibration() {
+  MotorState m=snapshot();
+  if(!ServoSetup::canConfirm(servoSetup,m.lastAngle,m.pending,m.pulsing,isClosed(m,millis()),m.fault,m.commandSequence!=servoTestSequence)) {
+    tell(servoSetup.step==0?"Close door; TEST LOCK, then confirm":"TEST OPEN, wait, then confirm");return;
+  }
+  if(servoSetup.step==0){servoSetup.step=1;servoSetup.tested=false;drawServoCalibration();return;}
+  Config next=cfg;next.lockAngle=servoSetup.lockAngle;next.openAngle=servoSetup.openAngle;
+  if(!saveConfig(next) || !nvs.putBool("servoVerified",true)){storageError();return;}
+  servoCycleVerified=true;
+  xSemaphoreTake(motorMutex,portMAX_DELAY);motor.calibrating=false;motor.pending=false;xSemaphoreGive(motorMutex);
+  applyMotorConfig();
+  // The user explicitly tested OPEN. Preserve that command state and use the
+  // normal relock timer/interlock; completing setup itself sends no PWM.
+  xSemaphoreTake(motorMutex,portMAX_DELAY);
+  DoorLogic::release(motor.door,millis(),isClosed(motor,millis()));motor.commanded=true;
+  xSemaphoreGive(motorMutex);
+  adminSession=false;go(HOME);tell("Servo positions confirmed");
+}
 void draw() {
+  if (screen==SERVO_CAL) { drawServoCalibration(); return; }
   if (screen==TOUCH_CAL) { drawCalibration(); return; }
   if (screen==DEVICE_STATUS) { drawStatus(); return; }
   if (screen==REMOVE_CARD || screen==REMOVE_FINGER) {
@@ -409,9 +518,19 @@ void draw() {
     if (screen==SET_ADMIN) heading="NEW ADMIN";
     if (screen==CONFIRM_ADMIN || screen==CONFIRM_USER) heading="REPEAT PIN";
     if (screen==SET_USER) heading="NEW DOOR PIN";
+#ifdef CONNECTED_DOOR
+    title(screen==HOME?"":heading);
+#else
     title(heading);
-    if (screen==HOME) button(165,2,72,29,"ADMIN");
-    else if (cfg.admin.valid) button(182,2,55,29,"BACK");
+#endif
+    if (screen==HOME) {
+#ifdef CONNECTED_DOOR
+      button(165,16,72,17,"ADMIN");button(5,16,72,17,"WI-FI");text(103,20,"PIN",CYAN);
+#else
+      button(165,2,72,29,"ADMIN");
+#endif
+    }
+    else if (cfg.admin.valid) button(182,HEADER_BUTTON_Y,55,HEADER_BUTTON_H,"BACK");
     const char *keys="123456789C0E";
     for (int i=0;i<12;i++) button(8+(i%3)*76,92+(i/3)*55,72,50,String(keys[i]));
     row(35,notice,YELLOW);
@@ -425,7 +544,7 @@ void draw() {
     button(5,289,230,28,"EXIT ADMIN");
   } else if (screen==MOTOR) {
     title("SERVO SETUP");
-    row(62,"Adjust unloaded, 5-degree steps");
+    button(8,52,224,26,"GUIDED LOCK / OPEN SETUP");
     row(86,"LOCK ANGLE: "+String(cfg.lockAngle));
     button(8,110,105,38,"LOCK -"); button(127,110,105,38,"LOCK +");
     row(162,"OPEN ANGLE: "+String(cfg.openAngle));
@@ -455,18 +574,27 @@ void drawDigits() {
   text(65,60,hidden,WHITE,2);
 }
 void endAdmin() {
+  if(screen==SERVO_CAL && servoPreviouslyVerified){cancelServoCalibration();adminSession=false;go(HOME);return;}
   adminSession=false; firstPin=""; notice=""; enrollStage=0;
+#ifdef CONNECTED_DOOR
+  if (connectedContinueSetup()) return;
+#endif
   if (!cfg.admin.valid) go(SET_ADMIN);
   else if (!configured()) go(ADMIN_LOGIN);
   else go(HOME);
 }
 void continueSetup() {
   notice="";
+#ifdef CONNECTED_DOOR
+  if (connectedContinueSetup()) return;
+#endif
   if (!cfg.user.valid) go(SET_USER);
   else if (cfg.closedLevel<0 || !sensorCycleVerified) go(DOOR_CAL);
+  else if (!servoCycleVerified) beginServoCalibration();
   else go(MENU);
 }
 void storageError() {
+  if(motorMutex){xSemaphoreTake(motorMutex,portMAX_DELAY);if(motor.calibrating){motor.calibrating=false;motor.pending=false;servo.detach();motor.pulsing=false;}xSemaphoreGive(motorMutex);}
   storageFault=true; adminSession=false; pinBlocked=false; firstPin="";
   go(DEVICE_STATUS); tell("Storage error. Reboot / service");
 }
@@ -507,6 +635,11 @@ void deleteSelected() {
   }
 }
 void submitPin() {
+#ifdef CONNECTED_DOOR
+  if (screen==SET_ADMIN || screen==CONFIRM_ADMIN || screen==SET_USER || screen==CONFIRM_USER) {
+    digits=""; tell("Set PINs in the owner mobile app"); return;
+  }
+#endif
   if (storageFault) { storageError(); return; }
   if (pinBlocked) { digits=""; drawDigits(); tell("PIN blocked for 30 seconds"); return; }
   if (digits.length()!=6) { tell("Enter exactly 6 digits"); return; }
@@ -704,8 +837,11 @@ void acceptCalibrationPoint(int x,int y) {
   if (fabsf(sx-120)>22 || fabsf(sy-180)>22) {
     calStep=0; drawCalibration(); Serial.println("[TOUCH] Verification failed; repeat calibration"); return;
   }
-  Config next=cfg; next.touch=pendingCal;
+  Config next=cfg; next.touch=halfTurnCalibration(pendingCal);
   if (!saveConfig(next)) { storageError(); return; }
+#ifdef CONNECTED_DOOR
+  if (connectedContinueSetup()) return;
+#endif
   if (adminSession) { go(MENU); tell("Touch calibration saved"); }
   else if (!cfg.admin.valid) { notice="Create your 6-digit admin PIN"; go(SET_ADMIN); }
   else if (!configured()) { notice="Admin PIN to finish setup"; go(ADMIN_LOGIN); }
@@ -716,10 +852,26 @@ bool inside(int x,int y,int left,int top,int w,int h) {
 }
 void tap(int x,int y) {
 #ifdef CONNECTED_DOOR
+  if(y<14)return;
   if(connectedSetupTouch(x,y))return;
 #endif
   if (storageFault && screen!=DEVICE_STATUS) { storageError(); return; }
   if (adminSession) adminActivity=millis();
+  if(screen==SERVO_CAL){
+    if(!adminSession || storageFault){tell("Calibration session not ready");return;}
+    MotorState m=snapshot();
+    if(m.pending || m.pulsing){tell("Wait for servo test to finish");return;}
+    if(inside(x,y,8,153,105,36)){ServoSetup::adjust(servoSetup,-5);drawServoCalibration();return;}
+    if(inside(x,y,127,153,105,36)){ServoSetup::adjust(servoSetup,5);drawServoCalibration();return;}
+    if(inside(x,y,8,199,224,38)){tell(testServoCalibration()?"Test commanded - inspect latch":"Close door / wait before test");return;}
+    if(inside(x,y,8,249,224,38)){confirmServoCalibration();return;}
+    if(inside(x,y,8,292,224,25)){
+      if(servoSetup.step>0){servoSetup.step=0;servoSetup.tested=false;drawServoCalibration();}
+      else if(servoPreviouslyVerified)cancelServoCalibration();
+      return;
+    }
+    return;
+  }
   if (screen==DEVICE_STATUS) {
     if (inside(x,y,8,242,224,30) && !storageFault) {
       probeSensors(); drawStatus(); return;
@@ -731,8 +883,11 @@ void tap(int x,int y) {
   }
   if (screen==HOME || screen==ADMIN_LOGIN || screen==SET_ADMIN || screen==CONFIRM_ADMIN ||
       screen==SET_USER || screen==CONFIRM_USER) {
-    if (screen==HOME && inside(x,y,165,2,72,29)) { notice=""; go(ADMIN_LOGIN); return; }
-    if (screen!=HOME && cfg.admin.valid && inside(x,y,182,2,55,29)) {
+#ifdef CONNECTED_DOOR
+    if (screen==HOME && inside(x,y,5,16,72,17)) { notice="Admin PIN, then select WI-FI"; go(ADMIN_LOGIN); return; }
+#endif
+    if (screen==HOME && inside(x,y,165,HEADER_BUTTON_Y,72,HEADER_BUTTON_H)) { notice=""; go(ADMIN_LOGIN); return; }
+    if (screen!=HOME && cfg.admin.valid && inside(x,y,182,HEADER_BUTTON_Y,55,HEADER_BUTTON_H)) {
       firstPin=""; if (adminSession && configured()) go(MENU); else endAdmin(); return;
     }
     for (int i=0;i<12;i++) if (inside(x,y,8+(i%3)*76,92+(i/3)*55,72,50)) {
@@ -781,7 +936,7 @@ void tap(int x,int y) {
         case 4: go(SET_USER); break;
         case 5: go(SET_ADMIN); break;
         case 6: beginCalibration(); break;
-        case 7: go(DOOR_CAL); break;
+        case 7: if(snapshot().door.released || snapshot().pending || snapshot().pulsing)tell("Close/relock before calibration");else go(DOOR_CAL); break;
         case 8: go(MOTOR); break;
         case 9: go(DEVICE_STATUS); break;
       }
@@ -796,15 +951,15 @@ void tap(int x,int y) {
     if(!nvs.putBool("reedVerified",true)){storageError();return;}
     sensorCycleVerified=true;
     if (!saveConfig(next)) { storageError(); return; }
-    go(MENU); tell("Closed-door level saved");
+    beginServoCalibration();
   } else if (screen==MOTOR) {
+    if(inside(x,y,8,52,224,26)){beginServoCalibration();return;}
     Config next=cfg; bool changed=false;
     if (inside(x,y,8,110,105,38)) { next.lockAngle=max(5,int(cfg.lockAngle)-5); changed=true; }
     if (inside(x,y,127,110,105,38)) { next.lockAngle=min(175,int(cfg.lockAngle)+5); changed=true; }
     if (inside(x,y,8,185,105,38)) { next.openAngle=max(5,int(cfg.openAngle)-5); changed=true; }
     if (inside(x,y,127,185,105,38)) { next.openAngle=min(175,int(cfg.openAngle)+5); changed=true; }
     if (changed) {
-      if (next.lockAngle==next.openAngle) { tell("Open and lock angles must differ"); return; }
       MotorState m=snapshot();
       if (m.door.released) { tell("Close and relock before adjusting"); return; }
       if (!saveConfig(next)) { storageError(); return; }
@@ -866,15 +1021,15 @@ void pollTouch() {
   // One action per touch, after pressure has settled. Release before next key.
   if (calCaptured || millis()-touchStarted<60 || !cfg.touch.valid) return;
   calCaptured=true;
-  int x=lroundf(cfg.touch.a*p.x+cfg.touch.b*p.y+cfg.touch.c);
-  int y=lroundf(cfg.touch.d*p.x+cfg.touch.e*p.y+cfg.touch.f);
+  int x=239-lroundf(cfg.touch.a*p.x+cfg.touch.b*p.y+cfg.touch.c);
+  int y=319-lroundf(cfg.touch.d*p.x+cfg.touch.e*p.y+cfg.touch.f);
   if (x>=0 && x<240 && y>=0 && y<320) tap(x,y);
 }
 void serialStatus() {
   MotorState m=snapshot();
-  Serial.printf("[STATUS] configured=%d storage=%s motor=%s raw=%d closedLevel=%d released=%d cards=%u fingers=%u heap=%u\n",
+  Serial.printf("[STATUS] configured=%d storage=%s motor=%s raw=%d closedLevel=%d released=%d cards=%u fingers=%u heap=%u commanded=%d\n",
     configured(),storageFault?"ERROR":"OK",actuatorReady && !m.fault?"OK":"ERROR",
-    m.raw,m.closedLevel,m.door.released,cfg.cardCount,cfg.fingerCount,ESP.getFreeHeap());
+    m.raw,m.closedLevel,m.door.released,cfg.cardCount,cfg.fingerCount,ESP.getFreeHeap(),m.commanded);
 }
 void setup() {
 #ifdef CONNECTED_DOOR
@@ -891,7 +1046,10 @@ void setup() {
 #else
   tft.init(240,320); tft.setSPISpeed(20000000);
 #endif
-  tft.setRotation(0); touchReady=touch.begin(SPI); touch.setRotation(0);
+  // The installed panel is mounted upside down; keep the UI in portrait.
+  // Raw touch orientation stays unchanged to preserve saved calibration.
+  tft.setRotation(2); touchReady=touch.begin(SPI); touch.setRotation(0);
+  Serial.println("[DISPLAY] rotation=2 (180 degrees), touch calibration=rotation-0");
   fpSerial.begin(FP_BAUD,SERIAL_8N1,FP_RX,FP_TX);
   loadConfig();
   motor.raw=motor.stable=digitalRead(DOOR_PIN); motor.changedAt=millis();
@@ -901,11 +1059,15 @@ void setup() {
   delay(60); applyMotorConfig();
   probeSensors();
   if (storageFault) storageError();
+#ifdef CONNECTED_DOOR
+  else screen=APP_SETUP; // Wi-Fi and owner app must run before local calibration.
+#else
   else if (!touchReady) { go(DEVICE_STATUS); tell("Touch init failed; check wiring"); }
   else if (!cfg.touch.valid) beginCalibration();
   else if (!cfg.admin.valid) { notice="Choose 6 digits, E=save C=clear"; go(SET_ADMIN); }
   else if (!configured()) { notice="Admin PIN to finish setup"; go(ADMIN_LOGIN); }
   else { notice="PIN / card / fingerprint"; go(HOME); }
+#endif
   serialStatus();
 #ifdef CONNECTED_DOOR
   connectedSetup();
@@ -938,18 +1100,26 @@ void loop() {
 #endif
   if (touchDiagnostics && millis()-touchDiagnosticAt>=5000) touchDiagnostics=false;
   pollTouch(); pollRfid(); pollFinger();
+  if(screen==SERVO_CAL && millis()-lastServoUiRefresh>=200){
+    lastServoUiRefresh=millis();MotorState m=snapshot();
+    row(86,m.lastAngle<0?"Last command: unknown":"PWM: "+String(m.lastAngle)+" deg "+ServoSetup::direction(m.previousAngle,m.lastAngle));
+    row(131,m.pending||m.pulsing?"Servo test running - wait":servoSetup.tested?"Inspect latch, then CONFIRM":"Press TEST before confirmation",YELLOW);
+  }
+#ifdef CONNECTED_DOOR
+  connectedDrawStatusBar(false);
+#endif
   if (millis()-lastRefresh>=250 && screen==HOME) {
     lastRefresh=millis(); MotorState m=snapshot(); bool closed=isClosed(m,millis());
     if (lastStateValid && (lastReleased!=m.door.released || lastDoorClosed!=closed)) {
       if (m.door.released) tell(closed?"Released - open door within 5s":"Door open - close after entry");
-      else tell(closed?"Door closed - lock commanded":"Door open - check latch");
+      else tell(closed?(m.commanded?"Door closed - lock commanded":"Door closed - check latch"):"Door open - check latch");
     }
     lastStateValid=true; lastReleased=m.door.released; lastDoorClosed=closed;
     if (m.fault || !actuatorReady) row(35,"MOTOR ERROR - service required",RED);
     else if (storageFault) row(35,"STORAGE ERROR - access blocked",RED);
     else if (pinBlocked) row(35,"PIN blocked: "+String(30-(millis()-blockedSince)/1000)+"s",RED);
     String state=closed?"Door:CLOSED":"Door:OPEN";
-    state+=m.door.released?" | Latch:RELEASE CMD":" | Latch:LOCK CMD";
+    state+=!m.commanded?" | Latch:UNKNOWN":(m.door.released?" | Latch:RELEASE CMD":" | Latch:LOCK CMD");
     row(76,state,closed?GREEN:YELLOW);
     if (DoorLogic::heldOpen(m.door,millis(),closed)) row(35,"DOOR HELD OPEN - please close",RED);
     else if (!m.door.released && !closed) row(35,"DOOR OPEN / check latch",RED);

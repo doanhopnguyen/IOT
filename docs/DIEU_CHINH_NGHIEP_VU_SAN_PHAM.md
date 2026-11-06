@@ -1,6 +1,6 @@
 # Điều chỉnh nghiệp vụ sản phẩm — 05/11/2026
 
-Tài liệu thiết kế theo trao đổi mới nhất. Các thay đổi dưới đây cần được triển khai đồng bộ; không có nghĩa firmware và ứng dụng hiện tại đã áp dụng hết. Luồng này thay thế bước đặt PIN trên trang Wi-Fi trong LUONG_SAN_PHAM.md.
+Tài liệu thiết kế theo trao đổi mới nhất. Luồng người mua Wi-Fi → app nhận cửa/PIN → hiệu chỉnh chip và quản lý/khôi phục Wi-Fi đã được triển khai đồng bộ trong firmware connected 1.2.0; xem [hướng dẫn hiện tại](THIET_LAP_APP_VA_WIFI.md). Các đề xuất sản xuất/Web Serial và phần khác trong tài liệu này không tự được coi là đã hoàn tất.
 
 ## 1. Tách sản xuất và vận hành
 

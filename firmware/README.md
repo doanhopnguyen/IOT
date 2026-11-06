@@ -2,22 +2,24 @@
 
 Firmware tích hợp mới, tham khảo dây/sketch trong `D:\BTLIOT`. TFT, touch và RC522 dùng chung hardware SPI với CS riêng; UART vân tay độc lập.
 
+**Bản chính là `connected_door`, cấu hình `platformio.connected.ini`.** Luồng hiện tại: Wi-Fi trước, nhận cửa và đặt hai PIN trong app, sau đó chip hướng dẫn hiệu chỉnh; xem [thiết lập app và Wi-Fi](../docs/THIET_LAP_APP_VA_WIFI.md). `pio run` không chọn cấu hình sẽ build bản legacy `src/main.cpp`, không có luồng mới.
+
 ## Build và nạp
 
 1. Cài PlatformIO Core hoặc extension PlatformIO trong VS Code.
-2. Sao chép `include/config.example.h` thành `include/smartdoor_config.h` (Git bỏ qua).
-3. Điền IP broker trong LAN, username/password broker và `DEVICE_SECRET` từ API admin. Username broker bằng `DEVICE_UID`. Wi-Fi có thể để trống và chọn trên màn hình sau khi nạp.
+2. Chuẩn bị gói cấp phát của đúng chip từ admin, giữ riêng khóa thiết bị và thông tin broker. Bản connected đọc cấu hình cấp phát trong NVS, không đọc `include/smartdoor_config.h` của bản legacy.
+3. Với chip đã cấp phát, upload firmware thông thường giữ NVS. Với chip mới, dùng `scripts/device_tool.py provision` theo [hướng dẫn máy phát triển](../docs/HUONG_DAN_MAY_PHAT_TRIEN.md). Không ghi trước Wi-Fi người mua.
 4. Đối chiếu [sơ đồ đấu nối](../docs/integration.md). Mặc định ST7789 theo phép thử đầy màn hình; đổi `LCD_ILI9341` theo module thực tế.
 5. Chạy trong thư mục `firmware`:
 
 ```powershell
-pio run
+pio run -c platformio.connected.ini
 pio device list
-pio run --target upload --upload-port COM7
-pio device monitor --port COM7 --baud 115200
+pio run -c platformio.connected.ini --target upload --upload-port COM5
+pio device monitor --port COM5 --baud 115200
 ```
 
-Thay COM7 bằng cổng thực tế. Chưa điền secret vẫn build được nhưng không kết nối MQTT. Build N16R8 dùng flash 16 MB, QIO flash / OPI PSRAM, override board mặc định N8.
+Thay COM5 bằng cổng thực tế. Chưa cấp phát danh tính vẫn build được nhưng không kết nối MQTT. Build N16R8 dùng flash 16 MB, QIO flash / OPI PSRAM, override board mặc định N8. Phần hành vi màn hình Wi-Fi bên dưới mô tả bản legacy; bản connected dùng portal Wi-Fi và app như tài liệu luồng mới ở trên.
 
 ## Hành vi và giới hạn
 

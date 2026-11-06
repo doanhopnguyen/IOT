@@ -50,7 +50,7 @@ Chạy không dùng Docker trên Windows: xem [docs/CHAY_DU_AN_LOCAL.md](docs/CH
 
 1. Lắp theo [hardware/README.md](hardware/README.md); nạp `cd firmware && pio run -c platformio.connected.ini -t upload`.
 2. Admin đăng ký chip (MAC) trên web admin → tải file cấp phát → tạo tài khoản MQTT (`scripts/configure_local_device.py`) → ghi vào chip (`scripts/device_tool.py provision`). Chi tiết: [docs/HUONG_DAN_TRIEN_KHAI.md](docs/HUONG_DAN_TRIEN_KHAI.md).
-3. Người dùng quét QR trên cửa trong app để nhận cửa, nối Wi-Fi qua trang `http://192.168.4.1` của cửa, hiệu chỉnh tại màn hình, đặt PIN.
+3. Người dùng quét QR, chọn Wi-Fi qua `http://192.168.4.1`, rồi trở lại app kiểm tra cửa online. Sau đó app nhận cửa/đặt tên và hai PIN; chip mới bắt đầu hiệu chỉnh cảm ứng/cảm biến, app hiển thị hướng dẫn theo tiến độ. Quản lý cửa có đổi Wi-Fi và khôi phục mạng; xem [luồng thiết lập hiện tại](docs/THIET_LAP_APP_VA_WIFI.md).
 
 ## Chức năng chính
 

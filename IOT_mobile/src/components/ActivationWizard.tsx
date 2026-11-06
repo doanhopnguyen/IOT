@@ -4,6 +4,7 @@ import { Linking, Platform, Text, View } from 'react-native';
 import { AppModal, Badge, Button, Card, Input, Notice, styles as s } from './ui';
 import { ApiError, request } from '../services/api/client';
 import { activationClaimInput, productSetup } from '../services/api/activationInput';
+import { DeviceSetup } from './DeviceSetup';
 
 export interface InventoryDevice {
   deviceId: number;
@@ -34,6 +35,7 @@ export function ActivationWizard({
   const [device, setDevice] = useState<InventoryDevice>();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [online, setOnline] = useState(false);
   let setup: ReturnType<typeof productSetup> | undefined;
   try {
     if (code.trim()) setup = productSetup(code);
@@ -47,6 +49,7 @@ export function ActivationWizard({
       setDevice(undefined);
       setMessage('');
       setScanner(false);
+      setOnline(false);
     }
   }, [open]);
   const run = async (fn: () => Promise<void>) => {
@@ -86,19 +89,6 @@ export function ActivationWizard({
       throw e;
     }
   };
-  const check = async () => {
-    if (device) {
-      const d = await request<InventoryDevice>(
-        `/api/activation/devices/${encodeURIComponent(device.deviceUid)}`,
-      );
-      setDevice(d);
-      setMessage(
-        d.setupReady
-          ? 'Cửa đã sẵn sàng sử dụng.'
-          : 'Cửa đang hoàn tất thiết lập. Kiểm tra Wi-Fi, PIN và hiệu chỉnh cảm biến theo hướng dẫn trên màn hình cửa.',
-      );
-    }
-  };
   return (
     <AppModal
       visible={open}
@@ -111,7 +101,8 @@ export function ActivationWizard({
         <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
           <Badge label="1 · QR sản phẩm" tone="primary" />
           <Badge label="2 · Wi-Fi" />
-          <Badge label="3 · Nhận cửa" />
+          <Badge label="3 · Nhận cửa & PIN" />
+          <Badge label="4 · Hiệu chỉnh tại cửa" />
         </View>
         {!device ? (
           <View style={{ gap: 14 }}>
@@ -120,7 +111,7 @@ export function ActivationWizard({
               label="Mã nhận cửa trên sản phẩm"
               autoCapitalize="none"
               value={code}
-              onChangeText={setCode}
+              onChangeText={(value) => { setCode(value); setOnline(false); }}
               placeholder="Mã nhận cửa hoặc nội dung QR"
             />
             {scanner && permission?.granted ? (
@@ -131,6 +122,7 @@ export function ActivationWizard({
                   try {
                     productSetup(event.data);
                     setCode(event.data);
+                    setOnline(false);
                     setScanner(false);
                     setMessage('');
                   } catch (e) {
@@ -182,8 +174,15 @@ export function ActivationWizard({
                   );
                 }}
               />
-              <Text style={s.caption}>Chọn “Hoàn tất” sau khi lưu Wi-Fi.</Text>
+              <Text style={s.caption}>Trang Wi-Fi chỉ chọn mạng, không tạo PIN. Chọn “Hoàn tất”, đưa điện thoại về mạng có Internet rồi kiểm tra cửa online bên dưới.</Text>
             </Card>
+            <Button title="Kiểm tra cửa đã kết nối dịch vụ" disabled={busy || !code.trim()} onPress={() => { void run(async () => {
+              const info = await request<{ online: boolean }>('/api/activation/inspect', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activationCode: productSetup(code).activationCode }),
+              });
+              setOnline(info.online); setMessage(info.online ? 'Cửa đã online. Bạn có thể đặt tên và nhận cửa.' : 'Cửa chưa kết nối dịch vụ. Kiểm tra Wi-Fi của cửa rồi thử lại; chưa thể nhận cửa hoặc đặt PIN.');
+            }); }} />
+            {online ? <>
             <Text style={s.heading}>3. Nhận cửa vào tài khoản của bạn</Text>
             <Input
               label="Tên cửa của bạn"
@@ -193,27 +192,18 @@ export function ActivationWizard({
             />
             <Button
               title={busy ? 'Đang nhận cửa…' : 'Nhận cửa vào tài khoản'}
-              disabled={busy || !code.trim() || !name.trim()}
+              disabled={busy || !online || !code.trim() || !name.trim()}
               onPress={() => {
                 void run(claim);
               }}
             />
+            </> : null}
           </View>
         ) : (
           <View style={{ gap: 14 }}>
             <Text style={s.heading}>Đã nhận {device.name}</Text>
             <Text style={s.description}>Mã sản phẩm: {device.deviceUid}</Text>
-            <Badge
-              label={device.setupReady ? 'Sẵn sàng sử dụng' : 'Chưa hoàn tất thiết lập'}
-              tone={device.setupReady ? 'success' : 'warning'}
-            />
-            <Button
-              title="Kiểm tra cửa đã sẵn sàng"
-              disabled={busy}
-              onPress={() => {
-                void run(check);
-              }}
-            />
+            {device.unitId ? <DeviceSetup unitId={device.unitId} /> : null}
             <Button
               title="Về danh sách cửa"
               variant="ghost"
