@@ -118,10 +118,12 @@ Thay đường dẫn `--device` bằng file vừa tải từ admin. Firmware so 
 
 1. Mở app, đăng ký/đăng nhập tài khoản riêng. Địa chỉ dịch vụ đã có sẵn.
 2. Chọn thêm cửa, quét QR hoặc nhập mã nhận cửa. Một mã chỉ dùng một lần.
-3. Tại cửa, dùng trang NETWORK/SETUP trên TFT để xem SSID và mật khẩu mạng thiết lập. Điện thoại nối Wi-Fi này, mở `http://192.168.4.1`, nhập Wi-Fi nơi lắp. Wi-Fi mở để trống mật khẩu. Chỉ lưu khi kết nối thành công.
-4. Chọn hoàn tất Wi-Fi trên trang cấu hình và mở lại ứng dụng. Hiệu chỉnh cảm ứng trên TFT, tạo PIN quản trị cục bộ và PIN cửa. PIN cục bộ không phải mật khẩu tài khoản.
-5. Nối cảm biến từ. Bước hiệu chỉnh yêu cầu xác nhận **đóng**, rồi mở cửa/đưa nam châm ra xa và xác nhận **mở**. Không đổi tín hiệu thì không cho hoàn tất.
-6. Đặt PIN mở cửa sáu số trên app. Chỉ có hiệu lực khi ESP32 ACK. Bấm kiểm tra hoàn tất; cửa chỉ ACTIVE khi cấu hình cục bộ và PIN backend đều hoàn tất.
+3. Tại cửa, xem SSID và mật khẩu mạng SmartDoor trên TFT. Điện thoại nối mạng này; captive portal thường tự mở, nếu không mở `http://192.168.4.1`. Nhập Wi-Fi nơi lắp. Wi-Fi mở để trống mật khẩu. Chỉ lưu khi kết nối thành công.
+4. Chọn hoàn tất Wi-Fi trên trang cấu hình và mở lại ứng dụng. Khi cửa online, nhận cửa vào tài khoản rồi đặt PIN admin và PIN mở cửa trong app. PIN cục bộ không phải mật khẩu tài khoản.
+5. Hiệu chỉnh cảm ứng trên TFT, nối cảm biến từ rồi xác nhận cửa **đóng** và **mở**. Không đổi tín hiệu cảm biến thì không cho hoàn tất.
+6. Chỉ có hiệu lực PIN đã được ESP32 ACK. Bấm kiểm tra hoàn tất; cửa chỉ ACTIVE khi cấu hình cục bộ và PIN backend đều hoàn tất.
+
+Sau khi nhận cửa, đổi Wi-Fi cần PIN admin trên TFT để vào ADMIN → WI-FI và xác thực lại PIN một lần trên captive portal trước mỗi lần đổi. ESP32 giữ tối đa 5 mạng đã kết nối thành công; khi mất Wi-Fi, tự lần lượt thử các mạng và phát SmartDoor để phục hồi.
 
 ## Dây nối đã dùng
 
@@ -152,7 +154,7 @@ Camera chạy trên máy tính/laptop riêng, không chạy nhận diện trực
 1. Chủ cửa mở cài đặt cửa → **Camera nhận diện online**, xác thực mật khẩu và cấp node. Lưu UID/secret hiển thị một lần vào `face-node/.env`.
 2. Tạo MQTT account username đúng UID camera; LAN có thể dùng `scripts/configure_local_device.py --uid FACE-... --host <IP-PC>`. Sao chép thông tin broker vào `.env` bằng trình soạn thảo, không đưa secret lên Git.
 3. Cấu hình `FACE_API_URL`, `FACE_DEVICE_UID`, `FACE_DEVICE_SECRET`, `MQTT_HOST`, `MQTT_PORT`, `MQTT_USERNAME`, `MQTT_PASSWORD`. Qua Internet bật `MQTT_TLS=true`, dùng CA tin cậy qua `MQTT_CA` nếu là CA riêng. Không tắt kiểm tra TLS.
-4. Chạy `python node.py --camera` trong thư mục `face-node`, môi trường Python có dependencies từ requirements. Trọng số có sẵn trong `face-node/models`; điều khoản mô hình được ghi trong tài liệu mô hình của dự án. Giữ kiểm tra người thật bật.
+4. Chạy `python node.py --camera` trong thư mục `face-node`, môi trường Python có dependencies từ requirements. Cửa sổ xem camera đánh dấu khuôn mặt và hiện nhận diện thành công/từ chối; nhấn Q để đóng. Trọng số có sẵn trong `face-node/models`; điều khoản mô hình được ghi trong tài liệu mô hình của dự án. Giữ kiểm tra người thật bật.
 5. Muốn gỡ camera, chủ cửa xác thực lại trong app. Secret cũ bị vô hiệu và camera không còn thuộc cửa.
 
 ## Reset / chuyển giao

@@ -1,9 +1,9 @@
 # Thiết lập bằng app và phục hồi Wi-Fi — 06/11/2026
 
-Áp dụng cho firmware connected **1.3.0** và backend/mobile cùng thay đổi này. Không áp dụng cho sketch legacy; sketch offline dùng phần hiệu chỉnh tại chip riêng.
+Áp dụng cho firmware connected **1.4.0**. Không áp dụng cho sketch legacy; sketch offline dùng phần hiệu chỉnh tại chip riêng.
 
 1. Cấp nguồn: chip chỉ hiện QR, mạng SmartDoor và địa chỉ chọn Wi-Fi. Chưa bắt hiệu chỉnh hoặc nhập PIN.
-2. App quét QR, hướng dẫn điện thoại vào Wi-Fi SmartDoor và mở `http://192.168.4.1`. Portal chỉ quét/chọn mạng 2.4 GHz, nhập mật khẩu mạng và hoàn tất. Không tạo PIN tại đây.
+2. App quét QR và hướng dẫn điện thoại vào Wi-Fi SmartDoor. Điện thoại thường tự mở captive portal; nếu không, mở `http://192.168.4.1`. Portal chỉ quét/chọn mạng 2.4 GHz, nhập mật khẩu mạng và hoàn tất. Thiết lập lần đầu chưa có PIN nên không hỏi PIN ở đây.
 3. Điện thoại trở về mạng có Internet/Tailscale. App kiểm tra kết nối dịch vụ; chỉ sau khi thiết bị online mới cho đặt tên và nhận cửa. Wi-Fi kết nối mà chưa tới được broker/backend thì chưa đủ.
 4. Trong app chủ cửa đặt PIN mở cửa và PIN quản trị: 6 số, khác nhau, nhập lại để xác nhận. Backend chỉ lưu hash vào dữ liệu lệnh; PIN rõ chỉ nằm trong bản tin gửi tới đúng chip, không ghi log. Chỉ ACK thiết bị mới áp dụng hash vào hồ sơ cửa. Mạng demo MQTT plaintext chỉ dành cho LAN tin cậy; triển khai thực dùng TLS như tài liệu triển khai.
 5. Chip tự chuyển sang TOUCH SETUP. App hướng dẫn giữ/nhấc ngón trên dấu cộng của **màn hình chip**, lần lượt 3 điểm và điểm giữa. Sau xác nhận, chip chuyển DOOR SETUP: xác nhận cửa đóng và cửa mở. Tiếp theo là SERVO LOCK và SERVO OPEN: chỉnh góc, bấm TEST, quan sát chốt thực tế rồi xác nhận từng vị trí. App cập nhật hướng dẫn, góc đã ra lệnh và chiều tăng/giảm theo heartbeat.
@@ -15,12 +15,12 @@ Nếu đóng app, vào cửa → Cài đặt thiết bị để tiếp tục. C�
 
 Thanh trên cùng của TFT luôn hiển thị 4 cột sóng, RSSI dBm hoặc WiFi OFF, kết nối dịch vụ và ONLINE/OFFLINE/SETUP. Màn hình PIN đã thiết lập vẫn hoạt động khi Wi-Fi/backend mất kết nối; AP phục hồi chạy nền và không tự che bàn phím bằng trang Wi-Fi. Nếu chủ động mở trang Wi-Fi thì nút BACK TO PIN / OFFLINE trở về bàn phím cả khi chưa có mạng.
 
-Offline cho phép PIN, RFID/vân tay đã lưu và quản trị cục bộ; sự kiện được giữ để gửi bù. Khuôn mặt và mở từ app vẫn cần dịch vụ online. Nhận cửa/PIN app lần đầu vẫn cần online; sau khi PIN từ app đã xác nhận, các bước hiệu chỉnh cục bộ có thể tiếp tục nếu mạng tạm mất. Cửa đã sẵn sàng ở bản trước không bị bắt làm lại chỉ vì nâng lên 1.3.0.
+Offline cho phép PIN, RFID/vân tay đã lưu và quản trị cục bộ; sự kiện được giữ để gửi bù. Khuôn mặt và mở từ app vẫn cần dịch vụ online. Nhận cửa/PIN app lần đầu vẫn cần online; sau khi PIN từ app đã xác nhận, các bước hiệu chỉnh cục bộ có thể tiếp tục nếu mạng tạm mất. Cửa đã sẵn sàng ở bản trước không bị bắt làm lại chỉ vì nâng firmware.
 
-- Online: chủ cửa chọn “Cho phép đổi Wi-Fi trong 10 phút” trong Cài đặt thiết bị. Chờ ACK, xem mạng/mật khẩu SmartDoor trên chip, nối điện thoại và mở portal chọn mạng mới.
-- Offline: chip thử lại mạng đã lưu mỗi 15 giây và tự phát AP phục hồi sau khoảng 30 giây mất Wi-Fi. Chủ cửa có thể ADMIN → WI-FI trên chip bằng PIN đã đặt trong app. Nếu touch chưa được hiệu chỉnh, portal có bước xác thực **PIN quản trị hiện tại** để cho phép đổi Wi-Fi trong 10 phút. Không tạo/đổi PIN tại portal.
-- Mạng mới sai mật khẩu/không kết nối được trong 35 giây: khôi phục biến kết nối từ cấu hình mạng cũ đã lưu. Chỉ lưu mạng mới khi kết nối thành công. Không xóa quyền, PIN, mẫu vân tay hay danh tính hãng khi đổi mạng.
-- AP chỉ phục vụ HTTP trên giao diện SmartDoor, không phục vụ portal trên LAN nhà. Các POST cần CSRF. Hết thời gian cho phép thì không nhận thay đổi mạng mới.
+- Online: chủ cửa chọn “Mở chế độ đổi Wi-Fi” trong Cài đặt thiết bị. Chờ ACK và kết nối điện thoại với SmartDoor. Lệnh app chỉ mở portal; trên portal cần nhập lại **PIN admin** trước mỗi lần gửi mạng mới.
+- Offline: chip tự thử tối đa 5 mạng đã lưu, chuyển mạng thử mỗi 20 giây và phát AP sau khoảng 30 giây mất Wi-Fi. Trên màn hình cửa, chạm WI-FI, nhập PIN admin, rồi chọn WI-FI trong menu. Khi vào mạng SmartDoor, điện thoại thường tự mở captive portal; `192.168.4.1` là địa chỉ dự phòng.
+- Mạng mới sai mật khẩu/không kết nối được trong 35 giây: giữ danh sách mạng cũ và quay lại thử mạng đã lưu. Mỗi mạng mới chỉ được ghi sau khi kết nối thành công. Không xóa quyền, PIN, mẫu vân tay hay danh tính hãng khi đổi mạng.
+- AP chỉ phục vụ HTTP trên giao diện SmartDoor, không phục vụ portal trên LAN nhà. Các POST cần CSRF; PIN xác thực portal được giới hạn cho một lần đổi và gắn với điện thoại đang dùng.
 - ESP32 phải truy cập được broker đã cấp phát. Đổi sang Wi-Fi khác không tự đưa ESP32 vào Tailscale hoặc thay địa chỉ broker. Demo hiện dùng broker LAN 10.18.0.194:1884; triển khai khác LAN cần broker TLS truy cập được từ mạng mới.
 
 ## Chỉnh góc servo trong app (1.2.1)
@@ -56,7 +56,7 @@ API reset hiện có ở cả app và web admin đều yêu cầu `password`, `a
 | GET `/api/manager/units/{id}/setup` | Trạng thái online, PIN, cảm ứng/cảm biến và bước hướng dẫn |
 | POST `.../setup/credentials` / `SETUP_CREDENTIALS` | Gửi hai PIN tới chip, chờ ACK |
 | POST `.../setup/calibrate` / `SETUP_CALIBRATE` | Bắt đầu lại hiệu chỉnh mà không xóa PIN |
-| POST `.../wifi-setup` / `WIFI_SETUP` | Chủ cửa cho phép đổi Wi-Fi trong 10 phút |
+| POST `.../wifi-setup` / `WIFI_SETUP` | Mở AP/portal; PIN admin vẫn phải được nhập trên portal trước khi đổi mạng |
 | GET / PUT `/api/manager/units/{id}/servo` / `SERVO_SET` | Đọc/lưu góc khóa và mở; có thể bằng nhau; chỉ chủ cửa |
 | Heartbeat | `setupStage`, `hasDoorPin`, `adminPinSet`, `touchCalibrated`, `doorCalibrated`, `wifiSsid`; không chứa PIN/mật khẩu Wi-Fi |
 

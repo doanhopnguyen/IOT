@@ -18,6 +18,9 @@ WiFiClientSecure tlsTransport;
 PubSubClient broker(localTransport);
 WebServer setupWeb(80);
 String deviceUid,deviceSecret,brokerHost,brokerUser,brokerPassword,brokerCa,wifiSsid,wifiPassword;
+static const uint8_t MAX_SAVED_WIFI=5;
+String savedWifiSsids[MAX_SAVED_WIFI],savedWifiPasswords[MAX_SAVED_WIFI];
+uint8_t savedWifiCount=0,wifiRetryIndex=0;
 String setupSsid,setupPassword,setupCsrf,serialLine,requestNonce;
 String resetReceipt,resetIntent,remoteEnrollUuid,activationCode;
 uint32_t lastResetAttempt=0;
@@ -26,6 +29,7 @@ DNSServer setupDns;
 bool setupApActive=false;
 uint32_t setupConnectStarted=0,setupApCloseAt=0,lastConfigAt=0;
 uint8_t setupBadPins=0;uint32_t setupBlockedAt=0;
+IPAddress setupAuthorizedClient;
 String setupScanCache;bool setupScanPending=false,serialScanPending=false;uint32_t setupScanStarted=0,setupScanFinished=0;
 std::atomic<int> setupScanEventStatus{-1},setupScanEventCount{-1};
 uint32_t generation=1,lastBrokerAttempt=0,lastStatusAt=0,lastEventAt=0,lastWifiAttempt=0;
@@ -44,6 +48,55 @@ String randomId() {
   char out[37];snprintf(out,sizeof(out),"%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",b[0],b[1],b[2],b[3],b[4],b[5],b[6],b[7],b[8],b[9],b[10],b[11],b[12],b[13],b[14],b[15]);return out;
 }
 String factoryMac() {uint8_t bytes[6];esp_efuse_mac_get_default(bytes);char out[13];for(int i=0;i<6;i++)snprintf(out+i*2,3,"%02X",bytes[i]);return out;}
+String savedWifiNameKey(uint8_t index){return "net"+String(index);}
+String savedWifiPasswordKey(uint8_t index){return "key"+String(index);}
+void persistSavedWifiNetworks() {
+  bool ok=networkPrefs.putUChar("netCount",savedWifiCount)>0;
+  for(uint8_t i=0;i<savedWifiCount;i++){
+    ok=networkPrefs.putString(savedWifiNameKey(i).c_str(),savedWifiSsids[i])>0 && ok;
+    ok=networkPrefs.putString(savedWifiPasswordKey(i).c_str(),savedWifiPasswords[i])>0 && ok;
+  }
+  if(savedWifiCount){
+    ok=networkPrefs.putString("ssid",savedWifiSsids[0])>0 && ok;
+    if(savedWifiPasswords[0].isEmpty())networkPrefs.remove("password");
+    else ok=networkPrefs.putString("password",savedWifiPasswords[0])>0 && ok;
+  }
+  if(!ok)storageFault=true;
+}
+void loadSavedWifiNetworks() {
+  savedWifiCount=0;uint8_t count=min(uint8_t(MAX_SAVED_WIFI),networkPrefs.getUChar("netCount",0));
+  for(uint8_t i=0;i<count;i++){
+    String ssid=networkPrefs.getString(savedWifiNameKey(i).c_str(),"");
+    if(ssid.isEmpty())continue;
+    savedWifiSsids[savedWifiCount]=ssid;
+    savedWifiPasswords[savedWifiCount]=networkPrefs.getString(savedWifiPasswordKey(i).c_str(),"");
+    savedWifiCount++;
+  }
+  if(!savedWifiCount){
+    String legacySsid=networkPrefs.getString("ssid","");
+    if(!legacySsid.isEmpty()){
+      savedWifiSsids[0]=legacySsid;savedWifiPasswords[0]=networkPrefs.getString("password","");savedWifiCount=1;
+      persistSavedWifiNetworks();
+    }
+  }
+  if(savedWifiCount){wifiRetryIndex=0;wifiSsid=savedWifiSsids[0];wifiPassword=savedWifiPasswords[0];}
+  else {wifiSsid="";wifiPassword="";wifiRetryIndex=0;}
+}
+void rememberSavedWifi(const String &ssid,const String &password) {
+  if(ssid.isEmpty())return;
+  int found=-1;for(uint8_t i=0;i<savedWifiCount;i++)if(savedWifiSsids[i]==ssid){found=i;break;}
+  if(found==0 && savedWifiPasswords[0]==password){wifiSsid=ssid;wifiPassword=password;return;}
+  uint8_t last=found>=0?uint8_t(found):min(uint8_t(savedWifiCount),uint8_t(MAX_SAVED_WIFI-1));
+  for(uint8_t i=last;i>0;i--){savedWifiSsids[i]=savedWifiSsids[i-1];savedWifiPasswords[i]=savedWifiPasswords[i-1];}
+  savedWifiSsids[0]=ssid;savedWifiPasswords[0]=password;
+  if(found<0 && savedWifiCount<MAX_SAVED_WIFI)savedWifiCount++;
+  wifiRetryIndex=0;wifiSsid=ssid;wifiPassword=password;persistSavedWifiNetworks();
+}
+void attemptSavedWifi(uint8_t index) {
+  if(!savedWifiCount)return;
+  wifiRetryIndex=index%savedWifiCount;wifiSsid=savedWifiSsids[wifiRetryIndex];wifiPassword=savedWifiPasswords[wifiRetryIndex];
+  lastWifiAttempt=millis();WiFi.disconnect(false);WiFi.begin(wifiSsid.c_str(),wifiPassword.c_str());
+}
 String topic(const char *suffix){return "smartdoor-iot/"+deviceUid+"/"+suffix;}
 bool connectedManaged(){return claimed;}
 bool connectedAccessReady(){return !storageFault && SetupLogic::localAccessAllowed(claimed,appPinsReady,configured(),resetPending);}
@@ -97,21 +150,23 @@ String productQr() {
   if(activationCode.isEmpty() || claimed)return "";
   return "smartdoor://activate?code="+activationCode+"&uid="+deviceUid+"&ssid="+setupSsid+"&key="+setupPassword;
 }
-void connectedNetworkPage() {
-  if(adminSession)wifiPermitUntil=millis()+600000;
-  enableSetupAp();networkPage=true;screen=DEVICE_STATUS;title("SMART DOOR SETUP");
-  row(33,deviceUid.isEmpty()?"ESP32-"+factoryMac():deviceUid);
+void drawSetupQrAndWifi() {
+  title("SMART DOOR SETUP");
   String value=productQr();
   if(!value.isEmpty()){
     QRCode qr;uint8_t data[qrcode_getBufferSize(8)];
     if(qrcode_initText(&qr,data,8,ECC_LOW,value.c_str())==0){
-      const int scale=3,x=34,y=54;tft.fillRect(x,y,171,171,WHITE);
+      const int scale=3,x=34,y=42;tft.fillRect(x,y,171,171,WHITE);
       for(int r=0;r<qr.size;r++)for(int c=0;c<qr.size;c++)if(qrcode_getModule(&qr,c,r))tft.fillRect(x+(c+4)*scale,y+(r+4)*scale,scale,scale,BLACK);
-    }else row(90,"Use the QR label on product",YELLOW);
-  }else {row(85,claimed?"Door already activated":"Factory setup not completed",YELLOW);row(115,"Use setup Wi-Fi below");}
-  row(234,"Wi-Fi: "+setupSsid,CYAN);row(254,"Key: "+setupPassword,YELLOW);
-  row(274,"Browser: 192.168.4.1");
-  button(5,295,230,22,configured()?"BACK TO PIN / OFFLINE":cfg.touch.valid?"BACK":"SET WIFI, THEN USE MOBILE APP");
+    }else row(85,"Use the QR label on product",YELLOW);
+  }else row(75,claimed?"Door already activated":"Factory setup not completed",YELLOW);
+  row(226,"Wi-Fi: "+setupSsid,CYAN);row(246,"Key: "+setupPassword,YELLOW);
+}
+void connectedNetworkPage() {
+  wifiPermitUntil=0;
+  setupApCloseAt=WiFi.status()==WL_CONNECTED?millis()+600000:0;
+  enableSetupAp();networkPage=true;screen=DEVICE_STATUS;drawSetupQrAndWifi();
+  if(claimed)button(5,295,230,22,configured()?"BACK TO PIN / OFFLINE":cfg.touch.valid?"BACK":"SET WIFI, THEN USE MOBILE APP");
 }
 String setupStage() {
   return SetupLogic::stage(resetPending,WiFi.status()==WL_CONNECTED,broker.connected(),claimed,appPinsReady,
@@ -124,7 +179,12 @@ bool connectedContinueSetup() {
     row(135,"Waiting for erase confirmation");row(180,"Setup restarts after reset");return true;
   }
   if(configured())return false;
-  if(!claimed || !appPinsReady) {
+  if(!claimed) {
+    networkPage=false;
+    if(screen!=APP_SETUP){screen=APP_SETUP;drawSetupQrAndWifi();}
+    return true;
+  }
+  if(!appPinsReady) {
     if(adminSession && screen==ADMIN_LOGIN){connectedNetworkPage();return true;}
     screen=APP_SETUP;networkPage=false;title("SETUP IN MOBILE APP");
     row(60,WiFi.status()==WL_CONNECTED?"Wi-Fi connected":"Connect to SmartDoor Wi-Fi",YELLOW);
@@ -145,15 +205,16 @@ bool connectedSetupTouch(int x,int y) {
   if(resetPending)return true;
   if(screen==APP_SETUP){if(cfg.touch.valid && cfg.admin.valid && y>=260)go(ADMIN_LOGIN);return true;}
   if(!networkPage || screen!=DEVICE_STATUS)return false;
-  if(cfg.touch.valid && y>=290){networkPage=false;if(!connectedContinueSetup())go(HOME);}
+  if(claimed && cfg.touch.valid && y>=290){networkPage=false;if(!connectedContinueSetup())go(HOME);}
   return true;
 }
 bool localHttp(){return setupApActive && setupWeb.client().localIP()==WiFi.softAPIP();}
 void setupReply(int code,const String &message){DynamicJsonDocument doc(384);doc["message"]=message;String body;serializeJson(doc,body);setupWeb.sendHeader("Cache-Control","no-store");setupWeb.send(code,"application/json",body);}
+bool setupPinAuthorized(){return !cfg.admin.valid || (wifiPermitUntil && int32_t(wifiPermitUntil-millis())>0 && setupWeb.client().remoteIP()==setupAuthorizedClient);}
 bool setupAuthorized() {
   if(!localHttp() || resetPending || storageFault || setupWeb.arg("csrf")!=setupCsrf){setupReply(403,"Phiên thiết lập không hợp lệ. Mở lại trang tại cửa.");return false;}
-  if(SetupLogic::wifiAllowed(claimed,wifiPermitUntil,millis()))return true;
-  setupReply(403,"Mở Đổi Wi-Fi trong app, hoặc đăng nhập ADMIN trên cửa rồi chọn WI-FI để cho phép thay đổi trong 10 phút.");return false;
+  if(setupPinAuthorized())return true;
+  setupReply(403,"Nhập đúng PIN admin trên trang này trước khi đổi mạng.");return false;
 }
 void startSetupScan(bool refresh) {
   if(setupScanPending)return;
@@ -178,13 +239,22 @@ void pollSetupScan() {
 void startSetupWeb() {
   setupCsrf=randomId();if(!claimed||wifiSsid.isEmpty())enableSetupAp();
   setupWeb.on("/",HTTP_GET,[]{if(!localHttp()){setupReply(403,"Kết nối mạng thiết lập của cửa để tiếp tục.");return;}setupWeb.sendHeader("Cache-Control","no-store");setupWeb.send_P(200,"text/html; charset=utf-8",SETUP_PAGE);});
+  auto captiveRedirect=[](){
+    if(!localHttp()){setupReply(403,"Kết nối mạng thiết lập của cửa để tiếp tục.");return;}
+    setupWeb.sendHeader("Cache-Control","no-store");setupWeb.sendHeader("Location","http://192.168.4.1/",true);setupWeb.send(302,"text/plain","");
+  };
+  setupWeb.on("/generate_204",HTTP_GET,captiveRedirect);setupWeb.on("/gen_204",HTTP_GET,captiveRedirect);
+  setupWeb.on("/hotspot-detect.html",HTTP_GET,captiveRedirect);setupWeb.on("/library/test/success.html",HTTP_GET,captiveRedirect);
+  setupWeb.on("/connecttest.txt",HTTP_GET,captiveRedirect);setupWeb.on("/ncsi.txt",HTTP_GET,captiveRedirect);
+  setupWeb.on("/canonical.html",HTTP_GET,captiveRedirect);setupWeb.on("/success.txt",HTTP_GET,captiveRedirect);
   setupWeb.on("/api/setup/status",HTTP_GET,[]{
     if(!localHttp()){setupReply(403,"Kết nối mạng thiết lập của cửa.");return;}
-    DynamicJsonDocument doc(1024);doc["deviceUid"]=deviceUid;doc["csrf"]=setupCsrf;
-    doc["authorized"]=SetupLogic::wifiAllowed(claimed,wifiPermitUntil,millis());
+    DynamicJsonDocument doc(1536);doc["deviceUid"]=deviceUid;doc["csrf"]=setupCsrf;
+    doc["authorized"]=setupPinAuthorized();
     bool connected=WiFi.status()==WL_CONNECTED && WiFi.SSID()==wifiSsid;
     doc["wifiConnected"]=connected;doc["ssid"]=wifiSsid;doc["connecting"]=!connected&&setupConnectStarted&&millis()-setupConnectStarted<35000;
-    doc["serviceConnected"]=broker.connected();doc["message"]=setupError;
+    doc["serviceConnected"]=broker.connected();doc["message"]=setupError;JsonArray saved=doc.createNestedArray("savedNetworks");
+    for(uint8_t i=0;i<savedWifiCount;i++)saved.add(savedWifiSsids[i]);
     doc["localReady"]=configured();doc["activated"]=claimed;String body;serializeJson(doc,body);setupWeb.sendHeader("Cache-Control","no-store");setupWeb.send(200,"application/json",body);
   });
   setupWeb.on("/api/wifi/scan",HTTP_GET,[]{
@@ -196,23 +266,25 @@ void startSetupWeb() {
   setupWeb.on("/setup",HTTP_POST,[]{
     if(!setupAuthorized())return;String ssid=setupWeb.arg("ssid"),password=setupWeb.arg("password");
     if(ssid.isEmpty()||ssid.length()>32||password.length()>63||(!password.isEmpty()&&password.length()<8)){setupReply(400,"Tên Wi-Fi hoặc mật khẩu chưa hợp lệ.");return;}
-    wifiSsid=ssid;wifiPassword=password;setupConnectStarted=millis();setupError="";WiFi.begin(ssid.c_str(),password.c_str());
+    wifiSsid=ssid;wifiPassword=password;setupConnectStarted=millis();lastWifiAttempt=setupConnectStarted;setupError="";WiFi.disconnect(false);WiFi.begin(ssid.c_str(),password.c_str());
+    if(claimed)wifiPermitUntil=0;
     setupReply(200,"Đang kết nối Wi-Fi. Chỉ lưu khi kết nối thành công.");
   });
   setupWeb.on("/api/wifi/authorize",HTTP_POST,[]{
     if(!localHttp() || resetPending || setupWeb.arg("csrf")!=setupCsrf){setupReply(403,"Phiên thiết lập không hợp lệ.");return;}
     if(setupBadPins>=5 && millis()-setupBlockedAt<30000){setupReply(429,"Nhập sai nhiều lần. Chờ 30 giây.");return;}
     if(!cfg.admin.valid || !pinMatches(cfg.admin,setupWeb.arg("adminAuth"))){setupBadPins++;setupBlockedAt=millis();setupReply(403,"PIN quản trị chưa đúng.");return;}
-    setupBadPins=0;wifiPermitUntil=millis()+600000;setupReply(200,"Đã cho phép đổi Wi-Fi trong 10 phút.");
+    setupBadPins=0;setupAuthorizedClient=setupWeb.client().remoteIP();wifiPermitUntil=millis()+600000;setupReply(200,"PIN đúng. Bạn có thể thực hiện một lần đổi mạng.");
   });
   setupWeb.on("/api/setup/pin",HTTP_POST,[]{
     setupReply(410,"PIN chỉ được thiết lập trong ứng dụng của chủ cửa sau khi cửa đã online.");
   });
   setupWeb.on("/api/setup/finish",HTTP_POST,[]{
-    if(!setupAuthorized())return;if(WiFi.status()!=WL_CONNECTED || WiFi.SSID()!=wifiSsid){setupReply(409,"Cửa chưa kết nối Wi-Fi đã chọn. Kiểm tra lại trước khi hoàn tất.");return;}
+    if(!localHttp() || resetPending || setupWeb.arg("csrf")!=setupCsrf){setupReply(403,"Phiên thiết lập không hợp lệ.");return;}
+    if(WiFi.status()!=WL_CONNECTED || WiFi.SSID()!=wifiSsid){setupReply(409,"Cửa chưa kết nối Wi-Fi đã chọn. Kiểm tra lại trước khi hoàn tất.");return;}
     setupApCloseAt=millis()+3000;setupReply(200,"Đã lưu Wi-Fi. Mạng thiết lập sẽ tắt; mở lại Smart Door để hoàn tất nhận cửa.");
   });
-  setupWeb.onNotFound([]{if(localHttp()){setupWeb.sendHeader("Location","http://192.168.4.1/",true);setupWeb.send(302,"text/plain","");}else setupReply(403,"Kết nối mạng thiết lập của cửa.");});
+  setupWeb.onNotFound(captiveRedirect);
   setupWeb.begin();
 }
 bool privateHost(const String &host) {IPAddress ip;if(!ip.fromString(host))return false;return ip[0]==10||(ip[0]==192&&ip[1]==168)||(ip[0]==172&&ip[1]>=16&&ip[1]<=31);}
@@ -357,7 +429,7 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
   if(!claimed || resetPending){sendAck(uuid,false,"NOT_READY");return;}
   if(type=="WIFI_SETUP") {
     if(screen==SERVO_CAL){sendAck(uuid,false,"DEVICE_BUSY");return;}
-    wifiPermitUntil=millis()+600000;connectedNetworkPage();sendAck(uuid,true,"WIFI_SETUP_ENABLED");return;
+    wifiPermitUntil=0;connectedNetworkPage();sendAck(uuid,true,"WIFI_SETUP_ENABLED");return;
   }
   if(type=="SETUP_CREDENTIALS") {
     MotorState active=snapshot();
@@ -426,12 +498,12 @@ void connectedSetup() {
   if(factoryPrefs.getBool("resetCommit",false) && finishResetCommit()){ESP.restart();return;}
   if(resetPending){adminSession=false;if(actuatorReady){xSemaphoreTake(motorMutex,portMAX_DELAY);motor.enabled=false;motor.pending=false;motor.calibrating=false;servo.detach();xSemaphoreGive(motorMutex);}}
   queueHead=eventPrefs.getUShort("head",0);queueTail=eventPrefs.getUShort("tail",0);droppedEvents=eventPrefs.getUInt("dropped",0);
-  wifiSsid=networkPrefs.getString("ssid","");wifiPassword=networkPrefs.getString("password","");
+  loadSavedWifiNetworks();
   broker.setBufferSize(16384);broker.setSocketTimeout(2);broker.setCallback(handleBroker);
   WiFi.onEvent([](WiFiEvent_t event,WiFiEventInfo_t info){if(event==ARDUINO_EVENT_WIFI_SCAN_DONE){setupScanEventStatus=info.wifi_scan_done.status;setupScanEventCount=info.wifi_scan_done.number;}});
   configTime(0,0,"pool.ntp.org","time.cloudflare.com");startSetupWeb();
   WiFi.persistent(false);WiFi.setAutoReconnect(true);
-  if(!wifiSsid.isEmpty())WiFi.begin(wifiSsid.c_str(),wifiPassword.c_str());
+  if(savedWifiCount)attemptSavedWifi(0);
   if(connectedAccessReady()){if(wifiSsid.isEmpty())enableSetupAp();go(HOME);}
   else if(!claimed || wifiSsid.isEmpty())connectedNetworkPage();
   else if(!connectedContinueSetup())go(HOME);
@@ -443,7 +515,7 @@ void handleFactorySerial() {
     if(serialLine.startsWith("FACTORY ") && deviceSecret.isEmpty()) {
       DynamicJsonDocument doc(8192);String value=serialLine.substring(8);
       if(!deserializeJson(doc,value)&&String(doc["activationCode"]|"").length()>=24&&String(doc["setupPassword"]|"").length()>=8&&loadFactoryJson(doc)){
-        if(doc.containsKey("wifiSsid")){networkPrefs.putString("ssid",doc["wifiSsid"].as<String>());networkPrefs.putString("password",doc["wifiPassword"]|"");}
+        if(doc.containsKey("wifiSsid"))rememberSavedWifi(doc["wifiSsid"].as<String>(),doc["wifiPassword"]|"");
         factoryPrefs.putUInt("gen",doc["generation"]|1);
         doc.remove("wifiSsid");doc.remove("wifiPassword");value="";serializeJson(doc,value);
         if(!factoryPrefs.putString("config",value)){Serial.println("FACTORY_STORAGE_FAILED");serialLine="";return;}
@@ -478,25 +550,23 @@ void connectedPoll() {
   if(connectedAccessReady() && screen==APP_SETUP && !networkPage)go(HOME);
   if(!rfidScanUuid.isEmpty() && millis()-rfidScanStarted>=30000){String uuid=rfidScanUuid;rfidScanUuid="";sendAck(uuid,false,"RFID_SCAN_TIMEOUT");tell("Card scan timed out");}
   handleFactorySerial();pollSetupScan();if(setupApActive)setupDns.processNextRequest();setupWeb.handleClient();pollRemoteEnroll();
-  if(setupApCloseAt && int32_t(millis()-setupApCloseAt)>=0){setupApCloseAt=0;setupDns.stop();WiFi.softAPdisconnect(true);setupApActive=false;networkPage=false;wifiPermitUntil=0;if(!connectedContinueSetup())go(HOME);}
+  if(setupApCloseAt && WiFi.status()==WL_CONNECTED && int32_t(millis()-setupApCloseAt)>=0){setupApCloseAt=0;setupDns.stop();WiFi.softAPdisconnect(true);setupApActive=false;networkPage=false;wifiPermitUntil=0;if(!connectedContinueSetup())go(HOME);}
   if(!fingerReady && !remoteStage && !resetPending && serialLine.isEmpty() && millis()-lastSensorRetry>15000){lastSensorRetry=millis();probeSensors();}
   if(SetupLogic::wifiAttemptExpired(setupConnectStarted,millis(),WiFi.status()==WL_CONNECTED && WiFi.SSID()==wifiSsid)) {
     setupConnectStarted=0;setupError="Không kết nối được mạng mới. Đã giữ cấu hình Wi-Fi trước đó; hãy chọn lại mạng/mật khẩu.";
-    wifiSsid=networkPrefs.getString("ssid","");wifiPassword=networkPrefs.getString("password","");
-    if(!wifiSsid.isEmpty())WiFi.begin(wifiSsid.c_str(),wifiPassword.c_str());
+    if(savedWifiCount)attemptSavedWifi(0);else {wifiSsid="";wifiPassword="";}
   }
   if(WiFi.status()!=WL_CONNECTED){
-    if(!wifiOfflineSince)wifiOfflineSince=millis();
+    if(!wifiOfflineSince){wifiOfflineSince=millis();if(!setupConnectStarted && savedWifiCount)attemptSavedWifi(0);}
     if(millis()-wifiOfflineSince>30000)enableSetupAp();
-    if(!setupConnectStarted && !wifiSsid.isEmpty() && millis()-lastWifiAttempt>15000){lastWifiAttempt=millis();WiFi.begin(wifiSsid.c_str(),wifiPassword.c_str());}
+    if(!setupConnectStarted && savedWifiCount && millis()-lastWifiAttempt>20000)attemptSavedWifi((wifiRetryIndex+1)%savedWifiCount);
     return;
   }
   wifiOfflineSince=0;
   if(!resetPending && WiFi.SSID()==wifiSsid){
-    if(networkPrefs.getString("ssid","")!=wifiSsid || networkPrefs.getString("password","")!=wifiPassword)
-      if(!networkPrefs.putString("ssid",wifiSsid) || (!wifiPassword.isEmpty() && !networkPrefs.putString("password",wifiPassword)))storageFault=true;
-    if(wifiPassword.isEmpty())networkPrefs.remove("password");
+    rememberSavedWifi(wifiSsid,wifiPassword);
     setupConnectStarted=0;
+    if(setupApActive && !setupApCloseAt)setupApCloseAt=millis()+600000;
   }
   if(brokerHost.isEmpty()||deviceSecret.isEmpty())return;
   if(!broker.connected() && millis()-lastBrokerAttempt>10000){
@@ -508,7 +578,7 @@ void connectedPoll() {
   }
   broker.loop();if(!broker.connected())return;
   if(screen==APP_SETUP && millis()-lastSetupDraw>1000){lastSetupDraw=millis();if(!connectedContinueSetup())go(HOME);}
-  if(wifiPermitUntil && int32_t(wifiPermitUntil-millis())<=0){wifiPermitUntil=0;if(setupApActive && claimed)setupApCloseAt=millis()+1000;}
+  if(wifiPermitUntil && int32_t(wifiPermitUntil-millis())<=0)wifiPermitUntil=0;
   if(!resetReceipt.isEmpty()&&millis()-lastStatusAt>3000){lastStatusAt=millis();sendAck(resetReceipt,true,"RESET_EMPTY_VERIFIED",false);return;}
   if(millis()-lastStatusAt>5000){
     lastStatusAt=millis();requestNonce=randomId();MotorState state=snapshot();DynamicJsonDocument status(2048);

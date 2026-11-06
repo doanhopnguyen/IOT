@@ -141,7 +141,7 @@ export function ActivationWizard({
             />
             <Card>
               <Text style={s.heading}>2. Kết nối Wi-Fi cho cửa</Text>
-              <Text style={s.caption}>Kết nối Wi-Fi của cửa trước khi mở trang thiết lập.</Text>
+              <Text style={s.caption}>Kết nối Wi-Fi của cửa. Trang thiết lập thường tự mở; nút bên dưới là đường vào dự phòng.</Text>
               <Text selectable style={s.caption}>
                 Mạng thiết lập: {setup?.ssid ?? 'SmartDoor-… (xem trên sản phẩm)'}
               </Text>
@@ -174,7 +174,7 @@ export function ActivationWizard({
                   );
                 }}
               />
-              <Text style={s.caption}>Trang Wi-Fi chỉ chọn mạng, không tạo PIN. Chọn “Hoàn tất”, đưa điện thoại về mạng có Internet rồi kiểm tra cửa online bên dưới.</Text>
+              <Text style={s.caption}>Khi nhận cửa lần đầu, trang chỉ chọn mạng và không tạo PIN. Với cửa đã kích hoạt, nhập lại PIN admin để đổi mạng. Chọn “Hoàn tất”, đưa điện thoại về mạng có Internet rồi kiểm tra cửa online bên dưới.</Text>
             </Card>
             <Button title="Kiểm tra cửa đã kết nối dịch vụ" disabled={busy || !code.trim()} onPress={() => { void run(async () => {
               const info = await request<{ online: boolean }>('/api/activation/inspect', {

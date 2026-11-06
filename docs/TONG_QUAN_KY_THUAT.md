@@ -40,7 +40,7 @@ flowchart LR
 | Vân tay | Quét tại cảm biến UART; manager gửi FP_ENROLL/FP_DELETE. Đăng ký hai lần, timeout 45 giây; đọc bitmap và checksum để tránh đè slot đang có mẫu. |
 | PIN | Keypad TFT nhập6 số; C xóa, E xác nhận. ESP32 lưu salt + SHA-256; backend BCrypt. Sai 5 lần chặn nhập30 giây trong phiên chạy. PIN dùng chung cho cửa. |
 | Servo | DOOR_UNLOCK điều khiển góc mở, task riêng tự khóa sau thời gian cấu hình; boot đưa về góc khóa. Chưa có cảm biến xác nhận vị trí chốt. |
-| Wi-Fi | Quét bất đồng bộ, chọn mạng2.4GHz, bàn phím chữ thường/hoa/ký tự đặc biệt, SSID ẩn, lưu NVS khi kết nối thành công, tự reconnect. Đổi mạng thất bại/hủy sẽ dùng lại cấu hình cũ. |
+| Wi-Fi | Firmware connected quét/chọn mạng 2.4GHz qua captive portal, giữ tối đa 5 mạng trong NVS và luân phiên thử lại khi mất kết nối. Cửa đã có PIN yêu cầu admin PIN trên TFT để vào Wi-Fi và nhập lại trên portal cho mỗi lần đổi. Mạng mới chỉ lưu khi kết nối thành công. |
 | Offline | Quyền lưu NVS; RFID/vân tay/PIN tiếp tục kiểm tra cục bộ. Hàng đợi tối đa63 sự kiện, chỉ bỏ sau backend xác nhận commit; hàng đợi đầy/lỗi lưu sẽ chặn mở cục bộ. |
 | Lệnh MQTT | UUID + TTL, theo dõi PENDING/SENT/ACKNOWLEDGED/FAILED/TIMEOUT. ESP lưu16 kết quả gần nhất, gửi lại ACK tới khi có ack-confirm. |
 | Bản tin thiết bị | Xác thực secret/lifecycle/type; từ chối retained/topic sai. Backend chống trùng eventUuid và giữ timestamp offline khi thiết bị có giờ hợp lệ. |

@@ -1,4 +1,4 @@
-# Luồng sản phẩm Smart Door — 05/11/2026
+# Luồng sản phẩm Smart Door — 06/11/2026
 
 Đây là luồng mới theo yêu cầu người dùng, thay cho các hướng dẫn demo trước đây bắt người mua nhập hoặc đổi địa chỉ backend.
 
@@ -21,15 +21,15 @@
 7. Đặt tên và nhận cửa bằng QR trong app. Nhập PIN mở cửa và PIN quản trị (mỗi PIN 6 số, khác nhau, có xác nhận) trong app; chỉ có hiệu lực khi ESP32 ACK. PIN quản trị dùng cho quản lý/đổi mạng cục bộ, không phải mã nhận QR. Không tạo PIN trên portal hoặc màn hình chip.
 8. Sau ACK, màn hình cửa tự bắt đầu hiệu chỉnh: giữ/nhấc từng dấu cộng 1–3, chạm giữa màn hình, xác nhận cửa đóng/mở, rồi chỉnh/thử và xác nhận hai góc servo LOCK/OPEN. App hiển thị hướng dẫn, góc lệnh và chiều tăng/giảm tương ứng. Cửa mới chỉ ACTIVE sau khi các bước đều được xác nhận; mất mạng sau khi đã hoàn tất không chặn PIN/thẻ/vân tay cục bộ. Có thể tiếp tục từ Cài đặt thiết bị nếu đóng app giữa chừng.
 
-Trình duyệt là bước cấu hình Wi-Fi cục bộ; app là nơi nhận cửa, tạo/đổi PIN và theo dõi hiệu chỉnh. Firmware connected 1.2.0 không cho đi tắt qua bước tạo PIN trên chip/web. Khi cập nhật từ bản cũ, chủ cửa đặt PIN trong app một lần để chuyển sang luồng này; các PIN cũ không tự hoàn tất bước mới.
+Trình duyệt là bước cấu hình Wi-Fi cục bộ; app là nơi nhận cửa, tạo/đổi PIN và theo dõi hiệu chỉnh. Firmware connected 1.4.0 không cho đi tắt qua bước tạo PIN trên chip/web. Khi cập nhật từ bản cũ, chủ cửa đặt PIN trong app một lần để chuyển sang luồng này; các PIN cũ không tự hoàn tất bước mới.
 
 ## Quy tắc mạng và bảo mật
 
 - Trang thiết lập chỉ phục vụ trên giao diện Wi-Fi riêng của cửa, không công khai trên LAN nhà. Mật khẩu Wi-Fi nhà không nằm trong QR hoặc phản hồi trạng thái.
-- Mỗi phiên cấu hình Wi-Fi có CSRF token. Cửa đã nhận cần chủ cửa mở chế độ đổi Wi-Fi trong app (10 phút) hoặc xác thực ADMIN trên cửa. Khi offline/chưa hiệu chỉnh được touch, portal cho xác thực PIN quản trị đã đặt trong app để đổi mạng; đây là xác thực PIN cũ, không phải tạo PIN. Thử sai nhiều lần bị giới hạn thời gian.
+- Mỗi phiên cấu hình Wi-Fi có CSRF token. Cửa đã nhận yêu cầu PIN admin trên màn hình để vào ADMIN → WI-FI; portal còn yêu cầu nhập lại PIN cho từng lần đổi mạng, kể cả khi mở từ app. Mạng thiết lập ban đầu trước khi nhận cửa chưa có PIN nên không yêu cầu bước này. Thử sai nhiều lần bị giới hạn thời gian.
 - QR không được phép thay địa chỉ dịch vụ của ứng dụng; tránh QR lạ chuyển thông tin đăng nhập sang máy khác.
 - MAC/UID định danh sản phẩm khác với mã nhận cửa ngẫu nhiên. Mã nhận cửa dùng một lần; mã cũ hết hiệu lực sau khi nhận hoặc làm lại sản phẩm.
-- Điểm phát tự tắt khi chọn hoàn tất. Trong Cài đặt thiết bị có nút Cho phép đổi Wi-Fi; chip hiện tên/mật khẩu SmartDoor để điện thoại chọn mạng mới. Khi offline, ADMIN → WI-FI vẫn dùng được. Chip thử nối lại Wi-Fi đã lưu mỗi 15 giây và mở AP phục hồi sau khoảng 30 giây mất Wi-Fi. Thử mạng mới thất bại sau 35 giây sẽ giữ cấu hình cũ và thử lại, không xóa PIN/quyền.
+- ESP32 giữ tối đa 5 mạng Wi-Fi; mỗi mạng mới chỉ được ghi sau khi kết nối thành công. Khi mất kết nối, chip lần lượt thử các mạng đã lưu mỗi 20 giây và mở AP phục hồi sau khoảng 30 giây. Điện thoại thường tự mở trang captive portal khi vào SmartDoor; có thể truy cập `192.168.4.1` nếu hệ điều hành không bật trang. Chọn hoàn tất sẽ tắt điểm phát. Thử mạng mới thất bại sau 35 giây sẽ giữ danh sách cũ rồi thử lại, không xóa PIN/quyền.
 - ESP32-S3 dùng Wi-Fi 2.4 GHz. Nhận diện khuôn mặt và mở từ xa vẫn cần dịch vụ online; PIN/thẻ/vân tay đã cấp phép hoạt động cục bộ sau khi kích hoạt.
 
 ## Trạng thái hạ tầng hiện tại

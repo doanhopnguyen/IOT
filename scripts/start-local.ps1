@@ -42,6 +42,6 @@ switch ($Component) {
     }
     'face' {
         Set-Location (Join-Path $projectRoot 'face-node')
-        & (Join-Path $runtime 'venv\Scripts\python.exe') -u node.py --camera --no-preview
+        & (Join-Path $runtime 'venv\Scripts\python.exe') -u node.py --camera
     }
 }

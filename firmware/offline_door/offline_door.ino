@@ -540,6 +540,9 @@ void draw() {
     title("ADMIN");
     const char *labels[]={"ADD CARD","DELETE CARD","ADD FINGER","DELETE FINGER","DOOR PIN",
       "ADMIN PIN","TOUCH SETUP","DOOR SETUP","SERVO SETUP","STATUS"};
+#ifdef CONNECTED_DOOR
+    if(connectedManaged())labels[9]="WI-FI";
+#endif
     for (int i=0;i<10;i++) button(5+(i%2)*118,55+(i/2)*46,112,40,labels[i]);
     button(5,289,230,28,"EXIT ADMIN");
   } else if (screen==MOTOR) {
@@ -884,7 +887,7 @@ void tap(int x,int y) {
   if (screen==HOME || screen==ADMIN_LOGIN || screen==SET_ADMIN || screen==CONFIRM_ADMIN ||
       screen==SET_USER || screen==CONFIRM_USER) {
 #ifdef CONNECTED_DOOR
-    if (screen==HOME && inside(x,y,5,16,72,17)) { notice="Admin PIN, then select WI-FI"; go(ADMIN_LOGIN); return; }
+    if (screen==HOME && inside(x,y,5,16,72,17)) { notice="Admin PIN required to change Wi-Fi"; go(ADMIN_LOGIN); return; }
 #endif
     if (screen==HOME && inside(x,y,165,HEADER_BUTTON_Y,72,HEADER_BUTTON_H)) { notice=""; go(ADMIN_LOGIN); return; }
     if (screen!=HOME && cfg.admin.valid && inside(x,y,182,HEADER_BUTTON_Y,55,HEADER_BUTTON_H)) {

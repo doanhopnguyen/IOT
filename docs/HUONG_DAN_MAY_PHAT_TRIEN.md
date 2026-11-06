@@ -2,7 +2,7 @@
 
 Hướng dẫn cho dự án tại **`D:\DEV\IOT`** trên Windows PowerShell: nạp ESP32-S3, chạy backend, mở web admin và chạy mobile bằng Expo Go.
 
-Nếu chỉ muốn sử dụng lại cửa COM5 đang có, bắt đầu ở [mục 2](#2-chạy-backend-và-broker). **Không cần nạp lại firmware mỗi lần chạy dự án.**
+COM5 hiện đã xóa flash và nạp firmware sạch nhưng chưa được cấp phát danh tính. Để thử onboarding từ đầu, tạo factory bundle/QR mới theo mục 5.3; các lần chạy dịch vụ sau đó không cần nạp lại firmware.
 
 ## 1. Chuẩn bị
 
@@ -151,14 +151,14 @@ Nếu cổng khác, thay `COM5`. Kết quả thành công có `[SUCCESS]`. File 
 
 Upload firmware thông thường giữ NVS/danh tính đã cấp phát; không dùng erase flash khi chỉ cập nhật code. Erase flash sẽ xóa cả dữ liệu cấp phát và buộc chuẩn bị lại thiết bị.
 
-Với **COM5 hiện có**, danh tính đã được nạp. Sau khi upload thông thường, chỉ cần kiểm tra:
+Sau khi nạp firmware cho COM5 vừa xóa sạch, đọc trạng thái:
 
 ```powershell
 cd D:\DEV\IOT
 & 'C:\Users\ACER\.platformio\penv\Scripts\python.exe' .\scripts\device_tool.py --port COM5 info
 ```
 
-Kết quả có `FACTORY_INFO`, đúng MAC `80B54EC8149C`, UID `ESP32-80B54EC8149C` và `productPrepared=1`. `wifi`/`mqtt` chưa kết nối là bình thường khi chưa cấu hình Wi-Fi người mua.
+Hiện trạng sạch có MAC `80B54EC8149C`, UID rỗng và `productPrepared=0`; Wi-Fi/PIN chưa có. Sau khi cấp phát mới, kết quả cần có UID và `productPrepared=1`.
 
 Đọc log khi cần:
 
@@ -208,17 +208,17 @@ File cấp phát phải có `factoryMac`, `deviceUid`, `generation`, `deviceSecr
 
 Thành công sẽ in `FACTORY_PROVISIONED <MAC>`, chip khởi động lại. Chạy `device_tool.py info` kiểm tra `productPrepared=1`, sau đó in/dán QR sản phẩm. UID/MAC công khai không thay thế mã nhận cửa hoặc khóa thiết bị.
 
-### 5.4. File riêng của COM5 đang có
+### 5.4. Trạng thái chip sau khi xóa sạch
 
 | File trong `.local` | Vai trò |
 | --- | --- |
-| `FACTORY_ESP32-80B54EC8149C.json` | Danh tính và mã nhận hiện tại, chỉ dành cho kỹ thuật |
-| `FACTORY_CONNECTION.json` | Cấu hình kết nối dịch vụ đã cấp phát |
-| `PRODUCT_QR_ESP32-80B54EC8149C.png` | QR mới để thử nhận cửa |
+| `FACTORY_ESP32-80B54EC8149C.json` | Cấp phát cũ; không dùng sau khi database/chip đã reset |
+| `FACTORY_CONNECTION.json` | Cấu hình broker cũ; cần tạo lại cho UID mới |
+| `PRODUCT_QR_ESP32-80B54EC8149C.png` | QR cũ; mã nhận không còn trong database |
 | `ADMIN_ACCESS.txt` | Thông tin tài khoản admin |
-| `BUYER_RESET_STATUS.md` | Kết quả reset và phần chưa xác minh |
+| `BUYER_RESET_STATUS.md` | Nhật ký reset trước đây |
 
-Các file này đã có ở máy hiện tại. Không ghi đè bằng cấu hình mẫu, không đưa file chứa khóa/mật khẩu lên Git. COM5 đã cấp phát nên không cần chạy lại lệnh `provision`.
+Ngày 06/11/2026, COM5 đã xóa toàn bộ flash 16 MB, xóa mẫu vân tay còn lại và nạp lại firmware connected 1.4.0. MAC/eFuse giữ nguyên; `productPrepared=0`, Wi-Fi/PIN chưa thiết lập, cảm biến vân tay còn 0 mẫu. Vì database đã được làm sạch, các JSON/QR cũ phía trên không còn ghép được; đăng ký chip và tạo cấp phát/QR mới trước khi chạy `device_tool.py provision`.
 
 ## 6. Build lại khi sửa code
 
@@ -257,17 +257,16 @@ Sau đó chạy mobile theo mục 4. Không cần build APK để thử các ch�
 
 ## 7. Thử vai người mua từ đầu
 
-Trạng thái sau lần dọn dữ liệu gần nhất: DB giữ **một tài khoản admin**, không có tài khoản người dùng/cửa đã nhận; vẫn giữ danh tính xuất xưởng và mã nhận mới của COM5 để có thể kích hoạt.
+Trạng thái hiện tại: database chỉ giữ **một tài khoản admin**; chưa có thiết bị/cửa. COM5 đã xóa flash 16 MB, đã nạp firmware connected 1.4.0 và cảm biến vân tay đã xác nhận còn 0 mẫu. MAC/eFuse vẫn còn nhưng danh tính cấp phát, Wi-Fi, PIN và QR cũ đã bị xóa.
 
-1. Chạy broker, backend và mobile theo mục 2–4; cấp nguồn cửa.
-2. Mở app trong Expo Go, đăng ký tài khoản người dùng mới.
-3. Chọn thêm thiết bị, quét QR mới trên màn hình cửa hoặc [file QR sản phẩm](.local/PRODUCT_QR_ESP32-80B54EC8149C.png). Không dùng QR/mã nhận cũ trước lần reset.
-4. Kết nối Wi-Fi **SmartDoor-C8149C**, nhập mật khẩu hiển thị trên cửa/QR. Nếu điện thoại báo không có Internet, giữ kết nối.
-5. Mở **http://192.168.4.1**, bấm tìm Wi-Fi, chọn **PTIT_B2**, để trống mật khẩu và kết nối. Wi-Fi khác có mật khẩu thì nhập mật khẩu tương ứng.
-6. Chọn hoàn tất Wi-Fi, đưa điện thoại về mạng có Internet/Tailscale rồi mở lại app, đặt tên và nhận cửa.
-7. Tiếp tục thiết lập PIN, cảm ứng và cảm biến theo hướng dẫn của bản đang chạy. Hoàn tất thiết lập và kiểm tra trạng thái trước khi thử mở cửa.
+1. Chạy MySQL, broker, backend và mobile theo mục 2–4.
+2. Đăng nhập web admin bằng tài khoản admin còn lại; mở **Đăng ký chip & QR**, đọc MAC qua COM5, tạo thiết bị mới và tải factory JSON/QR.
+3. Tạo file kết nối broker mới theo mục 5.3, khởi động lại broker để nạp tài khoản mới, rồi chạy `device_tool.py provision` với hai file mới. Xác nhận `productPrepared=1` bằng lệnh `info`.
+4. Trong app Expo Go, đăng ký tài khoản người dùng mới; chọn thêm thiết bị và quét QR mới vừa tạo. Không dùng QR/JSON cũ trong `.local`.
+5. Kết nối Wi-Fi SmartDoor theo tên/mật khẩu trên màn hình cửa hoặc QR. Nếu captive portal không tự mở, vào **http://192.168.4.1**, chọn Wi-Fi nhà và hoàn tất kết nối.
+6. Đưa điện thoại về mạng có Internet, nhận cửa trong app, đặt PIN và làm theo các bước hiệu chỉnh trên cửa.
 
-**Giới hạn hiện tại:** firmware gốc được giữ sau reset nên portal/TFT vẫn có bước PIN. Thiết kế chuyển toàn bộ bước PIN về app mới được ghi trong [file điều chỉnh nghiệp vụ](docs/DIEU_CHINH_NGHIEP_VU_SAN_PHAM.md), chưa triển khai đầy đủ. Cảm biến vân tay không phản hồi ở lần reset gần nhất nên **chưa xác minh xóa bộ nhớ vân tay**. Xem [trạng thái reset](.local/BUYER_RESET_STATUS.md); không coi hệ thống đã kiểm thử hoàn chỉnh chỉ vì dịch vụ khởi động được.
+**Trạng thái phần cứng:** cảm biến vân tay phản hồi và báo 0 mẫu; RC522 phản hồi sau reset. Servo/cảm biến cửa và luồng mở cửa chưa được kiểm tra sau lần xóa sạch này.
 
 ## 8. Dừng dự án và xử lý lỗi
 

@@ -2,7 +2,7 @@
 
 Firmware tích hợp mới, tham khảo dây/sketch trong `D:\BTLIOT`. TFT, touch và RC522 dùng chung hardware SPI với CS riêng; UART vân tay độc lập.
 
-**Bản chính là `connected_door`, cấu hình `platformio.connected.ini`.** Luồng hiện tại: Wi-Fi trước, nhận cửa và đặt hai PIN trong app, sau đó chip hướng dẫn hiệu chỉnh; xem [thiết lập app và Wi-Fi](../docs/THIET_LAP_APP_VA_WIFI.md). `pio run` không chọn cấu hình sẽ build bản legacy `src/main.cpp`, không có luồng mới.
+**Bản chính là `connected_door`, cấu hình `platformio.connected.ini` (firmware 1.4.0).** Luồng hiện tại: Wi-Fi trước, nhận cửa và đặt hai PIN trong app, sau đó chip hướng dẫn hiệu chỉnh; xem [thiết lập app và Wi-Fi](../docs/THIET_LAP_APP_VA_WIFI.md). `pio run` không chọn cấu hình sẽ build bản legacy `src/main.cpp`, không có luồng mới.
 
 ## Build và nạp
 
@@ -19,11 +19,20 @@ pio run -c platformio.connected.ini --target upload --upload-port COM5
 pio device monitor --port COM5 --baud 115200
 ```
 
-Thay COM5 bằng cổng thực tế. Chưa cấp phát danh tính vẫn build được nhưng không kết nối MQTT. Build N16R8 dùng flash 16 MB, QIO flash / OPI PSRAM, override board mặc định N8. Phần hành vi màn hình Wi-Fi bên dưới mô tả bản legacy; bản connected dùng portal Wi-Fi và app như tài liệu luồng mới ở trên.
+Thay COM5 bằng cổng thực tế. Chưa cấp phát danh tính vẫn build được nhưng không kết nối MQTT. Build N16R8 dùng flash 16 MB, QIO flash / OPI PSRAM, override board mặc định N8.
 
 ## Hành vi và giới hạn
 
-### Chọn và đổi Wi-Fi trên màn hình
+### Wi-Fi của firmware connected 1.4.0
+
+- Khi Wi-Fi rớt, ESP32 lần lượt thử tối đa 5 mạng đã lưu, cách nhau 20 giây; mạng mới được thêm sau khi kết nối thành công. AP SmartDoor phục hồi phát sau khoảng 30 giây mất mạng.
+- Điện thoại thường mở captive portal tự động khi kết nối SmartDoor. Nếu hệ điều hành không bật trang, dùng `http://192.168.4.1`.
+- Với cửa đã nhận, chạm WI-FI trên bàn phím, nhập PIN admin để vào menu rồi chọn WI-FI. Portal yêu cầu nhập lại PIN admin cho mỗi lần đổi mạng, kể cả khi được mở từ app. Mạng thiết lập ban đầu chưa có PIN nên không hỏi PIN.
+- Lỗi kết nối mạng mới sau 35 giây giữ nguyên tối đa 5 mạng cũ và quay lại thử chúng. Hoàn tất Wi-Fi sẽ tắt AP; đổi Wi-Fi không xóa PIN, quyền, thẻ hoặc vân tay.
+
+### Chọn và đổi Wi-Fi trên firmware legacy `src/main.cpp`
+
+Các chi tiết sau chỉ thuộc bản legacy, không áp dụng cho firmware chính `connected_door`:
 
 1. Khi chưa có Wi-Fi đã lưu và không có cấu hình mặc định, ESP tự mở màn hình Wi-Fi và quét mạng **2.4 GHz**.
 2. Ở màn hình cửa, chạm **WI-FI** góc trên bên phải để đổi mạng bất cứ lúc nào (ngoài lúc đang đăng ký vân tay).

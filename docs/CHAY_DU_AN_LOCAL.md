@@ -47,7 +47,7 @@ QR của Expo dùng để mở ứng dụng, khác QR sản phẩm dùng để n
 1. Mở lại/reload app; đăng ký tài khoản người dùng mới.
 2. Chọn thêm thiết bị và quét QR mới trong .local/PRODUCT_QR_ESP32-80B54EC8149C.png hoặc trên màn hình cửa. Mã nhận cũ đã bị thay thế.
 3. Kết nối Wi-Fi SmartDoor-C8149C theo mật khẩu trên màn hình cửa, giữ kết nối nếu điện thoại báo không có Internet.
-4. Mở http://192.168.4.1, chọn PTIT_B2, để trống mật khẩu rồi kết nối. Đây là trang trên ESP32, khác trang admin.
+4. Điện thoại thường tự mở captive portal. Nếu chưa, mở http://192.168.4.1; chọn WIFI, NHẬP MẬT KHẨU. Đây là trang trên ESP32, khác trang admin.
 5. Hoàn tất Wi-Fi, đưa điện thoại về mạng có Internet và trở lại app để nhận cửa.
 
 Trạng thái hiện tại: giữ firmware gốc, nên bước PIN còn theo giao diện bản đang chạy; thiết kế chuyển toàn bộ bước này về app chưa triển khai. Bộ nhớ vân tay chưa xác minh xóa trong lượt reset gần nhất vì cảm biến không phản hồi. Xem .local/BUYER_RESET_STATUS.md.
@@ -68,4 +68,4 @@ netstat -ano -p tcp | Select-String ':(1884|8080|8081)\s+.*LISTENING'
 - App không tải: kiểm tra Tailscale cả hai máy/điện thoại và cổng 8081; dùng QR ở terminal vừa khởi động.
 - Cửa đã có Wi-Fi nhưng offline: kiểm tra máy tính và ESP32 có cùng LAN, broker 1884 đang chạy và Windows Firewall cho phép kết nối theo cấu hình demo. Chưa có broker Internet nên chưa thử khác LAN bất kỳ.
 
-Face node là thành phần tùy chọn, cần cấu hình/cấp phát camera node theo hướng dẫn triển khai trước khi dùng. Không cần chạy để thử đăng ký tài khoản và nhận cửa. Sau khi đã cấu hình, khởi động bằng start-local.ps1 -Component face trong một cửa sổ riêng.
+Face node là thành phần tùy chọn, cần cấu hình/cấp phát camera node theo hướng dẫn triển khai trước khi dùng. Không cần chạy để thử đăng ký tài khoản và nhận cửa. Sau khi đã cấu hình, khởi động bằng start-local.ps1 -Component face trong một cửa sổ riêng; cửa sổ camera hiện mặt và kết quả nhận diện, nhấn Q để dừng.

@@ -34,7 +34,7 @@ Người mua nhận sản phẩm đã có firmware, danh tính và QR. Admin v�
 
 1. Đăng nhập app, quét QR sản phẩm; app giữ thông tin để tiếp tục sau khi đổi Wi-Fi.
 2. Cấp nguồn thiết bị mới: phát mạng SmartDoor riêng và hiển thị thông tin kết nối.
-3. Điện thoại kết nối mạng SmartDoor, mở trang thiết lập trên ESP32.
+3. Điện thoại kết nối mạng SmartDoor; captive portal thường tự mở trang thiết lập trên ESP32, nếu không thì dùng địa chỉ dự phòng `192.168.4.1`.
 4. Trang chỉ quét/chọn Wi-Fi 2.4 GHz, nhập mật khẩu và hiển thị kết quả. Không có bước tạo PIN mở cửa, thành viên hoặc quyền truy cập.
 5. Xác nhận Wi-Fi kết nối thành công rồi hoàn tất, tắt AP. Kết nối Wi-Fi thành công không đồng nghĩa dịch vụ đã truy cập được: nếu dịch vụ chưa online, app báo chờ kết nối và cho phép thử lại. Thiết bị nên giữ khả năng vào lại chế độ thiết lập khi cần sửa Wi-Fi.
 6. Điện thoại trở về mạng có Internet; app tiếp tục mã QR đã quét, kiểm tra thiết bị online và nhận cửa vào tài khoản. Chỉ một chủ cửa được nhận thành công; mã nhận dùng một lần.
@@ -42,7 +42,7 @@ Người mua nhận sản phẩm đã có firmware, danh tính và QR. Admin v�
 8. App hướng dẫn hiệu chỉnh cảm ứng, cơ cấu khóa và cảm biến tại sản phẩm. Chưa đủ các điều kiện thì hiển thị thiết lập chưa hoàn tất, không coi cửa đã sẵn sàng.
 9. Sau đó chủ cửa thêm thành viên, cấp thẻ/vân tay và duyệt yêu cầu khuôn mặt. Khuôn mặt chỉ sử dụng khi online như yêu cầu trước.
 
-Việc đổi Wi-Fi của cửa đã kích hoạt vẫn cần chứng minh quyền quản trị và thao tác tại thiết bị; bỏ bước tạo PIN trên portal không có nghĩa bỏ xác thực khi thay đổi cấu hình sau này.
+Việc đổi Wi-Fi của cửa đã kích hoạt cần PIN admin để vào mục WI-FI trên TFT và nhập lại PIN trên portal trước mỗi lần đổi. ESP32 giữ tối đa 5 mạng đã kết nối thành công, thử luân phiên khi mất kết nối và chỉ thêm mạng mới sau khi kết nối thành công.
 
 ## 4. Reset về xuất xưởng
 

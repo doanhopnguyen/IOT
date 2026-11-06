@@ -117,21 +117,45 @@ class LatestCamera:
         self.thread.join(timeout=8)
 
 
+def draw_preview(frame, boxes, message, detail, color):
+    import cv2
+    width = frame.shape[1]
+    for index, box in enumerate(boxes):
+        x1, y1, x2, y2 = box
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
+        name = "FACE" if len(boxes) == 1 else f"FACE {index + 1}"
+        cv2.putText(frame, name, (x1, max(24, y1 - 10)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2)
+    cv2.rectangle(frame, (0, 0), (width, 110), (20, 27, 37), -1)
+    cv2.rectangle(frame, (0, 106), (width, 112), color, -1)
+    cv2.putText(frame, "SMART DOOR  |  FACE CHECK", (22, 34),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (235, 242, 250), 2)
+    cv2.putText(frame, message[:54], (22, 73), cv2.FONT_HERSHEY_SIMPLEX,
+                0.9, color, 2)
+    cv2.putText(frame, detail[:72], (22, 96), cv2.FONT_HERSHEY_SIMPLEX,
+                0.48, (205, 215, 225), 1)
+    return frame
+
+
 def run(config, engine, camera=False, video=None, show=True):
     import cv2
     config.require_device()
     api, cache = Backend(config), TemplateCache()
     gate = RecognitionGate(config.stable_frames, config.cooldown)
     publisher = Publisher(config)
-    capture = LatestCamera(config.camera_source) if camera else None
-    recording = cv2.VideoCapture(video) if video else None
-    if recording is not None and not recording.isOpened():
-        publisher.close()
-        raise RuntimeError("Không mở được video đã ghi.")
-    next_sync, last_frame, last_unknown = 0.0, -1, -1e10
-    if config.allow_unverified_liveness:
-        LOG.warning("CHẾ ĐỘ PHÁT TRIỂN: cho phép bỏ qua xác minh người thật; không chống giả mạo.")
+    capture, recording = None, None
+    window = "Smart Door - Face Check"
     try:
+        capture = LatestCamera(config.camera_source) if camera else None
+        recording = cv2.VideoCapture(video) if video else None
+        if recording is not None and not recording.isOpened():
+            raise RuntimeError("Khong mo duoc video da ghi.")
+        if show:
+            cv2.namedWindow(window, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(window, 960, 600)
+        next_sync, last_frame, last_unknown = 0.0, -1, -1e10
+        if config.allow_unverified_liveness:
+            LOG.warning("DEVELOPMENT MODE: liveness can be bypassed; do not use for production.")
         while True:
             now = time.monotonic()
             if now >= next_sync:
@@ -142,8 +166,8 @@ def run(config, engine, camera=False, video=None, show=True):
                 except Exception as exc:
                     cache.clear()
                     gate.reset()
-                    # Không ghi header, nội dung phản hồi, URL chứa thông tin đăng nhập hoặc ảnh.
-                    LOG.warning("Không đồng bộ được máy chủ (%s); đã tắt nhận diện.", type(exc).__name__)
+                    # Never log headers, response bodies, credential URLs, or images.
+                    LOG.warning("Backend sync failed; recognition disabled (%s).", type(exc).__name__)
                 next_sync = time.monotonic() + config.sync_seconds
             if not camera and not video:
                 time.sleep(0.1)
@@ -158,43 +182,75 @@ def run(config, engine, camera=False, video=None, show=True):
                 if serial == last_frame or frame is None:
                     if time.monotonic() - captured_at > config.max_frame_age:
                         gate.reset()
+                        if show:
+                            if frame is None:
+                                import numpy as np
+                                frame = np.zeros((480, 640, 3), dtype=np.uint8)
+                            draw_preview(frame, [], "CAMERA SIGNAL LOST", "CHECK CAMERA CONNECTION", (45, 65, 235))
+                            cv2.imshow(window, frame)
+                    if show and cv2.waitKey(1) & 0xFF == ord("q"):
+                        break
                     time.sleep(0.02)
                     continue
                 last_frame = serial
             if time.monotonic() - captured_at > config.max_frame_age:
                 gate.reset()
                 continue
+
+            boxes, match = [], None
+            message, detail, color = "CHO KHUON MAT", "GIU MAT TRONG KHUNG HINH", (0, 190, 255)
             if not cache.valid or time.monotonic() - cache.refreshed_at > config.sync_seconds * 3:
                 gate.reset()
-                label = "Máy chủ không khả dụng - không mở cửa"
+                message, detail, color = "TU CHOI - MAY CHU KHONG SAN SANG", "KHONG THE KIEM TRA QUYEN KHUON MAT", (45, 65, 235)
             elif not publisher.connected.is_set():
                 gate.reset()
-                label = "MQTT không khả dụng - không mở cửa"
+                message, detail, color = "TU CHOI - MAT KET NOI", "KIEM TRA KET NOI MQTT", (45, 65, 235)
             else:
                 try:
                     embedding, live, error = engine.analyze(frame)
-                    # Bỏ khung hình nếu quá trình nhận diện mất quá nhiều thời gian.
+                    boxes = getattr(engine, "last_boxes", [])
                     if time.monotonic() - captured_at > config.max_frame_age:
                         gate.reset()
                         continue
                     match = cache.match(embedding, config.threshold, config.margin) if embedding is not None else None
-                    live_label = {"LIVE": "NGƯỜI THẬT", "SPOOF": "ẢNH GIẢ", "NOT_CHECKED": "CHƯA XÁC MINH"}.get(live, live)
-                    label = error or (f"Tài khoản dự kiến {match.account_id} ({match.score:.3f}) - {live_label}"
-                                      if match else f"KHÔNG NHẬN DIỆN - {live_label}")
-                    if gate.observe(match, live, config.allow_unverified_liveness):
+                    if not boxes:
+                        gate.reset()
+                        message, detail, color = "CHO KHUON MAT", "GIU MAT TRONG KHUNG HINH", (0, 190, 255)
+                    elif len(boxes) != 1:
+                        gate.reset()
+                        message, detail, color = "TU CHOI - CHI MOT KHUON MAT", "CHI MOT NGUOI DUOC DUNG CAMERA", (45, 65, 235)
+                    elif error:
+                        gate.reset()
+                        message, detail, color = "TU CHOI - HINH ANH CHUA DAT", "NHIN RO CAMERA VA GIU MAT ON DINH", (45, 65, 235)
+                    elif live != "LIVE" and not (live == "NOT_CHECKED" and config.allow_unverified_liveness):
+                        gate.reset()
+                        message, detail, color = "TU CHOI - KHONG XAC MINH DUOC NGUOI THAT", "THU LAI VOI KHUON MAT THAT", (45, 65, 235)
+                        if (embedding is not None or live == "SPOOF") and now - last_unknown >= config.cooldown:
+                            publisher.face(None, live)
+                            last_unknown = now
+                    elif match is None:
+                        gate.reset()
+                        message, detail, color = "TU CHOI - KHUON MAT KHONG KHOP", "KHONG CO MAU KHUON MAT DUOC CHAP NHAN", (45, 65, 235)
+                        if (embedding is not None or live == "SPOOF") and now - last_unknown >= config.cooldown:
+                            publisher.face(None, live)
+                            last_unknown = now
+                    elif gate.observe(match, live, config.allow_unverified_liveness):
                         publisher.face(match, live)
-                        LOG.info("Đã gửi sự kiện nhận diện; máy chủ sẽ quyết định quyền và trạng thái cửa.")
-                    elif (match is None and (embedding is not None or live == "SPOOF")
-                          and now - last_unknown >= config.cooldown):
-                        publisher.face(None, live)
-                        last_unknown = now
+                        message, detail, color = "THANH CONG - NHAN DIEN KHUON MAT", "DA GUI MAY CHU; MAY CHU/CUA XAC NHAN QUYEN MO", (55, 210, 125)
+                        LOG.info("Recognition sent; backend and door decide access.")
+                    elif now - gate.last_sent.get(match.credential_id, -1e10) < config.cooldown:
+                        message, detail, color = "THANH CONG - NHAN DIEN KHUON MAT", "QUYEN MO CUA DO MAY CHU/CUA XAC NHAN", (55, 210, 125)
+                    else:
+                        message, detail, color = "DANG XAC MINH KHUON MAT", "GIU MAT ON DINH TRONG VAI GIAY", (0, 190, 255)
                 except Exception as exc:
                     gate.reset()
-                    label = "Nhận diện thất bại - không mở cửa"
-                    LOG.warning("Đã bỏ qua khung hình (%s).", type(exc).__name__)
+                    if match is not None:
+                        gate.last_sent.pop(match.credential_id, None)
+                    message, detail, color = "TU CHOI - LOI NHAN DIEN", "KIEM TRA CAMERA VA MODEL AI", (45, 65, 235)
+                    LOG.warning("Frame skipped (%s).", type(exc).__name__)
             if show:
-                cv2.putText(frame, label[:100], (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 220, 255), 2)
-                cv2.imshow("Camera cửa Smart Door - nhấn Q để dừng", frame)
+                draw_preview(frame, boxes, message, detail, color)
+                cv2.imshow(window, frame)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
         return True

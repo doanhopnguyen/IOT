@@ -69,6 +69,7 @@ class Engine:
                                 sess_options=options,
                                 providers=["CPUExecutionProvider"])
         self.app.prepare(ctx_id=-1, det_size=(640, 640), det_thresh=0.7)
+        self.last_boxes = []
 
     def _quality(self, frame, face):
         x1, y1, x2, y2 = [int(x) for x in face.bbox]
@@ -95,7 +96,9 @@ class Engine:
         return normalized(face.embedding)
 
     def analyze(self, frame):
+        self.last_boxes = []
         faces = self.app.get(frame)
+        self.last_boxes = [tuple(int(round(float(v))) for v in face.bbox) for face in faces]
         if len(faces) != 1:
             return None, "NOT_CHECKED", "Cần có đúng một khuôn mặt trong khung hình."
         face = faces[0]
