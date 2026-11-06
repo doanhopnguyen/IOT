@@ -21,8 +21,11 @@ def transact(port, command, timeout=15):
                 if line.startswith(('FACTORY_INFO ','FACTORY_PROVISIONED ')) or line in ('FACTORY_REJECTED','FACTORY_STORAGE_FAILED'):
                     print(line);lines.append(line)
                 if line.startswith('FACTORY_PROVISIONED '):return
+                if command == 'INFO' and line.startswith('FACTORY_INFO '):return
         if command.startswith('FACTORY ') and not any(x.startswith('FACTORY_PROVISIONED ') for x in lines):
             raise SystemExit('No provisioning acknowledgement; check firmware, MAC and USB port.')
+        if command == 'INFO':
+            raise SystemExit('No device information received; check firmware and USB port.')
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--port',default='COM5')

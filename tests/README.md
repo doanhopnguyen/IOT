@@ -8,7 +8,7 @@ Mã test nằm cạnh từng thành phần; thư mục này là mục lục và 
 | Tích hợp MySQL thật | cùng thư mục, đang `@Disabled`/skip khi không có MySQL | như trên với DB thật | 10 bài bỏ qua trong CI |
 | Mobile | `IOT_mobile/tests` | `cd IOT_mobile && npm run typecheck && npm test` | API client, phân quyền theo cửa, lịch sử, biểu đồ, cài đặt, cảnh báo |
 | Face node | `face-node/tests` | `cd face-node && python -m unittest discover -s tests -p "test_*.py"` | Ngưỡng nhận diện, cache mẫu, cổng quyết định |
-| Script | `scripts/tests` | `python -m unittest discover -s scripts/tests -p "test_*.py"` | Đo độ trễ (percentile), đọc MAC USB |
+| Script | `scripts/tests` | `python -m unittest discover -s scripts/tests -p "test_*.py"` | Đo độ trễ, đọc MAC USB, gateway TCP, chặn reset sai DB/schema hoặc khi dịch vụ còn chạy; cài `scripts/requirements-local.txt` trước |
 | Firmware | `firmware` | `pio run -c platformio.connected.ini` | Biên dịch; kiểm thử chức năng thực hiện trên thiết bị thật |
 
 ## Kiểm thử phi chức năng và bảo mật (trên thiết bị thật)

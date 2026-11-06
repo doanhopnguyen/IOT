@@ -531,6 +531,7 @@ void handleFactorySerial() {
       bool countOk=finger.getTemplateCount()==FINGERPRINT_OK;
       Serial.println("FACTORY_INFO mac="+factoryMac()+" uid="+deviceUid+" gen="+String(generation)+" wifi="+String(WiFi.status())+" mqtt="+String(broker.connected())+
         " fingerReady="+String(fingerReady)+" authenticated="+String(authenticated)+" parameters="+String(parameterStatus)+" capacity="+String(finger.capacity)+" bitmapOK="+String(bitmapOk)+" slot1empty="+String(bitmapOk&&!(bitmap[0]&2))+" templates="+String(countOk?int(finger.templateCount):-1)+
+        " storageFault="+String(storageFault)+" configBytes="+String(nvs.getBytesLength("config"))+" freeEntries="+String(nvs.freeEntries())+
         " motorEnabled="+String(state.enabled)+" motorFault="+String(state.fault)+" motorCommanded="+String(state.commanded)+" lockAngle="+String(cfg.lockAngle)+" openAngle="+String(cfg.openAngle)+" lastServoAngle="+String(state.lastAngle)+" servoReady="+String(servoCycleVerified)+" released="+String(state.door.released)+" reedVerified="+String(sensorCycleVerified)+" appPins="+String(appPinsReady)+" offlineReady="+String(connectedAccessReady())+" ui="+String(screen==HOME?"KEYPAD":screen==SERVO_CAL?"SERVO_GUIDE":networkPage?"WIFI_SETUP":"SETUP")+" wifiBars="+String(WiFi.status()==WL_CONNECTED?SetupLogic::signalBars(WiFi.RSSI()):0)+" setupStage="+setupStage()+" productPrepared="+String(!deviceUid.isEmpty()&&activationCode.length()>=24&&setupPassword.length()>=8));
     }
     serialLine="";

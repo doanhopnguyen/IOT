@@ -165,6 +165,10 @@ public class MqttDeviceGateway implements DeviceGateway {
             boolean changed = deviceService.touch(deviceUid) || !"status".equals(kind);
             switch (kind) {
                 case "ack" -> {
+                    String result = body.path("message").asText("");
+                    // Log correlation and fixed result codes; never arbitrary device text or PIN payloads.
+                    log.info("ACK {} từ thiết bị {}: success={}, result={}", body.path("commandUuid").asText(),
+                            deviceUid, body.path("success").asBoolean(false), result.matches("[A-Z_]{1,64}") ? result : "DEVICE_RESPONSE");
                     if (deployment != null && deployment.resetAck(deviceUid, body)) {
                         reply(deviceUid, "ack-confirm", Map.of("commandUuid", body.path("commandUuid").asText()));
                         break;

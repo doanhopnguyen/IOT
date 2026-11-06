@@ -52,13 +52,14 @@ class DatabaseIntegrationTest {
 
     @Test
     void migrationCreatesSchemaAndRequiredConstraints() {
-        assertThat(flyway.info().applied()).hasSize(1);
+        assertThat(flyway.info().applied()).hasSize(3);
         assertThat(flyway.validateWithResult().validationSuccessful).isTrue();
         assertThat(jdbc.queryForList(
                 "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME <> 'flyway_schema_history'",
                 String.class))
                 .containsExactlyInAnyOrder("accounts", "access_units", "devices", "user_access", "credentials",
-                        "face_requests", "access_logs", "telemetry", "events", "commands", "audit_logs");
+                        "face_requests", "access_logs", "telemetry", "events", "commands", "audit_logs",
+                        "device_inventory", "door_invitations");
         assertThat(jdbc.queryForList(
                 "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_access' AND CONSTRAINT_NAME = 'PRIMARY' ORDER BY ORDINAL_POSITION",
                 String.class))
@@ -72,7 +73,7 @@ class DatabaseIntegrationTest {
                 String.class))
                 .containsExactlyInAnyOrder("accounts.email", "accounts.phone", "devices.device_uid",
                         "access_logs.access_uuid", "telemetry.message_uuid", "events.event_uuid",
-                        "commands.command_uuid");
+                        "commands.command_uuid", "device_inventory.factory_mac", "device_inventory.claim_hash");
         assertThat(jdbc.queryForList(
                 "SELECT CONCAT(TABLE_NAME, ':', GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX)) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND INDEX_NAME LIKE 'idx_%' GROUP BY TABLE_NAME, INDEX_NAME",
                 String.class))
@@ -103,7 +104,8 @@ class DatabaseIntegrationTest {
                         "access_logs.fk_access_logs_credential_id:RESTRICT",
                         "telemetry.fk_telemetry_device_id:RESTRICT", "events.fk_events_device_id:RESTRICT",
                         "commands.fk_commands_device_id:RESTRICT", "commands.fk_commands_requested_by:RESTRICT",
-                        "audit_logs.fk_audit_logs_actor_id:SET NULL");
+                        "audit_logs.fk_audit_logs_actor_id:SET NULL", "device_inventory.fk_inventory_device:CASCADE",
+                        "door_invitations.fk_invitation_unit:CASCADE", "door_invitations.fk_invitation_recipient:CASCADE");
     }
 
     private Account account() {

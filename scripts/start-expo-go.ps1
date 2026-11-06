@@ -35,5 +35,5 @@ $env:Path = (Split-Path -Parent $nodeExecutable) + ';' + $env:Path
 Write-Host "Using Node $nodeVersion for Expo SDK 58"
 Write-Host "Open in Expo Go: exp://${PackagerAddress}:$Port"
 Write-Host 'Service address is preconfigured. Sign in or register in the app.'
-& $nodeExecutable 'node_modules\expo\bin\cli' start --go --lan --port $Port
+& $nodeExecutable (Join-Path $projectRoot 'IOT_mobile\node_modules\expo\bin\cli') start --go --lan --port $Port
 exit $LASTEXITCODE

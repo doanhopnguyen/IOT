@@ -7,6 +7,7 @@ import { ServoSettings } from './ServoSettings';
 
 async function acknowledged(command: CommandDto) {
   const result = await managerService.waitForCommand(command);
+  if (result.status === 'FAILED' && result.resultMessage?.includes('STORAGE')) throw new Error('Cửa chưa lưu được cấu hình vào bộ nhớ. Khởi động lại cửa, cập nhật trạng thái rồi thử lại một lần. Nếu vẫn lỗi, cần kiểm tra hoặc nạp lại thiết bị.');
   if (result.status === 'FAILED' && result.resultMessage?.startsWith('DEVICE_BUSY')) throw new Error('Cửa đang hiệu chỉnh hoặc thực hiện thao tác khác. Hoàn tất thao tác trên chip rồi thử lại.');
   if (result.status !== 'ACKNOWLEDGED') throw new Error(result.status === 'TIMEOUT' || result.status === 'SENT' || result.status === 'PENDING'
     ? 'Chưa nhận xác nhận từ cửa. Kiểm tra kết nối và cập nhật trạng thái trước khi thử lại.'
@@ -18,12 +19,13 @@ export function DeviceSetup({ unitId }: { unitId: number }) {
   const [pin, setPin] = useState(''), [confirmPin, setConfirmPin] = useState('');
   const [adminPin, setAdminPin] = useState(''), [confirmAdminPin, setConfirmAdminPin] = useState('');
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [pinsAcknowledged, setPinsAcknowledged] = useState(false);
   const [editingPins, setEditingPins] = useState(false);
   const reload = useCallback(async () => { setStatus(await setupService.status(unitId)); }, [unitId]);
   useEffect(() => {
     let active = true;
-    const refresh = async () => { try { const next = await setupService.status(unitId); if (active) { setStatus(next); setError(''); } } catch (e) { if (active) setError(e instanceof Error ? e.message : 'Chưa tải được trạng thái cửa.'); } };
+    const refresh = async () => { try { const next = await setupService.status(unitId); if (active) { setStatus(next); setLoadError(''); } } catch (e) { if (active) setLoadError(e instanceof Error ? e.message : 'Chưa tải được trạng thái cửa.'); } };
     void refresh(); const timer = setInterval(() => { void refresh(); }, 5000);
     return () => { active = false; clearInterval(timer); };
   }, [unitId]);
@@ -64,6 +66,7 @@ export function DeviceSetup({ unitId }: { unitId: number }) {
       <Button title="Cập nhật tiến độ" variant="ghost" disabled={busy} onPress={() => { void act(reload); }} />
       {message ? <Notice tone="info">{message}</Notice> : null}
       {error ? <Notice tone="error">{error}</Notice> : null}
+      {loadError ? <Notice tone="error">{loadError}</Notice> : null}
     </Card>
     {showCalibration ? <ServoSettings key={unitId} unitId={unitId} online={status?.online ?? false} calibrating={servoCalibrating} /> : null}
     {showCalibration ? <Card>

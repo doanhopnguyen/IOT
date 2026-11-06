@@ -314,9 +314,14 @@ bool validConfig(const Config &c) {
   return memcmp(hash,c.checksum,32)==0;
 }
 bool saveConfig(Config next) {
-  if (storageFault) return false;
+  if (storageFault) { Serial.println("[STORAGE] save blocked by previous fault"); return false; }
   sha((uint8_t*)&next,offsetof(Config,checksum),next.checksum);
-  if (!validConfig(next) || nvs.putBytes("config",&next,sizeof(next))!=sizeof(next)) {
+  if (!validConfig(next)) {
+    Serial.println("[STORAGE] config validation failed");
+    storageFault=true; return false;
+  }
+  if (nvs.putBytes("config",&next,sizeof(next))!=sizeof(next)) {
+    Serial.printf("[STORAGE] config write failed bytes=%u freeEntries=%u\n",unsigned(sizeof(next)),unsigned(nvs.freeEntries()));
     storageFault=true; return false;
   }
   cfg=next; applyMotorConfig(); return true;

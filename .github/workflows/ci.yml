@@ -45,8 +45,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      # Test face-node chỉ cần numpy/requests (không tải model nhận diện).
-      - run: pip install numpy==2.4.2 requests==2.32.5 pyserial
+      # Test Python không tải model nhận diện; script reset cần dependency local.
+      - run: pip install numpy==2.4.2 -r scripts/requirements-local.txt
       - name: Face node tests
         working-directory: face-node
         run: python -m unittest discover -s tests -p "test_*.py"

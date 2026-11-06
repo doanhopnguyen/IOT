@@ -44,7 +44,7 @@ curl http://localhost:8080/api/health           # {"status":"READY",...}
 
 Web admin: `http://localhost:8080/admin/index.html` (tạo admin đầu tiên bằng `scripts/bootstrap_local.py seed` hoặc chèn tài khoản `is_admin=true`). App: `cd IOT_mobile && npm ci && npx expo start --web` với `EXPO_PUBLIC_API_BASE_URL=http://<IP máy chủ>:8080`.
 
-Chạy không dùng Docker trên Windows: xem [docs/CHAY_DU_AN_LOCAL.md](docs/CHAY_DU_AN_LOCAL.md) và [docs/HUONG_DAN_MAY_PHAT_TRIEN.md](docs/HUONG_DAN_MAY_PHAT_TRIEN.md).
+Chạy từ đầu trên Windows, nhiều ESP32/mobile/Edge AI ở các mạng khác nhau: xem [hướng dẫn Tailscale và gateway](docs/CHAY_TU_DAU_TAILSCALE.md). Cài môi trường: [docs/HUONG_DAN_MAY_PHAT_TRIEN.md](docs/HUONG_DAN_MAY_PHAT_TRIEN.md).
 
 ## Thiết bị
 

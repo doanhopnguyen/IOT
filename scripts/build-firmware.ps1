@@ -1,8 +1,10 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$pioExecutable = Join-Path $projectRoot '.local\venv\Scripts\pio.exe'
-if (-not (Test-Path -LiteralPath $pioExecutable)) { throw 'Install PlatformIO in .local/venv first.' }
-$env:PLATFORMIO_CORE_DIR = Join-Path $projectRoot '.local\platformio'
+$pioCommand = Get-Command pio.exe,platformio.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+$pioExecutable = if ($pioCommand) { $pioCommand.Source } else {
+    Join-Path ([Environment]::GetFolderPath('UserProfile')) '.platformio\penv\Scripts\platformio.exe'
+}
+if (-not (Test-Path -LiteralPath $pioExecutable)) { throw 'Install PlatformIO first.' }
 Push-Location (Join-Path $projectRoot 'firmware')
 try {
     & $pioExecutable run -c platformio.connected.ini
