@@ -1,0 +1,183 @@
+package com.smartaccess.service;
+
+import com.smartaccess.model.AccessUnit;
+import com.smartaccess.model.Device;
+import com.smartaccess.model.Event;
+import com.smartaccess.model.Telemetry;
+import com.smartaccess.model.enumtype.AccessResult;
+import com.smartaccess.model.enumtype.AlertStatus;
+import com.smartaccess.model.enumtype.DeviceLifecycleStatus;
+import com.smartaccess.model.enumtype.DeviceType;
+import com.smartaccess.model.enumtype.EventSeverity;
+import com.smartaccess.repository.AccessLogRepository;
+import com.smartaccess.repository.DeviceRepository;
+import com.smartaccess.repository.EventRepository;
+import com.smartaccess.repository.TelemetryRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+class AlertRuleServiceTest {
+    final DeviceRepository devices = mock(DeviceRepository.class);
+    final EventRepository events = mock(EventRepository.class);
+    final TelemetryRepository telemetry = mock(TelemetryRepository.class);
+    final AccessLogRepository accessLogs = mock(AccessLogRepository.class);
+    final ApplicationEventPublisher notifications = mock(ApplicationEventPublisher.class);
+    final AlertRuleService service = new AlertRuleService(devices, events, telemetry, accessLogs, notifications);
+    final LocalDateTime now = LocalDateTime.of(2026, 11, 5, 20, 0, 0);
+    Device door;
+
+    @BeforeEach void setup() {
+        AccessUnit unit = new AccessUnit(); unit.setUnitId(10L); unit.setDoorOpenTimeoutSec((short) 60);
+        door = new Device(); door.setDeviceId(7L); door.setDeviceUid("door-1"); door.setDeviceName("Cửa chính");
+        door.setDeviceType(DeviceType.DOOR_CONTROLLER); door.setLifecycleStatus(DeviceLifecycleStatus.ACTIVE);
+        door.setAccessUnit(unit); door.setLastSeenAt(now.minusSeconds(10));
+        when(devices.findByDeviceTypeAndLifecycleStatusAndAccessUnitIsNotNull(DeviceType.DOOR_CONTROLLER,
+                DeviceLifecycleStatus.ACTIVE)).thenReturn(List.of(door));
+        when(events.findFirstByDevice_DeviceIdAndEventTypeAndAlertStatusIn(anyLong(), anyString(), anyCollection()))
+                .thenReturn(Optional.empty());
+        when(telemetry.findFirstByDevice_DeviceIdAndMetricNameOrderByOccurredAtDesc(anyLong(), anyString()))
+                .thenReturn(Optional.empty());
+    }
+
+    Telemetry row(String value, int secondsAgo) {
+        Telemetry t = new Telemetry(); t.setMetricName("doorClosed"); t.setMetricValue(value);
+        t.setOccurredAt(now.minusSeconds(secondsAgo)); return t;
+    }
+
+    /** Cửa mở từ openedSecondsAgo; bản ghi mới nhất (keepalive) vẫn là "false" nhưng gần đây hơn. */
+    void doorOpenSince(int openedSecondsAgo) {
+        when(telemetry.findFirstByDevice_DeviceIdAndMetricNameOrderByOccurredAtDesc(7L, "doorClosed"))
+                .thenReturn(Optional.of(row("false", 5)));
+        when(telemetry.findFirstByDevice_DeviceIdAndMetricNameAndMetricValueNotOrderByOccurredAtDesc(7L, "doorClosed", "false"))
+                .thenReturn(Optional.of(row("true", openedSecondsAgo + 5)));
+        when(telemetry.findFirstByDevice_DeviceIdAndMetricNameAndMetricValueAndOccurredAtAfterOrderByOccurredAtAsc(
+                eq(7L), eq("doorClosed"), eq("false"), any())).thenReturn(Optional.of(row("false", openedSecondsAgo)));
+    }
+
+    Event created() {
+        var captor = ArgumentCaptor.forClass(Event.class);
+        verify(events).save(captor.capture());
+        return captor.getValue();
+    }
+
+    Event active(String type) {
+        Event e = new Event(); e.setEventType(type); e.setDevice(door); e.setAlertStatus(AlertStatus.OPEN);
+        when(events.findFirstByDevice_DeviceIdAndEventTypeAndAlertStatusIn(eq(7L), eq(type), anyCollection()))
+                .thenReturn(Optional.of(e));
+        return e;
+    }
+
+    @Test void onlineClosedDoorRaisesNothing() {
+        assertThat(service.evaluate(now)).isZero();
+        verify(events, never()).save(any());
+    }
+
+    @Test void offlineControllerRaisesWarning() {
+        door.setLastSeenAt(now.minusSeconds(301));
+        assertThat(service.evaluate(now)).isEqualTo(1);
+        Event alert = created();
+        assertThat(alert.getEventType()).isEqualTo("DEVICE_OFFLINE");
+        assertThat(alert.getSeverity()).isEqualTo(EventSeverity.WARNING);
+        assertThat(alert.getAlertStatus()).isEqualTo(AlertStatus.OPEN);
+        assertThat(alert.getDevice()).isSameAs(door);
+        assertThat(alert.getEventUuid()).hasSize(36);
+        assertThat(alert.getMessage()).contains("Cửa chính").hasSizeLessThanOrEqualTo(255);
+        verify(notifications).publishEvent(any(Object.class));
+    }
+
+    @Test void neverConnectedControllerIsNotReportedOffline() {
+        door.setLastSeenAt(null);
+        assertThat(service.evaluate(now)).isZero();
+    }
+
+    @Test void openAlertIsNotDuplicated() {
+        door.setLastSeenAt(now.minusSeconds(600));
+        active("DEVICE_OFFLINE");
+        assertThat(service.evaluate(now)).isZero();
+        verify(events, never()).save(any());
+    }
+
+    @Test void recoveredDeviceResolvesOfflineAlert() {
+        Event alert = active("DEVICE_OFFLINE");
+        service.evaluate(now);
+        assertThat(alert.getAlertStatus()).isEqualTo(AlertStatus.RESOLVED);
+    }
+
+    @Test void doorLeftOpenUsesUnitTimeoutFromWhenItOpened() {
+        doorOpenSince(59);
+        assertThat(service.evaluate(now)).isZero();
+        doorOpenSince(61);
+        assertThat(service.evaluate(now)).isEqualTo(1);
+        Event alert = created();
+        assertThat(alert.getEventType()).isEqualTo("DOOR_LEFT_OPEN");
+        assertThat(alert.getSeverity()).isEqualTo(EventSeverity.CRITICAL);
+    }
+
+    @Test void closedDoorResolvesDoorAlert() {
+        Event alert = active("DOOR_LEFT_OPEN");
+        when(telemetry.findFirstByDevice_DeviceIdAndMetricNameOrderByOccurredAtDesc(7L, "doorClosed"))
+                .thenReturn(Optional.of(row("true", 3)));
+        service.evaluate(now);
+        assertThat(alert.getAlertStatus()).isEqualTo(AlertStatus.RESOLVED);
+    }
+
+    @Test void offlineDoorDoesNotRaiseStaleDoorOpenAlert() {
+        door.setLastSeenAt(now.minusSeconds(400));
+        doorOpenSince(3600);
+        service.evaluate(now);
+        assertThat(created().getEventType()).isEqualTo("DEVICE_OFFLINE");
+    }
+
+    void denied(long count) {
+        when(accessLogs.countByAccessUnit_UnitIdAndResultAndOccurredAtGreaterThanEqual(10L, AccessResult.DENIED,
+                now.minusSeconds(AlertRuleService.DENIED_WINDOW_SEC))).thenReturn(count);
+    }
+
+    @Test void fourDeniedRaisesNothingFiveRaisesCritical() {
+        denied(4);
+        assertThat(service.evaluate(now)).isZero();
+        denied(5);
+        assertThat(service.evaluate(now)).isEqualTo(1);
+        Event e = created();
+        assertThat(e.getEventType()).isEqualTo(AlertRuleService.REPEATED_DENIED);
+        assertThat(e.getSeverity()).isEqualTo(EventSeverity.CRITICAL);
+    }
+
+    @Test void repeatedDeniedIsNotAutoResolved() {
+        Event open = active(AlertRuleService.REPEATED_DENIED);
+        denied(0);
+        service.evaluate(now);
+        assertThat(open.getAlertStatus()).isEqualTo(AlertStatus.OPEN);
+    }
+
+    Telemetry finger(String value, int secondsAgo) {
+        Telemetry t = new Telemetry(); t.setMetricName("fingerReady"); t.setMetricValue(value);
+        t.setOccurredAt(now.minusSeconds(secondsAgo)); return t;
+    }
+
+    @Test void sensorNotReadyForLongRaisesWarningButShortFlickerDoesNot() {
+        when(telemetry.findFirstByDevice_DeviceIdAndMetricNameOrderByOccurredAtDesc(7L, "fingerReady"))
+                .thenReturn(Optional.of(finger("false", 20)));
+        assertThat(service.evaluate(now)).isZero();
+        when(telemetry.findFirstByDevice_DeviceIdAndMetricNameOrderByOccurredAtDesc(7L, "fingerReady"))
+                .thenReturn(Optional.of(finger("false", 90)));
+        assertThat(service.evaluate(now)).isEqualTo(1);
+        assertThat(created().getEventType()).isEqualTo(AlertRuleService.SENSOR_FAULT);
+    }
+
+    @Test void sensorBackResolvesFault() {
+        Event open = active(AlertRuleService.SENSOR_FAULT);
+        when(telemetry.findFirstByDevice_DeviceIdAndMetricNameOrderByOccurredAtDesc(7L, "fingerReady"))
+                .thenReturn(Optional.of(finger("true", 5)));
+        service.evaluate(now);
+        assertThat(open.getAlertStatus()).isEqualTo(AlertStatus.RESOLVED);
+    }
+}

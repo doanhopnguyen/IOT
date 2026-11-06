@@ -46,8 +46,9 @@ bool publishDocument(const char *suffix,JsonDocument &doc) {
   doc["deviceSecret"]=deviceSecret;doc["generation"]=generation;
   String payload;serializeJson(doc,payload);return broker.publish(topic(suffix).c_str(),payload.c_str(),false);
 }
-void sendAck(const String &uuid,bool success,const String &message,bool remember=true) {
+void sendAck(const String &uuid,bool success,const String &message,bool remember=true,int templateId=0) {
   DynamicJsonDocument doc(512);doc["commandUuid"]=uuid;doc["success"]=success;doc["message"]=message;
+  if(templateId>0)doc["templateId"]=templateId; // Ô thực tế đã lưu vân tay (có thể khác ô backend đề nghị).
   if(remember){String value;serializeJson(doc,value);unsigned n=eventPrefs.getUInt("ackpos",0)%16;
     if(!eventPrefs.putString(("ack"+String(n)).c_str(),value))storageFault=true;
     eventPrefs.putUInt("ackpos",n+1);eventPrefs.remove("started");}
@@ -175,7 +176,23 @@ bool loadFactoryJson(JsonDocument &doc) {
 }
 void finishRemoteEnroll(bool success,const String &message) {
   String uuid=remoteEnrollUuid;remoteStage=0;remoteEnrollUuid="";fingerHeld=true;
-  sendAck(uuid,success,message);tell(message);
+  sendAck(uuid,success,message,true,success?remoteSlot:0);tell(message);
+}
+// Dây UART cảm biến hay chập chờn: đọc bảng ô nhớ tối đa 3 lần trước khi kết luận lỗi.
+bool readFingerBitmapRetry(uint8_t *bitmap) {
+  for(int attempt=0;attempt<3;attempt++){if(readFingerBitmap(bitmap))return true;delay(80);}
+  return false;
+}
+// Chọn ô lưu vân tay: ưu tiên ô backend đề nghị; nếu cảm biến còn mẫu cũ ở ô đó thì lấy ô trống đầu tiên
+// không nằm trong danh sách ô backend đang dùng. Trả 0 nếu hết chỗ, -1 nếu không đọc được cảm biến.
+int chooseEnrollSlot(int requested,JsonArrayConst used) {
+  uint8_t bitmap[32];if(!readFingerBitmapRetry(bitmap))return -1;
+  int limit=min(int(finger.capacity),256);
+  auto empty=[&](int s){return s>0&&s<limit&&!(bitmap[s/8]&(1<<(s%8)));};
+  auto taken=[&](int s){for(JsonVariantConst v:used)if((v|0)==s)return true;return false;};
+  if(empty(requested)&&!taken(requested))return requested;
+  for(int s=1;s<limit;s++)if(empty(s)&&!taken(s))return s;
+  return 0;
 }
 void pollRemoteEnroll() {
   if(!remoteStage || millis()-remotePollAt<200)return;remotePollAt=millis();
@@ -186,7 +203,9 @@ void pollRemoteEnroll() {
   if(finger.image2Tz(remoteStage==1?1:2)!=FINGERPRINT_OK){tell("Lift finger and try again");return;}
   if(remoteStage==1){remoteStage=2;tell("Lift finger completely");return;}
   if(finger.createModel()!=FINGERPRINT_OK){finishRemoteEnroll(false,"FINGER_MISMATCH");return;}
-  if(!slotEmpty(remoteSlot)){finishRemoteEnroll(false,"SLOT_OCCUPIED_OR_UNREADABLE");return;}
+  uint8_t bitmap[32];
+  if(!readFingerBitmapRetry(bitmap)){finishRemoteEnroll(false,"SENSOR_READ_FAILED");return;}
+  if(bitmap[remoteSlot/8]&(1<<(remoteSlot%8))){finishRemoteEnroll(false,"SLOT_OCCUPIED");return;}
   if(finger.storeModel(remoteSlot)!=FINGERPRINT_OK){finishRemoteEnroll(false,"SENSOR_STORE_FAILED");return;}
   finishRemoteEnroll(true,"ENROLLED");
 }
@@ -267,8 +286,15 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
   }
   if(type=="FP_DELETE") {int slot=doc["data"]["templateId"]|0;bool ok=fingerReady&&slot>0&&slot<256&&finger.deleteModel(slot)==FINGERPRINT_OK;sendAck(uuid,ok,"FINGER_DELETE");return;}
   if(type=="FP_ENROLL") {
-    int slot=doc["data"]["templateId"]|0;
-    if(remoteStage||!rfidScanUuid.isEmpty()||!fingerReady||slot<1||slot>=min(int(finger.capacity),256)||!slotEmpty(slot)){sendAck(uuid,false,"INVALID_OR_OCCUPIED_SLOT");return;}
+    int requested=doc["data"]["templateId"]|0;
+    // Mã lỗi tách riêng để app hiển thị đúng nguyên nhân.
+    if(remoteStage||!rfidScanUuid.isEmpty()){sendAck(uuid,false,"DEVICE_BUSY");return;}
+    if(!fingerReady)probeSensors();
+    if(!fingerReady){sendAck(uuid,false,"SENSOR_NOT_READY");return;}
+    if(requested<1||requested>=256){sendAck(uuid,false,"INVALID_SLOT");return;}
+    int slot=chooseEnrollSlot(requested,doc["data"]["usedSlots"].as<JsonArrayConst>());
+    if(slot<0){sendAck(uuid,false,"SENSOR_READ_FAILED");return;}
+    if(slot==0){sendAck(uuid,false,"SENSOR_FULL");return;}
     remoteEnrollUuid=uuid;remoteSlot=slot;remoteStage=1;remoteStarted=millis();tell("Scan finger #1 for mobile request");return;
   }
   sendAck(uuid,false,"UNSUPPORTED_COMMAND");
@@ -343,6 +369,9 @@ void connectedPoll() {
     status["requestId"]=requestNonce;status["localReady"]=configured();status["hasDoorPin"]=cfg.user.valid;status["fingerReady"]=fingerReady;
     if(sensorCycleVerified)status["doorClosed"]=isClosed(state,millis());else status["doorClosed"]=nullptr;
     status["unlocked"]=state.door.released;status["droppedEvents"]=droppedEvents;
+    // Telemetry chẩn đoán: cường độ Wi-Fi (dBm), RAM trống (bytes), thời gian chạy (s), phiên bản.
+    status["rssi"]=WiFi.RSSI();status["freeHeap"]=ESP.getFreeHeap();status["uptime"]=millis()/1000;
+    status["fw"]=FIRMWARE_VERSION;status["hw"]=HARDWARE_VERSION;
     publishDocument("status",status);
     for(int i=0;i<16;i++){DynamicJsonDocument saved(512);if(!deserializeJson(saved,eventPrefs.getString(("ack"+String(i)).c_str(),"")))publishDocument("ack",saved);}
   }

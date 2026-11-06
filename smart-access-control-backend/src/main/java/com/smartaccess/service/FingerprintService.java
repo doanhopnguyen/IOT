@@ -55,10 +55,12 @@ public class FingerprintService {
                 device.getDeviceId(), FP_ENROLL, IN_FLIGHT)) {
             throw new BusinessException(HttpStatus.CONFLICT, "Thiết bị đang đăng ký một vân tay khác");
         }
-        int slot = nextFreeSlot(device.getDeviceId());
+        Set<Integer> used = usedSlots(device.getDeviceId());
+        int slot = nextFreeSlot(used);
 
         Map<String, Object> payload = Map.of("accountId", accountId, "templateId", slot, "label", label);
-        Map<String, Object> wireData = Map.of("templateId", slot);
+        // usedSlots: firmware tránh các ô này khi phải chọn ô khác (cảm biến còn mẫu cũ ở ô đề nghị).
+        Map<String, Object> wireData = Map.of("templateId", slot, "usedSlots", used.stream().sorted().toList());
         return CommandResponse.from(commands.dispatch(device, managerId, FP_ENROLL, payload, wireData));
     }
 
@@ -79,13 +81,17 @@ public class FingerprintService {
         return CommandResponse.from(commands.dispatch(device, managerId, FP_DELETE, payload, wireData));
     }
 
-    private int nextFreeSlot(Long deviceId) {
-        Set<Integer> used = credentials
+    /** Các ô vân tay đang thuộc credential ACTIVE của thiết bị. */
+    public Set<Integer> usedSlots(Long deviceId) {
+        return credentials
                 .findByDevice_DeviceIdAndCredentialTypeAndStatus(
                         deviceId, CredentialType.FINGERPRINT, CredentialStatus.ACTIVE)
                 .stream()
                 .map(c -> c.getLocalTemplateId().intValue())
                 .collect(Collectors.toSet());
+    }
+
+    private int nextFreeSlot(Set<Integer> used) {
         return IntStream.rangeClosed(1, MAX_SLOT)
                 .filter(slot -> !used.contains(slot))
                 .findFirst()

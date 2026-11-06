@@ -9,7 +9,8 @@ let csrf = '',
   inventory = [],
   accounts = [],
   issued = null,
-  poll;
+  poll,
+  dashboard = null;
 let usbBusy = false,
   refreshing = false,
   loaded = false,
@@ -200,9 +201,13 @@ async function refresh(force = false) {
   const button = document.querySelector('#reload');
   if (button) button.disabled = true;
   try {
-    const result = await Promise.all([api('/api/admin/inventory'), api('/api/admin/accounts')]);
+    const result = await Promise.all([
+      api('/api/admin/inventory'),
+      api('/api/admin/accounts'),
+      api('/api/admin/dashboard').catch(() => null),
+    ]);
     if (!account) return;
-    [inventory, accounts] = result;
+    [inventory, accounts, dashboard] = result;
     loaded = true;
     loadError = '';
     lastUpdated = new Date();
@@ -297,7 +302,7 @@ function content() {
   const heading = tab === 'overview' ? 'Thiết bị trong hệ thống' : 'Tất cả thiết bị';
   const table = `<section class="panel"><div class="section-header"><div><h2>${heading} <span class="count">${inventory.length}</span></h2></div>${tab === 'overview' ? '<button data-tab="devices" class="link-button">Xem tất cả ' + icon('arrow') + '</button>' : ''}</div>${filterBar('devices')}<div id="results">${deviceTable()}</div></section>`;
   if (tab !== 'overview') return table;
-  const live = inventory.filter(online).length;
+  const live = dashboard?.online ?? inventory.filter(online).length;
   const metrics = [
     ['door', 'Tổng thiết bị', inventory.length, '', ''],
     ['wifi', 'Đang trực tuyến', live, 'Có tín hiệu trong 90 giây', 'green'],
@@ -316,7 +321,26 @@ function content() {
       '',
     ],
   ];
-  return `<div class="metrics">${metrics.map(([symbol, label, value, note]) => `<article class="panel metric"><div class="metric-top"><span>${label}</span><span class="metric-icon">${icon(symbol)}</span></div><b>${value}</b><small>${note}</small></article>`).join('')}</div>${table}`;
+  if (dashboard)
+    metrics.push(
+      ['alert', 'Cảnh báo đang mở', dashboard.openAlerts, '', ''],
+      [
+        'alert',
+        'Cảnh báo nghiêm trọng',
+        dashboard.criticalAlerts,
+        '',
+        dashboard.criticalAlerts ? 'red' : '',
+      ],
+      [
+        'clock',
+        'Lượt vào hôm nay',
+        dashboard.accessToday.granted,
+        `Từ chối ${dashboard.accessToday.denied}`,
+        '',
+      ],
+      ['wifi', 'Thiết bị ngoại tuyến', dashboard.offline, '', ''],
+    );
+  return `<div class="metrics">${metrics.map(([symbol, label, value, note, tone]) => `<article class="panel metric ${tone === 'red' ? 'critical' : ''}"><div class="metric-top"><span>${label}</span><span class="metric-icon">${icon(symbol)}</span></div><b>${value}</b><small>${note}</small></article>`).join('')}</div>${table}`;
 }
 function filterBar(kind) {
   const f = filters[kind];

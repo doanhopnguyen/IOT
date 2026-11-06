@@ -1,0 +1,71 @@
+# Chạy toàn bộ phía máy chủ: MySQL + Mosquitto + backend (kèm web admin).
+#   cp deployment/.env.example deployment/.env   # rồi điền mật khẩu
+#   docker compose -f deployment/docker-compose.yml --env-file deployment/.env up -d --build
+# Bản này dùng MQTT không mã hóa cho LAN thử nghiệm; triển khai qua Internet dùng infra/mosquitto/compose.tls.yml.
+name: smartdoor
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-smart_access}
+      MYSQL_USER: ${DB_USERNAME:?Cần DB_USERNAME trong .env}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Cần DB_PASSWORD trong .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Cần MYSQL_ROOT_PASSWORD trong .env}
+      TZ: Asia/Ho_Chi_Minh
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    # Tạo file mật khẩu lúc khởi động từ biến môi trường; không commit mật khẩu vào repo.
+    entrypoint: ["/bin/sh", "/deployment/mosquitto-entrypoint.sh"]
+    environment:
+      MQTT_BACKEND_PASSWORD: ${MQTT_PASSWORD:?Cần MQTT_PASSWORD trong .env}
+      MQTT_DEVICE_ACCOUNTS: ${MQTT_DEVICE_ACCOUNTS:-}
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+    volumes:
+      - ../infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ../infra/mosquitto/acl:/mosquitto/config/acl:ro
+      - ./mosquitto-entrypoint.sh:/deployment/mosquitto-entrypoint.sh:ro
+      - mosquitto-data:/mosquitto/data
+
+  backend:
+    build:
+      context: ..
+      dockerfile: smart-access-control-backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/${DB_NAME:-smart_access}?serverTimezone=Asia/Ho_Chi_Minh
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      MQTT_BROKER_URL: tcp://mosquitto:1883
+      MQTT_USERNAME: backend
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      MQTT_TOPIC_PREFIX: smartdoor-iot
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8081}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      USB_ENABLED: "false"
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    volumes:
+      - uploads:/app/uploads
+
+volumes:
+  mysql-data:
+  mosquitto-data:
+  uploads:

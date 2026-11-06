@@ -1205,3 +1205,7 @@ button:active:not(:disabled) {
     display: none;
   }
 }
+
+.metric.critical b {
+  color: var(--red);
+}

@@ -13,6 +13,13 @@ import {
 import { alertService, AlertDto } from '../services/api/alertService';
 import { colors } from '../theme/tokens';
 
+const statusText: Record<AlertDto['status'], string> = {
+  NONE: 'Không theo dõi',
+  OPEN: 'Chưa xem',
+  ACKNOWLEDGED: 'Đã xem',
+  RESOLVED: 'Đã xử lý',
+};
+
 export function Alerts({ back }: { back: () => void }) {
   const [items, setItems] = useState<AlertDto[]>([]);
   const [loading, setLoading] = useState(false);
@@ -21,6 +28,19 @@ export function Alerts({ back }: { back: () => void }) {
   const [more, setMore] = useState(false);
   const [retry, setRetry] = useState(0);
   const [severity, setSeverity] = useState<AlertDto['severity']>();
+  const [busyId, setBusyId] = useState<number>();
+  const change = async (alert: AlertDto, status: 'ACKNOWLEDGED' | 'RESOLVED') => {
+    setBusyId(alert.id);
+    setError('');
+    try {
+      const updated = await alertService.setStatus(alert.id, status);
+      setItems((old) => old.map((x) => (x.id === updated.id ? updated : x)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Không cập nhật được cảnh báo.');
+    } finally {
+      setBusyId(undefined);
+    }
+  };
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -44,12 +64,6 @@ export function Alerts({ back }: { back: () => void }) {
     };
   }, [page, severity, retry]);
   const labels = { INFO: 'Thông tin', WARNING: 'Cảnh báo', CRITICAL: 'Khẩn cấp' };
-  const statuses: Record<string, string> = {
-    NONE: 'Thông tin',
-    OPEN: 'Đang mở',
-    ACKNOWLEDGED: 'Đã xác nhận',
-    RESOLVED: 'Đã xử lý',
-  };
   return (
     <ScrollView
       keyboardDismissMode="on-drag"
@@ -123,13 +137,32 @@ export function Alerts({ back }: { back: () => void }) {
                     : 'primary'
               }
             />
-            <Text style={s.caption}>{statuses[item.status] ?? item.status}</Text>
+            <Text style={s.caption}>{statusText[item.status]}</Text>
           </View>
           <Text style={s.heading}>{item.message ?? item.eventType.replace(/_/g, ' ')}</Text>
           <Text style={s.description}>
             {item.accessUnit?.name ?? 'Chưa gắn cửa'} · {item.device.name}
           </Text>
           <Text style={s.caption}>{new Date(item.occurredAt).toLocaleString('vi-VN')}</Text>
+          {item.status === 'OPEN' ? (
+            <Button
+              title="Đã xem"
+              variant="ghost"
+              disabled={busyId === item.id}
+              onPress={() => {
+                void change(item, 'ACKNOWLEDGED');
+              }}
+            />
+          ) : null}
+          {item.status === 'OPEN' || item.status === 'ACKNOWLEDGED' ? (
+            <Button
+              title="Đã xử lý"
+              disabled={busyId === item.id}
+              onPress={() => {
+                void change(item, 'RESOLVED');
+              }}
+            />
+          ) : null}
         </Card>
       ))}
       <Button

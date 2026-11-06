@@ -29,6 +29,11 @@ public class AlertController {
     public Alert detail(@PathVariable Long id) {
         return service.detail(id);
     }
+    public record StatusChange(@jakarta.validation.constraints.NotNull com.smartaccess.model.enumtype.AlertStatus status) {}
+    @PatchMapping("/{id}")
+    public Alert updateStatus(@PathVariable Long id, @Valid @RequestBody StatusChange change) {
+        return service.updateStatus(id, change.status());
+    }
     // Manager-only integration/testing endpoint. Device producers should call AlertService.record after their own authentication.
     @PostMapping
     public Alert record(@Valid @RequestBody EventInput input) {

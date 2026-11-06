@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build admin web into backend static
+        working-directory: admin-web
+        run: npm ci && npm run build
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+      - name: Backend tests
+        working-directory: smart-access-control-backend
+        run: mvn -B test
+
+  mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: IOT_mobile/package-lock.json
+      - name: Typecheck and tests
+        working-directory: IOT_mobile
+        run: npm ci && npm run typecheck && npm test
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Test face-node chỉ cần numpy/requests (không tải model nhận diện).
+      - run: pip install numpy==2.4.2 requests==2.32.5 pyserial
+      - name: Face node tests
+        working-directory: face-node
+        run: python -m unittest discover -s tests -p "test_*.py"
+      - name: Script tests
+        run: python -m unittest discover -s scripts/tests -p "test_*.py"
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ hashFiles('firmware/*.ini') }}
+      - run: pip install platformio
+      - name: Build connected door firmware
+        working-directory: firmware
+        run: pio run -c platformio.connected.ini

@@ -39,6 +39,7 @@ public class LocalAccessPolicyService {
             }
         }
         return Map.of("rfid", rfid, "fingerprints", fingerprints,
-                "pinEnabled", unit.isPinEnabled(), "unlockDurationSec", unit.getUnlockDurationSec().intValue());
+                "pinEnabled", unit.isPinEnabled(), "unlockDurationSec", unit.getUnlockDurationSec().intValue(),
+                "doorOpenTimeoutSec", unit.getDoorOpenTimeoutSec().intValue());
     }
 }

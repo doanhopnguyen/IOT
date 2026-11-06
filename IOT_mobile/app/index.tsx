@@ -79,12 +79,28 @@ const icon = (name: keyof typeof Ionicons.glyphMap, color: string = colors.prima
 const backendUnitId = (door?: Door | null) =>
   door && /^[1-9]\d*$/.test(door.id) ? Number(door.id) : null;
 const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
+// Mã lỗi firmware → câu tiếng Việt cho người dùng; mã lạ hiển thị nguyên văn.
+const deviceErrors: Record<string, string> = {
+  FINGER_MISMATCH: 'Hai lần quét không khớp. Đặt cùng một ngón, cùng vị trí rồi thử lại.',
+  ENROLL_TIMEOUT: 'Hết 45 giây mà chưa quét đủ 2 lần. Thử lại và quét ngay sau khi bấm.',
+  SENSOR_NOT_READY: 'Cảm biến vân tay chưa sẵn sàng. Kiểm tra dây nối cảm biến rồi thử lại.',
+  SENSOR_READ_FAILED: 'Không đọc được bộ nhớ cảm biến (dây UART chập chờn). Thử lại.',
+  SENSOR_FULL: 'Bộ nhớ cảm biến vân tay đã đầy.',
+  SENSOR_STORE_FAILED: 'Cảm biến không lưu được mẫu vân tay. Thử lại.',
+  SLOT_OCCUPIED: 'Ô nhớ cảm biến vừa bị chiếm. Thử lại.',
+  SLOT_CONFLICT: 'Ô nhớ cảm biến trùng với vân tay khác. Thử lại.',
+  DEVICE_BUSY: 'Cửa đang bận đăng ký thẻ/vân tay khác. Chờ xong rồi thử lại.',
+  INVALID_OR_OCCUPIED_SLOT:
+    'Cảm biến chưa sẵn sàng hoặc ô nhớ đã có dữ liệu cũ. Cập nhật firmware cửa rồi thử lại.',
+};
 const commandMessage = (command: CommandDto, success: string) =>
   command.status === 'ACKNOWLEDGED'
     ? success
     : command.status === 'TIMEOUT'
       ? 'Thiết bị không phản hồi kịp.'
-      : (command.resultMessage ?? 'Thiết bị báo thất bại.');
+      : ((command.resultMessage && deviceErrors[command.resultMessage]) ??
+        command.resultMessage ??
+        'Thiết bị báo thất bại.');
 const toPerson = (u: UnitUserDto): Person => ({
   id: String(u.userId),
   name: u.displayName,
@@ -1230,7 +1246,7 @@ function MemberDetail({
     if (!unitId || !userId || fp.state === 'WAITING') return;
     setFp({
       state: 'WAITING',
-      message: `Yêu cầu ${person.name} đặt ngón tay lên cảm biến của cửa.`,
+      message: `Trong 45 giây, ${person.name}: (1) đặt ngón tay lên cảm biến ~1 giây, (2) nhấc hẳn ra, (3) đặt lại đúng ngón đó ~1 giây.`,
     });
     try {
       const label = `Vân tay ${new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;

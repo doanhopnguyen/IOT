@@ -1,3 +1,4 @@
+import { DoorDashboard } from './DoorDashboard';
 import { useEffect, useState } from 'react';
 import { Linking, ScrollView, Text, View } from 'react-native';
 import { request } from '../services/api/client';
@@ -113,6 +114,7 @@ export function OwnerDeviceSettings({ unitId, back }: { unitId: number; back: ()
           }}
         />
       </Card>
+      <DoorDashboard unitId={unitId} />
       <Card>
         <Text style={s.heading}>Mã PIN mở cửa</Text>
         <Text style={s.description}>

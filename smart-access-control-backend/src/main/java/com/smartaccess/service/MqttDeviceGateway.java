@@ -26,6 +26,8 @@ public class MqttDeviceGateway implements DeviceGateway {
     private DeploymentService deployment;
     private static final Logger log = LoggerFactory.getLogger(MqttDeviceGateway.class);
     private static final long RETRY_MS = 10_000;
+    // Thiết bị bỏ qua lệnh đã quá thời gian này; lệnh mở cửa dùng UNLOCK_TTL_SEC ngắn hơn.
+    private static final int COMMAND_TTL_SEC = 60;
 
     private final String brokerUrl;
     private final String prefix;
@@ -39,6 +41,7 @@ public class MqttDeviceGateway implements DeviceGateway {
     private final String password;
     private final LocalAccessPolicyService policies;
     private final org.springframework.context.ApplicationEventPublisher notifications;
+    private final TelemetryService telemetry;
     private final java.util.concurrent.ExecutorService outbound = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "mqtt-responses"); t.setDaemon(true); return t;
     });
@@ -51,7 +54,8 @@ public class MqttDeviceGateway implements DeviceGateway {
             DeviceService deviceService, CommandAckService ackService, AccessEventService accessEvents,
             DeviceAuthenticationService authentication, @org.springframework.context.annotation.Lazy FaceRecognitionService faceRecognition,
             @Value("${app.mqtt.username:}") String username, @Value("${app.mqtt.password:}") String password,
-            LocalAccessPolicyService policies, org.springframework.context.ApplicationEventPublisher notifications) {
+            LocalAccessPolicyService policies, org.springframework.context.ApplicationEventPublisher notifications,
+            TelemetryService telemetry) {
         this.brokerUrl = brokerUrl;
         this.prefix = prefix;
         this.json = json;
@@ -62,6 +66,7 @@ public class MqttDeviceGateway implements DeviceGateway {
         this.username = username; this.password = password;
         this.policies = policies;
         this.notifications = notifications;
+        this.telemetry = telemetry;
     }
 
     @PostConstruct
@@ -119,7 +124,8 @@ public class MqttDeviceGateway implements DeviceGateway {
         if(deployment!=null) {long generation=deployment.generation(deviceUid);if(generation>0)wire.put("generation",generation);}
         body.put("data", wire);
         body.put("issuedAt", java.time.Instant.now().getEpochSecond());
-        body.put("ttlSec", "DOOR_UNLOCK".equals(commandType) ? 10 : 60);
+        body.put("ttlSec", RemoteUnlockService.DOOR_UNLOCK.equals(commandType)
+                ? RemoteUnlockService.UNLOCK_TTL_SEC : COMMAND_TTL_SEC);
         try {
             MqttMessage message = new MqttMessage(json.writeValueAsBytes(body));
             message.setQos(1);
@@ -143,14 +149,20 @@ public class MqttDeviceGateway implements DeviceGateway {
             JsonNode body = json.readTree(message.getPayload());
             var device = authentication.authenticate(deviceUid, text(body, "deviceSecret"));
             if (deployment != null && !"status".equals(kind) && !deployment.acceptGeneration(device, body)) return;
-            if ("face".equals(kind)) {
-                if (device.getDeviceType() != com.smartaccess.model.enumtype.DeviceType.FACE_CAMERA_NODE) return;
-                deviceService.touch(deviceUid);
-                faceRecognition.receive(deviceUid, body);
+            if (device.getDeviceType() == com.smartaccess.model.enumtype.DeviceType.FACE_CAMERA_NODE) {
+                // Node camera chỉ dùng topic face và status (heartbeat); topic khác của nó bị bỏ qua.
+                if ("face".equals(kind)) {
+                    deviceService.touch(deviceUid);
+                    faceRecognition.receive(deviceUid, body);
+                    publishUpdate();
+                } else if ("status".equals(kind) && deviceService.touch(deviceUid)) {
+                    publishUpdate();
+                }
                 return;
             }
             if (device.getDeviceType() != com.smartaccess.model.enumtype.DeviceType.DOOR_CONTROLLER) return;
-            deviceService.touch(deviceUid);
+            // Heartbeat chỉ báo client làm mới khi thiết bị vừa online; trạng thái cửa do wireConfig tự báo.
+            boolean changed = deviceService.touch(deviceUid) || !"status".equals(kind);
             switch (kind) {
                 case "ack" -> {
                     if (deployment != null && deployment.resetAck(deviceUid, body)) {
@@ -159,30 +171,46 @@ public class MqttDeviceGateway implements DeviceGateway {
                     }
                     JsonNode ack = body;
                     ackService.handleAck(deviceUid, ack.path("commandUuid").asText(""),
-                            ack.path("success").asBoolean(false), text(ack, "message"));
+                            ack.path("success").asBoolean(false), text(ack, "message"),
+                            ack.path("templateId").canConvertToInt() && ack.path("templateId").isIntegralNumber()
+                                    ? ack.path("templateId").asInt() : null);
                     reply(deviceUid, "ack-confirm", Map.of("commandUuid", ack.path("commandUuid").asText()));
                 }
                 case "access" -> {
-                    accessEvents.recordLocal(deviceUid, body);
+                    try {
+                        accessEvents.recordLocal(deviceUid, body);
+                    } catch (IllegalArgumentException invalid) {
+                        // Sự kiện hỏng vĩnh viễn: vẫn ack để firmware xóa khỏi bộ đệm thay vì gửi lại mãi.
+                        // Lỗi tạm thời (ví dụ DB) không ack để thiết bị gửi lại sau.
+                        log.warn("Bỏ sự kiện ra vào không hợp lệ từ {}: {}", deviceUid, invalid.getMessage());
+                    }
                     reply(deviceUid, "access-ack", Map.of("eventUuid", body.path("eventUuid").asText()));
                 }
                 case "status" -> {
                     String requestId = body.path("requestId").asText();
-                    if (requestId.length() != 36) return;
+                    if (requestId.length() != 36) break; // Vẫn báo realtime nếu thiết bị vừa online.
                     Map<String, Object> config = new LinkedHashMap<>();
                     if (deployment != null) config.putAll(deployment.wireConfig(deviceUid, body));
-                    if (device.getAccessUnit() != null && !"RESETTING".equals(config.get("activationState")))
+                    // Thiết bị lệch generation hoặc đang reset không được nhận danh sách thẻ/vân tay.
+                    boolean stale = Boolean.TRUE.equals(config.get("generationMismatch"));
+                    if (device.getAccessUnit() != null && !stale && !"RESETTING".equals(config.get("activationState")))
                         config.putAll(policies.snapshot(deviceUid));
                     config.put("serverTime", java.time.Instant.now().getEpochSecond());
                     config.put("requestId", requestId);
                     reply(deviceUid, "config", config);
+                    // Thiết bị lệch generation có thể là bản sao cũ: không nhận số liệu của nó.
+                    if (!stale) telemetry.record(device, body, requestId);
                 }
                 default -> { } // Trạng thái heartbeat đã được xử lý bằng touch().
             }
-            notifications.publishEvent(new com.smartaccess.config.RealtimeConfig.DeviceUpdated());
+            if (changed) publishUpdate();
         } catch (Exception e) {
             log.warn("Đã từ chối tin nhắn MQTT trên {} ({})", topic, e.getClass().getSimpleName());
         }
+    }
+
+    private void publishUpdate() {
+        notifications.publishEvent(new com.smartaccess.config.RealtimeConfig.DeviceUpdated());
     }
 
     // Publishing QoS 1 from messageArrived would block Paho's ACK processing thread.

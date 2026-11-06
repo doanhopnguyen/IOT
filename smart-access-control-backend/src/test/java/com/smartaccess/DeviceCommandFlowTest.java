@@ -196,6 +196,25 @@ class DeviceCommandFlowTest {
     }
 
     @Test
+    void fingerprintEnrollUsesSlotReportedByFirmwareAndRejectsConflicts() {
+        // Ô 1 trong cảm biến còn mẫu cũ: firmware tự lưu sang ô 5 và báo templateId=5.
+        CommandResponse e1 = fingerprintService.startEnroll(managerId, unitId, userId, new AddFingerprintRequest("Ngón trỏ"));
+        assertThat(gateway.sent.get(0).data()).containsEntry("templateId", 1).containsEntry("usedSlots", List.of());
+        ackService.handleAck(uid, e1.commandUuid(), true, "ENROLLED", 5);
+        assertThat(status(e1.commandUuid())).isEqualTo(CommandStatus.ACKNOWLEDGED);
+        assertThat(credentials.findAll()).singleElement()
+                .satisfies(c -> assertThat(c.getLocalTemplateId()).isEqualTo((short) 5));
+
+        // Lần sau backend báo ô 5 đang dùng; firmware báo trùng ô 5 → không tạo credential thứ hai.
+        CommandResponse e2 = fingerprintService.startEnroll(managerId, unitId, userId, new AddFingerprintRequest("Ngón cái"));
+        assertThat(gateway.sent.get(1).data()).containsEntry("usedSlots", List.of(5));
+        ackService.handleAck(uid, e2.commandUuid(), true, "ENROLLED", 5);
+        assertThat(status(e2.commandUuid())).isEqualTo(CommandStatus.FAILED);
+        assertThat(credentials.count()).isEqualTo(1);
+        credentials.deleteAll(); // Các test khác dùng chung DB và bắt đầu từ 0 vân tay.
+    }
+
+    @Test
     void fingerprintEnrollDeleteAndSlotReuse() {
         CommandResponse e1 = fingerprintService.startEnroll(managerId, unitId, userId, new AddFingerprintRequest(" Ngón trỏ phải "));
         assertThat(gateway.sent.get(0).data()).containsEntry("templateId", 1);
