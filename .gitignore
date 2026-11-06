@@ -63,3 +63,10 @@ temp
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local generated builds and IDE metadata
+*.pem
+target/
+.classpath
+.project
+.settings/

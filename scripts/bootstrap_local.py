@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import secrets
 import subprocess
+import shutil
 import pymysql
 import bcrypt
 
@@ -79,7 +80,9 @@ def broker():
     registry = LOCAL / 'broker-devices.json'
     entries = json.loads(registry.read_text()) if registry.exists() else {}
     save(password_file, f"backend:{cfg['broker_password']}\n" + ''.join(f'{uid}:{password}\n' for uid, password in entries.items()))
-    subprocess.run([r'D:\ACER\Mosquitto\mosquitto_passwd.exe', '-U', str(password_file)], check=True,
+    password_tool = os.getenv('MOSQUITTO_PASSWD_EXE') or shutil.which('mosquitto_passwd') or str(
+        Path(os.getenv('ProgramFiles', r'C:\Program Files')) / 'mosquitto' / 'mosquitto_passwd.exe')
+    subprocess.run([password_tool, '-U', str(password_file)], check=True,
                    stdout=subprocess.DEVNULL)
     save(destination / 'acl', (ROOT / 'infra/mosquitto/acl').read_text())
     save(destination / 'mosquitto.conf', '\n'.join([

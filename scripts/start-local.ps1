@@ -26,7 +26,16 @@ switch ($Component) {
     'mobile' {
         & (Join-Path $PSScriptRoot 'start-expo-go.ps1')
     }
-    'broker' { & 'D:\ACER\Mosquitto\mosquitto.exe' -c (Join-Path $runtime 'mosquitto\mosquitto.conf') }
+    'broker' {
+        $brokerExecutable = $env:MOSQUITTO_EXE
+        if (-not $brokerExecutable) {
+            $brokerCommand = Get-Command mosquitto.exe -ErrorAction SilentlyContinue
+            if ($brokerCommand) { $brokerExecutable = $brokerCommand.Source }
+            else { $brokerExecutable = Join-Path $env:ProgramFiles 'mosquitto\mosquitto.exe' }
+        }
+        if (-not (Test-Path -LiteralPath $brokerExecutable)) { throw 'Install Mosquitto or set MOSQUITTO_EXE to mosquitto.exe.' }
+        & $brokerExecutable -c (Join-Path $runtime 'mosquitto\mosquitto.conf')
+    }
     'face-api' {
         Set-Location (Join-Path $projectRoot 'face-node')
         & (Join-Path $runtime 'venv\Scripts\python.exe') -u enrollment_server.py

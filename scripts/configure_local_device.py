@@ -12,7 +12,9 @@ def main():
  entries=json.loads(path.read_text()) if path.exists() else {}
  entries.setdefault(a.uid,secrets.token_urlsafe(24));path.write_text(json.dumps(entries,indent=2))
  passwordFile=LOCAL/'mosquitto/passwords';passwordFile.write_text(f"backend:{cfg['broker_password']}\n"+''.join(f'{uid}:{password}\n' for uid,password in entries.items()))
- subprocess.run([r'D:\ACER\Mosquitto\mosquitto_passwd.exe','-U',str(passwordFile)],check=True,stdout=subprocess.DEVNULL)
+ import os, shutil
+ password_tool = os.getenv('MOSQUITTO_PASSWD_EXE') or shutil.which('mosquitto_passwd') or str(Path(os.getenv('ProgramFiles', r'C:\Program Files'))/'mosquitto'/'mosquitto_passwd.exe')
+ subprocess.run([password_tool,'-U',str(passwordFile)],check=True,stdout=subprocess.DEVNULL)
  connection=dict(mqttHost=a.host,mqttPort=1884,mqttUser=a.uid,mqttPassword=entries[a.uid],mqttTls=False,allowLocalPlaintext=True)
  if a.wifi_ssid is not None:connection.update(wifiSsid=a.wifi_ssid,wifiPassword='')
  output=LOCAL/(a.uid+'-connection.json');output.write_text(json.dumps(connection,indent=2))
