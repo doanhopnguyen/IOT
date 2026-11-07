@@ -23,14 +23,16 @@ test('library photos send normalized JPEG pixels instead of original high-resolu
   assert.equal(original.mimeType, 'image/heic');
 });
 
-test('videos preserve original bytes and are never passed to the image decoder', async () => {
-  const video: ImagePickerAsset = { uri: 'file:///clip.mp4', width: 1920, height: 1080,
-    type: 'video', mimeType: 'video/mp4', duration: 5000, fileSize: 1000 };
-  const prepared = await prepareFaceMedia(video, async () => { throw new Error('must not decode video'); });
-  assert.equal(prepared.uri, video.uri);
-  assert.equal(prepared.mimeType, 'video/mp4');
-  assert.equal(prepared.fileSize, video.fileSize);
-  await assert.rejects(prepareFaceMedia({ ...video, duration: 10001 }, async () => photo), /10 giây/);
+test('video enrollment is rejected before decoding or upload', async () => {
+  for (const asset of [
+    { ...photo, type: 'video' as const, mimeType: 'video/mp4' },
+    { ...photo, type: 'image' as const, mimeType: 'video/quicktime' },
+    { ...photo, uri: 'file:///clip.mp4', mimeType: undefined },
+  ]) {
+    await assert.rejects(prepareFaceMedia(asset, async () => {
+      assert.fail('must not decode video');
+    }), /Chỉ chọn ảnh/);
+  }
 });
 
 test('failed image decoding never falls back to uploading the original file', async () => {

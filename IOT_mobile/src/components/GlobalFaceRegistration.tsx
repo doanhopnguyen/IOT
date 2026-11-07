@@ -81,8 +81,8 @@ export function GlobalFaceRegistration({ doors, back }: { doors: Door[]; back: (
           <Button
             title={
               profile?.hasTemplate
-                ? 'Thay ảnh/video — các cửa cần duyệt lại'
-                : 'Đăng ký bằng ảnh / video / camera'
+                ? 'Thay ảnh — các cửa cần duyệt lại'
+                : 'Đăng ký bằng ảnh hoặc camera'
             }
             disabled={loading || !!error}
             onPress={() => {

@@ -19,7 +19,7 @@ export function FaceCapture({
     try {
       if (camera && !(await ImagePicker.requestCameraPermissionsAsync()).granted) {
         throw new Error(
-          'Cần quyền camera để chụp ảnh. Bạn cũng có thể chọn ảnh/video từ thư viện.',
+          'Cần quyền camera để chụp ảnh. Bạn cũng có thể chọn ảnh từ thư viện.',
         );
       }
       const result = camera
@@ -29,15 +29,15 @@ export function FaceCapture({
             quality: 0.9,
           })
         : await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images', 'videos'],
+            mediaTypes: ['images'],
             quality: 0.9,
           });
       if (!result.canceled) {
         const chosen = result.assets[0];
-        if (chosen.type === 'video' && chosen.duration != null && chosen.duration > 10000)
-          throw new Error('Chọn video tối đa 10 giây.');
+        if (chosen.type === 'video' || chosen.mimeType?.startsWith('video/'))
+          throw new Error('Chỉ chọn ảnh hoặc chụp ảnh mới.');
         if (chosen.fileSize != null && chosen.fileSize > MAX_SOURCE_MEDIA_BYTES)
-          throw new Error('Chọn ảnh/video tối đa 20 MiB.');
+          throw new Error('Chọn ảnh tối đa 20 MiB.');
         setAsset(chosen);
       }
     } catch (e) {
@@ -51,11 +51,10 @@ export function FaceCapture({
         giữ tệp gốc sau xử lý.
       </Notice>
       <Text style={s.description}>
-        Chọn ảnh/video tối đa 20 MiB; video MP4/MOV/WebM tối đa 10 giây. Ảnh được tối ưu trước khi tải lên.
-        Cần đúng một người, rõ toàn bộ mặt và đủ ánh sáng.
+        Ảnh tối đa 20 MiB, rõ một khuôn mặt và đủ ánh sáng.
       </Text>
       <Button
-        title="Chọn ảnh hoặc video"
+        title="Chọn ảnh từ thư viện"
         variant="ghost"
         icon="images-outline"
         disabled={busy}
@@ -64,7 +63,7 @@ export function FaceCapture({
         }}
       />
       <Button
-        title="Chụp ảnh khuôn mặt"
+        title="Chụp ảnh bằng camera"
         variant="ghost"
         icon="camera-outline"
         disabled={busy}
@@ -74,15 +73,13 @@ export function FaceCapture({
       />
       {asset ? (
         <View style={{ gap: 10 }}>
-          {asset.type !== 'video' ? (
-            <Image
-              source={{ uri: asset.uri }}
-              style={{ width: '100%', height: 190, borderRadius: 12 }}
-              resizeMode="contain"
-              accessibilityLabel="Ảnh khuôn mặt đã chọn"
-            />
-          ) : null}
-          <Badge label={asset.type === 'video' ? 'Đã chọn video' : 'Đã chọn ảnh'} tone="primary" />
+          <Image
+            source={{ uri: asset.uri }}
+            style={{ width: '100%', height: 190, borderRadius: 12 }}
+            resizeMode="contain"
+            accessibilityLabel="Ảnh khuôn mặt đã chọn"
+          />
+          <Badge label="Đã chọn ảnh" tone="primary" />
           <Text style={s.caption}>{asset.fileName ?? 'Tệp từ thiết bị'}</Text>
         </View>
       ) : null}

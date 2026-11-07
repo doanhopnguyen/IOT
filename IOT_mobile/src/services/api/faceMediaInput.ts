@@ -12,11 +12,9 @@ export async function prepareFaceMedia(
     : /\.mov(?:\?|$)/i.test(asset.uri) ? 'video/quicktime'
     : /\.webm(?:\?|$)/i.test(asset.uri) ? 'video/webm' : 'image/jpeg');
   if (asset.fileSize != null && asset.fileSize > MAX_SOURCE_MEDIA_BYTES)
-    throw new Error('Chọn ảnh/video tối đa 20 MiB.');
+    throw new Error('Chọn ảnh tối đa 20 MiB.');
   if (asset.type === 'video' || type.startsWith('video/')) {
-    if (!['video/mp4', 'video/quicktime', 'video/webm'].includes(type)) throw new Error('Chọn video MP4/MOV/WebM.');
-    if (asset.duration != null && asset.duration > 10000) throw new Error('Chọn video tối đa 10 giây.');
-    return { ...asset, type: 'video', mimeType: type };
+    throw new Error('Chỉ chọn ảnh hoặc chụp ảnh mới.');
   }
   if (!['image/jpeg', 'image/png', 'image/heic', 'image/heif', 'image/webp'].includes(type))
     throw new Error('Chọn ảnh JPEG/PNG/HEIC hoặc chụp ảnh mới.');

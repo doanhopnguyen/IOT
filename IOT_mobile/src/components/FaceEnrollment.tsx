@@ -150,7 +150,7 @@ function EnrollmentForm({
       {!hasTemplate || replace ? (
         <>
           <Text style={s.caption}>
-            Chọn ảnh/video hoặc chụp ảnh. Máy chủ xử lý hồ sơ; app không tải model. Chỉ chủ tài
+            Chọn ảnh từ thư viện hoặc chụp ảnh. Chỉ chủ tài
             khoản được tải mẫu của mình.
           </Text>
           <View style={s.row}>
