@@ -25,7 +25,7 @@ const filters = {
 };
 const tabs = [
   ['overview', 'Tổng quan', 'grid'],
-  ['devices', 'Danh mục cửa', 'door'],
+  ['devices', 'Quản lý thiết bị', 'door'],
   ['accounts', 'Tài khoản', 'users'],
   ['new', 'Đăng ký chip & QR', 'chip'],
 ];
@@ -48,14 +48,16 @@ const date = (value) =>
 const stateLabels = {
   INVENTORY: ['Chưa nhận cửa', 'blue'],
   CLAIMED: ['Đang thiết lập', 'amber'],
-  ACTIVE: ['Đang hoạt động', 'green'],
+  ACTIVE: ['Hoạt động', 'green'],
   RESETTING: ['Đang đặt lại', 'red'],
-  REGISTERED: ['Đã đăng ký', 'blue'],
-  PROVISIONED: ['Đã cấp phát', 'blue'],
+  REGISTERED: ['Mới đăng ký', 'slate'],
+  PROVISIONED: ['Đã gắn cửa', 'blue'],
   MAINTENANCE: ['Bảo trì', 'amber'],
-  SUSPENDED: ['Tạm ngưng', 'red'],
-  DECOMMISSIONED: ['Ngừng sử dụng', ''],
+  SUSPENDED: ['Tạm khóa', 'red'],
+  DECOMMISSIONED: ['Thu hồi vĩnh viễn', 'dark'],
 };
+const lifecycleStates = ['REGISTERED', 'PROVISIONED', 'ACTIVE', 'MAINTENANCE', 'SUSPENDED', 'DECOMMISSIONED'];
+const localAccessWarning = 'Thiết bị vẫn có thể mở cục bộ bằng quyền đã lưu trên chip.';
 const badge = (label, tone = '', dot = false) =>
   `<span class="badge ${tone}">${dot ? '<span class="dot"></span>' : ''}${esc(label)}</span>`;
 const stateBadge = (state) => badge(...(stateLabels[state] || [state, '']));
@@ -351,7 +353,7 @@ function filterBar(kind) {
           ['ACTIVE', 'Đang hoạt động'],
           ['DISABLED', 'Đã khóa'],
         ]
-      : [...new Set(inventory.map((d) => d.state))].map((state) => [
+      : lifecycleStates.map((state) => [
           state,
           stateLabels[state]?.[0] || state,
         ]);
@@ -385,7 +387,7 @@ function deviceTable() {
       `${d.name} ${d.deviceUid} ${d.factoryMac ?? ''} ${d.owner ?? ''}`
         .toLocaleLowerCase('vi')
         .includes(q) &&
-      (!f.state || d.state === f.state) &&
+      (!f.state || d.lifecycleStatus === f.state) &&
       (!f.connection || online(d) === (f.connection === 'online')),
   );
   if (!rows.length)
@@ -397,7 +399,18 @@ function deviceTable() {
       'chip',
       inventory.length ? '' : '<button data-tab="new">' + icon('plus') + ' Đăng ký chip</button>',
     );
-  return `<p class="scroll-hint">Vuốt ngang bảng để xem đủ thông tin và thao tác.</p><div class="tablewrap" role="region" aria-label="Danh sách thiết bị" tabindex="0"><table><thead><tr><th>Thiết bị / định danh</th><th>Chủ cửa</th><th>Trạng thái cấp phát</th><th>Kết nối</th><th>Thao tác</th></tr></thead><tbody>${rows.map((d) => `<tr><td><div class="device-cell"><span class="device-symbol">${icon('door')}</span><div><b>${esc(d.name)}</b><code>${esc(d.deviceUid)}</code></div></div></td><td>${esc(d.owner || 'Chưa bàn giao')}<small>${d.unitId ? 'Đã nhận vào tài khoản' : 'Đang trong danh mục'}</small></td><td>${stateBadge(d.state)}<small>${d.setupReady ? 'Thiết lập đã hoàn tất' : 'Chưa xác nhận sẵn sàng'}</small></td><td><span class="connection ${online(d) ? 'online' : ''}"><span class="dot"></span>${online(d) ? 'Trực tuyến' : 'Ngoại tuyến'}</span><small>${date(d.lastSeenAt)}</small></td><td class="actions">${d.unitId ? `<button class="danger-outline" data-reset="${esc(d.deviceUid)}">Đặt lại / Chuyển giao</button>` : d.operationUuid ? `<button class="secondary" data-code="${esc(d.deviceUid)}">Cấp mã mới</button>` : '<small>Mã đã cấp khi đăng ký</small>'}</td></tr>`).join('')}</tbody></table></div>${footer(rows.length, inventory.length)}`;
+  return `<p class="scroll-hint">Vuốt ngang bảng để xem đủ thông tin và thao tác.</p><div class="tablewrap" role="region" aria-label="Danh sách thiết bị" tabindex="0"><table><thead><tr><th>Thiết bị / định danh</th><th>Chủ cửa</th><th>Trạng thái thiết bị</th><th>Kết nối</th><th>Thao tác</th></tr></thead><tbody>${rows.map(deviceRow).join('')}</tbody></table></div>${footer(rows.length, inventory.length)}`;
+}
+function deviceRow(d) {
+  const restricted = ['MAINTENANCE', 'SUSPENDED'].includes(d.lifecycleStatus);
+  const retired = d.lifecycleStatus === 'DECOMMISSIONED';
+  return `<tr><td><div class="device-cell"><span class="device-symbol">${icon('door')}</span><div><b>${esc(d.name)}</b><code>${esc(d.deviceUid)}</code><small>MAC: ${esc(d.factoryMac || 'Chưa có')}</small></div></div></td>
+    <td>${esc(d.owner || 'Chưa có chủ cửa')}<small>${d.unitId ? 'Đã nhận vào tài khoản' : 'Đang trong danh mục'}</small></td>
+    <td>${stateBadge(d.lifecycleStatus)}<small>${esc(stateLabels[d.state]?.[0] || d.state)} · ${d.setupReady ? 'Sẵn sàng' : 'Chưa hoàn tất thiết lập'}</small>${restricted ? `<small class="device-warning">${localAccessWarning}</small>` : ''}</td>
+    <td><span class="connection ${online(d) ? 'online' : ''}"><span class="dot"></span>${online(d) ? 'Online' : 'Offline'}</span><small>${date(d.lastSeenAt)}</small></td>
+    <td class="actions"><button class="secondary" data-device-detail="${esc(d.deviceUid)}">Chi tiết</button>
+    ${d.allowedTransitions?.length ? `<button class="secondary" data-lifecycle="${esc(d.deviceUid)}">Thay đổi trạng thái</button>` : ''}
+    ${retired ? '' : d.unitId ? `<button class="danger-outline" data-reset="${esc(d.deviceUid)}">Đặt lại / Chuyển giao</button>` : d.operationUuid ? `<button class="secondary" data-code="${esc(d.deviceUid)}">Cấp mã mới</button>` : '<small>Mã đã cấp khi đăng ký</small>'}</td></tr>`;
 }
 function accountPagination(pageCount) {
   const pages = Array.from({ length: pageCount }, (_, i) => i + 1).filter(
@@ -451,6 +464,12 @@ function wireFilters() {
   });
 }
 function wireRows() {
+  document.querySelectorAll('[data-device-detail]').forEach(button => {
+    button.onclick = () => deviceDetails(button.dataset.deviceDetail);
+  });
+  document.querySelectorAll('[data-lifecycle]').forEach(button => {
+    button.onclick = () => lifecycleDialog(button.dataset.lifecycle);
+  });
   document.querySelectorAll('[data-account-page]').forEach((button) => {
     button.onclick = () => {
       const direction = button.dataset.accountPage;
@@ -611,6 +630,40 @@ function createDialog(title, description, fields, submitLabel, submit, danger = 
     }
   };
   return dialog;
+}
+function deviceDetails(uid) {
+  const d = inventory.find(item => item.deviceUid === uid);
+  if (!d) return;
+  const warning = ['MAINTENANCE', 'SUSPENDED'].includes(d.lifecycleStatus);
+  const fields = `<dl class="device-details">
+    <dt>Tên thiết bị</dt><dd>${esc(d.name)}</dd><dt>Mã thiết bị</dt><dd><code>${esc(d.deviceUid)}</code></dd>
+    <dt>MAC</dt><dd>${esc(d.factoryMac || 'Chưa có')}</dd><dt>Chủ cửa</dt><dd>${esc(d.owner || 'Chưa có chủ cửa')}</dd>
+    <dt>Trạng thái</dt><dd>${stateBadge(d.lifecycleStatus)}</dd><dt>Kết nối</dt><dd>${badge(online(d) ? 'Online' : 'Offline', online(d) ? 'green' : 'slate', true)}</dd>
+    <dt>Kết nối cuối</dt><dd>${date(d.lastSeenAt)}</dd></dl>${warning ? `<div class="notice">${localAccessWarning}</div>` : ''}`;
+  const dialog = createDialog('Chi tiết thiết bị', '', fields, 'Đóng', async () => {});
+  dialog.querySelector('.cancel').remove();
+}
+function lifecycleDialog(uid) {
+  const d = inventory.find(item => item.deviceUid === uid);
+  if (!d?.allowedTransitions?.length) return;
+  const dialog = createDialog('Thay đổi trạng thái', `${esc(d.name)} · ${esc(uid)}`,
+    `<p>Hiện tại: ${stateBadge(d.lifecycleStatus)}</p><label>Trạng thái mới<select name="status" required>${d.allowedTransitions.map(status => `<option value="${esc(status)}">${esc(stateLabels[status]?.[0] || status)}</option>`).join('')}</select></label><div class="notice lifecycle-note" role="status"></div>`,
+    'Lưu trạng thái', async ({ status }) => {
+      if (status === 'DECOMMISSIONED' && !(await confirmAction('Thu hồi vĩnh viễn?',
+        `Thu hồi ${esc(d.name)} sẽ vô hiệu hóa khóa xác thực thiết bị và không thể mở lại trạng thái.`, 'Thu hồi vĩnh viễn', true))) return;
+      await api(`/api/admin/devices/${encodeURIComponent(uid)}/lifecycle`, 'PATCH', { status });
+      notify('Đã cập nhật trạng thái thiết bị.');
+      setTimeout(() => { void refresh(true); }, 0);
+    });
+  const select = dialog.querySelector('select');
+  const note = dialog.querySelector('.lifecycle-note');
+  const update = () => {
+    note.textContent = ['MAINTENANCE', 'SUSPENDED'].includes(select.value) ? localAccessWarning
+      : select.value === 'DECOMMISSIONED' ? 'Thu hồi vĩnh viễn không thể hoàn tác.'
+      : !d.owner ? 'ACTIVE/PROVISIONED chỉ khả dụng sau khi thiết bị có chủ cửa.' : '';
+    note.hidden = !note.textContent;
+  };
+  select.onchange = update; update();
 }
 function confirmAction(title, description, label, danger = false) {
   return new Promise((resolve) => {

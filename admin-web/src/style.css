@@ -564,6 +564,12 @@ td small {
   border-color: #bfd2f6;
   background: var(--blue-soft);
 }
+.badge.slate { background: #f1f5f9; color: #475569; }
+.badge.dark { background: #334155; color: #fff; }
+.device-warning { color: #92400e; max-width: 240px; }
+.device-details { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px 20px; margin: 0; }
+.device-details dt { color: #64748b; }
+.device-details dd { margin: 0; overflow-wrap: anywhere; }
 .dot {
   width: 6px;
   height: 6px;
