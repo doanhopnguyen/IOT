@@ -270,12 +270,10 @@ function SmartDoorApp() {
     ) : view === 'profile' ? (
       <Profile
         account={account}
-        notifications={() => setView('alerts')}
         logout={logout}
         verify={() => setView('user-verification')}
         edit={() => setView('account')}
         password={() => setView('password')}
-        settings={() => setView('account-settings')}
       />
     ) : view === 'detail' && selected ? (
       <Detail
@@ -1369,18 +1367,14 @@ function Profile({
   account,
   logout,
   verify,
-  notifications,
   edit,
   password,
-  settings,
 }: {
   account: AccountDto;
-  notifications: () => void;
   logout: () => void;
   verify: () => void;
   edit: () => void;
   password: () => void;
-  settings: () => void;
 }) {
   return (
     <ScrollView
@@ -1406,9 +1400,6 @@ function Profile({
       <Menu icon="person-outline" label="Thông tin cá nhân" onPress={edit} />
       <Menu icon="key-outline" label="Đổi mật khẩu" onPress={password} />
       <Menu icon="scan-outline" label="Phương thức xác thực của tôi" onPress={verify} />
-      <Text style={x.section}>Tùy chọn</Text>
-      <Menu icon="notifications-outline" label="Cảnh báo & thông báo" onPress={notifications} />
-      <Menu icon="settings-outline" label="Cài đặt tài khoản" onPress={settings} />
       <SignOutButton logout={logout} />
     </ScrollView>
   );
