@@ -119,7 +119,7 @@ flowchart TD
     L -->|Không| N[Sử dụng theo quyền được cấp]
 ```
 
-**Đề xuất giai đoạn 1:** admin quản lý việc tạo/mời và trạng thái tài khoản cấp hệ thống; người dùng nhận liên kết/mã kích hoạt dùng một lần qua kênh của chính mình và tự đặt mật khẩu. Chủ cửa mời thành viên vào cửa bằng mobile; lời mời có thể dẫn tới kích hoạt tài khoản nếu người nhận chưa có. Không dùng mật khẩu mặc định chung. Có tài khoản không đồng nghĩa được vào cửa: chỉ chủ cửa cấp quyền cửa và phương thức truy cập.
+**Đề xuất giai đoạn 1:** admin quản lý việc tạo/mời và trạng thái tài khoản cấp hệ thống; người dùng nhận liên kết/mã kích hoạt dùng một lần qua kênh của chính mình và tự đặt mật khẩu. Chủ cửa mời thành viên vào cửa bằng mobile; lời mời có thể dẫn tới kích hoạt tài khoản nếu người nhận chưa có. Không dùng mật khẩu mặc định chung. Người chưa có ứng dụng: chủ cửa tạo hồ sơ chỉ dùng tại cửa (họ tên, phòng), không có mật khẩu dùng được; người đó chỉ dùng vân tay/thẻ. Có tài khoản không đồng nghĩa được vào cửa: chỉ chủ cửa cấp quyền cửa và phương thức truy cập.
 
 - Mã kích hoạt hết hạn hoặc đã dùng: yêu cầu cấp lại. Luồng gửi mã cần được chốt cho môi trường demo; mã đặt lại/phiên đăng nhập không được hiển thị trên web admin để đăng nhập thay người dùng.
 - Quên mật khẩu: người dùng yêu cầu đặt lại và xác minh qua kênh của mình. Admin chỉ hỗ trợ trạng thái yêu cầu, không xem mật khẩu, tự đặt mật khẩu mới hoặc nhận mã đặt lại thay người dùng.

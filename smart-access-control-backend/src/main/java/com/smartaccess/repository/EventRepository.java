@@ -10,6 +10,9 @@ public interface EventRepository extends JpaRepository<Event, Long>, org.springf
     java.util.Optional<Event> findFirstByDevice_DeviceIdAndEventTypeAndAlertStatusIn(
             Long deviceId, String eventType, java.util.Collection<com.smartaccess.model.enumtype.AlertStatus> statuses);
 
+    /** Cảnh báo gần nhất cùng loại của thiết bị, ở bất kỳ trạng thái nào. */
+    java.util.Optional<Event> findFirstByDevice_DeviceIdAndEventTypeOrderByOccurredAtDesc(Long deviceId, String eventType);
+
     long countByAlertStatusIn(java.util.Collection<com.smartaccess.model.enumtype.AlertStatus> statuses);
 
     long countByAlertStatusInAndSeverity(java.util.Collection<com.smartaccess.model.enumtype.AlertStatus> statuses,

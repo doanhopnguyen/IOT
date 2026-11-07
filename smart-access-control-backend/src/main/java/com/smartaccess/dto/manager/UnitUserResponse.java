@@ -22,7 +22,7 @@ public record UnitUserResponse(Long userId, String account, String email, String
     public static UnitUserResponse from(UserAccess access, String room, boolean hasLoggedIn, boolean deletableAccount) {
         var account = access.getAccount();
         return new UnitUserResponse(account.getAccountId(), account.getAccountId().toString(),
-                account.getEmail(), account.getPhone(), account.getFullName(), account.getStatus(), access.isAllowFace(),
+                com.smartaccess.service.MemberProfileService.isDoorOnly(account) ? null : account.getEmail(), account.getPhone(), account.getFullName(), account.getStatus(), access.isAllowFace(),
                 access.isAllowFingerprint(), access.isAllowRfid(), access.isAllowRemoteUnlock(),
                 room, hasLoggedIn, deletableAccount,false);
     }

@@ -17,7 +17,8 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Tài khoản tối thiểu do chủ cửa tạo cho người chưa có ứng dụng.
+ * Hồ sơ chỉ dùng tại cửa do chủ cửa tạo cho người chưa có ứng dụng: không có mật khẩu dùng được,
+ * người đó chỉ dùng vân tay/thẻ. Hồ sơ cũ (mật khẩu chung) vẫn được nhận diện và xóa theo cùng quy tắc.
  * Schema không có cột đánh dấu nên dùng audit_logs: CREATE_MEMBER_PROFILE (kèm unitId, room) và FIRST_LOGIN.
  */
 @Service
@@ -25,7 +26,9 @@ import java.util.stream.Collectors;
 public class MemberProfileService {
     public static final String CREATE_ACTION = "CREATE_MEMBER_PROFILE";
     public static final String FIRST_LOGIN_ACTION = "FIRST_LOGIN";
-    public static final String DEFAULT_PASSWORD = "123456";
+    /** Đuôi email giả của hồ sơ tại cửa (profile-<UUID>) và tài khoản đã ẩn (deleted-<id>). */
+    public static final String NO_APP_DOMAIN = "@noapp.local";
+    private static final java.security.SecureRandom RANDOM = new java.security.SecureRandom();
     private static final String ACCOUNT = "ACCOUNT";
 
     public enum Disposal { KEPT, DELETED, HIDDEN }
@@ -63,25 +66,15 @@ public class MemberProfileService {
         }
         Account profile = new Account();
         profile.setFullName(request.fullName());
-        String contact = request.contact() == null ? "" : request.contact();
-        if (contact.contains("@")) {
-            String email = contact.toLowerCase(Locale.ROOT);
-            if (email.length() > 254 || !email.matches("[^@\\s]+@[^@\\s]+\\.[^@\\s]+")) {
-                throw new BusinessException(HttpStatus.BAD_REQUEST, "Email is invalid");
-            }
-            if (accounts.findByEmailIgnoreCase(email).isPresent()) { throw contactTaken(); }
-            profile.setEmail(email);
-        } else {
-            if (!contact.matches("\\+?[0-9]{8,15}")) {
-                throw new BusinessException(HttpStatus.BAD_REQUEST, "Phone or email is required; phone must have 8-15 digits");
-            }
-            if (accounts.existsByPhone(contact)) { throw contactTaken(); }
-            profile.setPhone(contact);
-        }
-        profile.setPasswordHash(passwords.encode(DEFAULT_PASSWORD));
+        // accounts bắt buộc có phone hoặc email: dùng email giả riêng cho từng hồ sơ.
+        profile.setEmail("profile-" + UUID.randomUUID() + NO_APP_DOMAIN);
+        // Mật khẩu ngẫu nhiên không lưu ở đâu: hồ sơ này không đăng nhập được.
+        byte[] secret = new byte[32];
+        RANDOM.nextBytes(secret);
+        profile.setPasswordHash(passwords.encode(Base64.getEncoder().encodeToString(secret)));
         profile.setAdmin(false);
         profile.setStatus(AccountStatus.ACTIVE);
-        accounts.saveAndFlush(profile); // Trùng contact do chạy song song → GlobalExceptionHandler trả 409.
+        accounts.saveAndFlush(profile);
 
         UserAccess membership = new UserAccess();
         membership.setAccount(profile);
@@ -178,9 +171,10 @@ public class MemberProfileService {
         return Disposal.DELETED;
     }
 
-    private BusinessException contactTaken() {
-        return new BusinessException(HttpStatus.CONFLICT,
-                "An account with this phone or email already exists; add it as an existing app user");
+    /** Hồ sơ chỉ dùng tại cửa (hoặc tài khoản đã ẩn): không đăng nhập được, không hiện email giả ra ngoài. */
+    public static boolean isDoorOnly(Account account) {
+        String email = account.getEmail();
+        return email != null && email.toLowerCase(Locale.ROOT).endsWith(NO_APP_DOMAIN);
     }
 
     private Long unitIdOf(AuditLog audit) {

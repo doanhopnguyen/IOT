@@ -19,6 +19,10 @@ export const managerService = {
   addUser(unitId: number, userId: number) {
     return request(`/api/manager/units/${unitId}/invitations`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId }) });
   },
+  // Người chưa có tài khoản: hồ sơ chỉ dùng tại cửa, thêm thẳng không qua lời mời.
+  createMemberProfile(unitId: number, input: { fullName: string; room?: string }) {
+    return request<UnitUserDto>(`/api/manager/units/${unitId}/member-profiles`, post(input));
+  },
   removeUser(unitId: number, userId: number) { return request<CommandDto>(`/api/manager/units/${unitId}/users/${userId}`, { method: 'DELETE' }); },
   // Bật/tắt toàn bộ quyền ra vào của thành viên tại cửa này
   setAccess(unitId: number, userId: number, on: boolean) {

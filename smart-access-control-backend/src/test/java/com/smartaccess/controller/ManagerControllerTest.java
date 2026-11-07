@@ -111,12 +111,12 @@ class ManagerControllerTest {
     @Test void createMemberProfileReturns201() throws Exception {
         mvc.perform(post("/api/manager/units/10/member-profiles").session(session).with(csrf())
                 .contentType(MediaType.APPLICATION_JSON).content(new ObjectMapper().writeValueAsString(
-                        Map.of("fullName", " Bé Na ", "contact", "0912000111", "room", "P302"))))
+                        Map.of("fullName", " Bé Na ", "room", "P302"))))
                 .andExpect(status().isCreated());
-        verify(service).createMemberProfile(1L, 10L, new CreateMemberProfileRequest("Bé Na", "0912000111", "P302"));
+        verify(service).createMemberProfile(1L, 10L, new CreateMemberProfileRequest("Bé Na", "P302"));
     }
 
-    @Test void createMemberProfileRequiresNameAndContact() throws Exception {
+    @Test void createMemberProfileRequiresName() throws Exception {
         mvc.perform(post("/api/manager/units/10/member-profiles").session(session).with(csrf())
                 .contentType(MediaType.APPLICATION_JSON).content("{\"fullName\":\" \"}"))
                 .andExpect(status().isBadRequest());

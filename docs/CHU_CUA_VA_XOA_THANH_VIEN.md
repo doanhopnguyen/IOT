@@ -17,7 +17,7 @@ Backend dùng endpoint owner-access để lấy đúng ID chủ cửa và bảo 
 1. Chọn xóa trong chi tiết thành viên. Backend thu hồi ngay quyền Face/RFID/vân tay/mở từ xa, đánh dấu các thẻ và vân tay tại cửa là đã thu hồi.
 2. Thành viên tạm giữ trong danh sách với trạng thái chờ xóa. Backend lưu tác vụ trong bảng commands và gửi `MEMBER_REMOVE`; khi mất mạng hoặc backend khởi động lại, tác vụ được gửi lại trong cấu hình heartbeat đã xác thực.
 3. ESP32 ghi lại danh sách quyền không có thành viên đó vào NVS, xóa mẫu khỏi cảm biến vân tay rồi đọc lại bitmap để kiểm chứng. Các ô đang thuộc người khác được bảo vệ; ô mồ côi sau đăng ký timeout cũng được xử lý để ACK đến muộn không tái tạo quyền.
-4. Chỉ ACK đúng `MEMBER_CREDENTIALS_REMOVED` mới hoàn tất: backend xóa các credential RFID/vân tay của người đó tại cửa, dọn yêu cầu Face ở cửa rồi xóa quan hệ thành viên. Lịch sử ra vào được giữ nhưng bỏ liên kết đến credential đã xóa. Tài khoản tự đăng ký, hồ sơ Face dùng chung và quyền/credential ở cửa khác được giữ.
+4. Chỉ ACK đúng `MEMBER_CREDENTIALS_REMOVED` mới hoàn tất: backend xóa các credential RFID/vân tay của người đó tại cửa, dọn yêu cầu Face ở cửa rồi xóa quan hệ thành viên. Lịch sử ra vào được giữ nhưng bỏ liên kết đến credential đã xóa. Tài khoản tự đăng ký, hồ sơ Face dùng chung và quyền/credential ở cửa khác được giữ. Riêng hồ sơ chỉ dùng tại cửa (người chưa có ứng dụng, do chủ cửa này tạo, không ở cửa nào khác): tài khoản bị xóa hẳn nếu chưa có lịch sử ra vào, còn có lịch sử thì bị ẩn (DISABLED, giữ họ tên cho lịch sử).
 
 Khi chip offline, bộ nhớ chip chỉ thay đổi được lúc chip kết nối lại. App tiếp tục hiển thị chờ, không báo đã xóa hoàn tất. Nếu lỗi cảm biến hoặc lưu trữ, tác vụ tiếp tục chờ/gửi lại; sửa kết nối cảm biến và giữ chip online.
 

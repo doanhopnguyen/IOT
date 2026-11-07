@@ -71,8 +71,8 @@ class AuthControllerTest {
         verify(memberProfiles).recordLogin(user);
     }
 
-    @Test void memberProfileCanLoginWithDefaultShortPassword() throws Exception {
-        user.setPasswordHash(passwords.encode(MemberProfileService.DEFAULT_PASSWORD));
+    @Test void legacyMemberProfileCanLoginWithShortPassword() throws Exception {
+        user.setPasswordHash(passwords.encode("123456")); // Hồ sơ cũ tạo trước khi bỏ mật khẩu chung.
         mvc.perform(post("/api/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(Map.of("identifier", "0912345678", "password", "123456"))))
                 .andExpect(status().isOk());

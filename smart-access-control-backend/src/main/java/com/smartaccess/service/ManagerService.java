@@ -60,7 +60,9 @@ public class ManagerService {
                     ? accounts.findById(parseAccountId(value)) : accounts.findByEmailIgnoreCase(value);
             default -> throw new BusinessException(HttpStatus.BAD_REQUEST, "Search type must be account, email or auto");
         };
-        return match.map(UserSearchResponse::from).stream().toList();
+        // Hồ sơ tại cửa không đăng nhập được nên không thể nhận lời mời của cửa khác.
+        return match.filter(account -> !MemberProfileService.isDoorOnly(account))
+                .map(UserSearchResponse::from).stream().toList();
     }
 
     public List<UnitUserResponse> getUsers(Long managerId, Long unitId) {
@@ -86,10 +88,9 @@ public class ManagerService {
         return UnitUserResponse.from(owner);
     }
 
-    /** Thêm người chưa có ứng dụng: tạo tài khoản tối thiểu (mật khẩu mặc định 123456) rồi thêm thẳng vào cửa. */
+    /** Thêm người chưa có tài khoản: hồ sơ chỉ dùng tại cửa, không đăng nhập được, thêm thẳng không qua lời mời. */
     @Transactional
     public UnitUserResponse createMemberProfile(Long managerId, Long unitId, CreateMemberProfileRequest request) {
-        if(invitationFlow!=null)throw new BusinessException(HttpStatus.GONE,"Người dùng tự đăng ký tài khoản; chủ cửa gửi lời mời, không tạo tài khoản có mật khẩu chung");
         AccessUnit unit = validateManagerAccess(managerId, unitId, true);
         UserAccess membership = memberProfiles.create(unit, request);
         return UnitUserResponse.from(membership, request.room(), false, true);

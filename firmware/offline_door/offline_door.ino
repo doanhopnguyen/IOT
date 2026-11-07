@@ -737,7 +737,12 @@ void submitPin() {
   if (screen==HOME || screen==ADMIN_LOGIN) {
     bool ok=pinMatches(screen==HOME?cfg.user:cfg.admin,entered);
     entered="";
-    if (!ok) { denyPin(); tell(pinBlocked?"Too many attempts - wait 30s":"Incorrect PIN"); return; }
+    if (!ok) {
+#ifdef CONNECTED_DOOR
+      connectedRecord("PIN",false,"",-1); // Backend counts repeated wrong PINs for alerts.
+#endif
+      denyPin(); tell(pinBlocked?"Too many attempts - wait 30s":"Incorrect PIN"); return;
+    }
     if (!setFailures(0)) { storageError(); return; }
     if (screen==HOME) { grant("PIN"); return; }
     adminSession=true; adminStarted=adminActivity=millis(); continueSetup(); return;
@@ -883,7 +888,13 @@ void pollFinger() {
     finishEnroll("Finger added ID "+String(enrollSlot)); return;
   }
   result=finger.fingerFastSearch();
-  if (result!=FINGERPRINT_OK) { tell("Fingerprint not recognized"); return; }
+  if (result!=FINGERPRINT_OK) {
+#ifdef CONNECTED_DOOR
+    // Only a real finger that matched no template counts as a failed attempt.
+    if (result==FINGERPRINT_NOTFOUND && screen==HOME && !connectedIsEnrolling()) connectedRecord("FINGERPRINT",false,"",-1);
+#endif
+    tell("Fingerprint not recognized"); return;
+  }
   uint16_t id=finger.fingerID;
   int index=fingerIndex(id);
   if (screen==HOME) {

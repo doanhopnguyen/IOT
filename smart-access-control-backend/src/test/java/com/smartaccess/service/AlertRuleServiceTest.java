@@ -1,9 +1,11 @@
 package com.smartaccess.service;
 
+import com.smartaccess.model.AccessLog;
 import com.smartaccess.model.AccessUnit;
 import com.smartaccess.model.Device;
 import com.smartaccess.model.Event;
 import com.smartaccess.model.Telemetry;
+import com.smartaccess.model.enumtype.AccessMethod;
 import com.smartaccess.model.enumtype.AccessResult;
 import com.smartaccess.model.enumtype.AlertStatus;
 import com.smartaccess.model.enumtype.DeviceLifecycleStatus;
@@ -18,7 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.*;
 import java.util.Optional;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -136,24 +138,112 @@ class AlertRuleServiceTest {
         assertThat(created().getEventType()).isEqualTo("DEVICE_OFFLINE");
     }
 
-    void denied(long count) {
-        when(accessLogs.countByAccessUnit_UnitIdAndResultAndOccurredAtGreaterThanEqual(10L, AccessResult.DENIED,
-                now.minusSeconds(AlertRuleService.DENIED_WINDOW_SEC))).thenReturn(count);
+    /** Lượt bị từ chối của cửa 10; stub trả các lượt có phương thức nằm trong danh sách được hỏi. */
+    final List<AccessLog> deniedLogs = new ArrayList<>();
+    final Map<Set<AccessMethod>, LocalDateTime> askedAfter = new HashMap<>();
+
+    @BeforeEach void stubDeniedLogs() {
+        when(accessLogs.findByAccessUnit_UnitIdAndMethodInAndResultAndOccurredAtAfter(
+                eq(10L), anyCollection(), eq(AccessResult.DENIED), any())).thenAnswer(call -> {
+            Collection<AccessMethod> methods = call.getArgument(1);
+            askedAfter.put(Set.copyOf(methods), call.getArgument(3));
+            return deniedLogs.stream().filter(l -> methods.contains(l.getMethod())).toList();
+        });
     }
 
-    @Test void fourDeniedRaisesNothingFiveRaisesCritical() {
-        denied(4);
+    void attempts(AccessMethod method, String reason, int count) {
+        for (int i = 0; i < count; i++) {
+            AccessLog log = new AccessLog(); log.setMethod(method); log.setResult(AccessResult.DENIED);
+            log.setReasonCode(reason); log.setOccurredAt(now.minusSeconds(10 + i)); deniedLogs.add(log);
+        }
+    }
+
+    Event createdOfType(String type) {
+        var captor = ArgumentCaptor.forClass(Event.class);
+        verify(events, atLeastOnce()).save(captor.capture());
+        return captor.getAllValues().stream().filter(e -> type.equals(e.getEventType())).findFirst().orElse(null);
+    }
+
+    @Test void fourWrongPinsRaiseNothingFiveRaiseCritical() {
+        attempts(AccessMethod.PIN, "LOCAL_ACCESS_DENIED", 4);
         assertThat(service.evaluate(now)).isZero();
-        denied(5);
+        attempts(AccessMethod.PIN, "LOCAL_ACCESS_DENIED", 1);
         assertThat(service.evaluate(now)).isEqualTo(1);
         Event e = created();
-        assertThat(e.getEventType()).isEqualTo(AlertRuleService.REPEATED_DENIED);
+        assertThat(e.getEventType()).isEqualTo(AlertRuleService.REPEATED_WRONG_PIN);
         assertThat(e.getSeverity()).isEqualTo(EventSeverity.CRITICAL);
+        assertThat(e.getMessage()).isEqualTo("Cửa Cửa chính: nhập sai PIN 5 lần trong 5 phút, nghi có người dò mã");
     }
 
-    @Test void repeatedDeniedIsNotAutoResolved() {
-        Event open = active(AlertRuleService.REPEATED_DENIED);
-        denied(0);
+    @Test void mixedAuthFailuresRaiseOneCriticalWithBreakdown() {
+        attempts(AccessMethod.FINGERPRINT, "LOCAL_ACCESS_DENIED", 2);
+        attempts(AccessMethod.RFID, "LOCAL_ACCESS_DENIED", 3);
+        assertThat(service.evaluate(now)).isEqualTo(1);
+        Event e = created();
+        assertThat(e.getEventType()).isEqualTo(AlertRuleService.REPEATED_AUTH_FAILED);
+        assertThat(e.getSeverity()).isEqualTo(EventSeverity.CRITICAL);
+        assertThat(e.getMessage()).isEqualTo("Cửa Cửa chính: xác thực sai 5 lần trong 2 phút (vân tay 2, thẻ 3)");
+    }
+
+    @Test void faceFailuresAreListedLast() {
+        attempts(AccessMethod.FACE, "UNKNOWN_FACE", 4);
+        attempts(AccessMethod.RFID, "LOCAL_ACCESS_DENIED", 1);
+        service.evaluate(now);
+        assertThat(created().getMessage()).endsWith("(thẻ 1, khuôn mặt 4)");
+    }
+
+    @Test void wrongPinsDoNotCountAsAuthFailures() {
+        attempts(AccessMethod.PIN, "LOCAL_ACCESS_DENIED", 5);
+        assertThat(service.evaluate(now)).isEqualTo(1);
+        assertThat(createdOfType(AlertRuleService.REPEATED_WRONG_PIN)).isNotNull();
+        assertThat(createdOfType(AlertRuleService.REPEATED_AUTH_FAILED)).isNull();
+    }
+
+    @Test void systemReasonsAreNotCountedAsAttempts() {
+        attempts(AccessMethod.FACE, "DOOR_BUSY", 3);
+        attempts(AccessMethod.FACE, "LOCAL_ACCESS_DENIED,FACE_DISABLED", 1);
+        attempts(AccessMethod.FACE, "MODEL_MISMATCH", 1);
+        attempts(AccessMethod.FACE, "UNKNOWN_FACE", 4);
+        assertThat(service.evaluate(now)).isZero();
+    }
+
+    @Test void windowStartsAtWindowWhenNoEarlierAlert() {
+        service.evaluate(now);
+        assertThat(askedAfter.get(Set.of(AccessMethod.PIN))).isEqualTo(now.minusSeconds(300));
+        assertThat(askedAfter.get(Set.of(AccessMethod.FINGERPRINT, AccessMethod.RFID, AccessMethod.FACE)))
+                .isEqualTo(now.minusSeconds(120));
+    }
+
+    @Test void resolvedAlertIsNotRecreatedFromSameAttempts() {
+        Event resolved = new Event(); resolved.setEventType(AlertRuleService.REPEATED_WRONG_PIN);
+        resolved.setAlertStatus(AlertStatus.RESOLVED); resolved.setOccurredAt(now.minusSeconds(60));
+        when(events.findFirstByDevice_DeviceIdAndEventTypeOrderByOccurredAtDesc(7L, AlertRuleService.REPEATED_WRONG_PIN))
+                .thenReturn(Optional.of(resolved));
+        service.evaluate(now);
+        assertThat(askedAfter.get(Set.of(AccessMethod.PIN))).isEqualTo(now.minusSeconds(60));
+    }
+
+    @Test void oldAlertOutsideWindowDoesNotWidenIt() {
+        Event old = new Event(); old.setEventType(AlertRuleService.REPEATED_AUTH_FAILED);
+        old.setAlertStatus(AlertStatus.RESOLVED); old.setOccurredAt(now.minusSeconds(3600));
+        when(events.findFirstByDevice_DeviceIdAndEventTypeOrderByOccurredAtDesc(7L, AlertRuleService.REPEATED_AUTH_FAILED))
+                .thenReturn(Optional.of(old));
+        service.evaluate(now);
+        assertThat(askedAfter.get(Set.of(AccessMethod.FINGERPRINT, AccessMethod.RFID, AccessMethod.FACE)))
+                .isEqualTo(now.minusSeconds(120));
+    }
+
+    @Test void openWrongPinAlertIsNotDuplicated() {
+        active(AlertRuleService.REPEATED_WRONG_PIN);
+        active(AlertRuleService.REPEATED_AUTH_FAILED);
+        attempts(AccessMethod.PIN, "LOCAL_ACCESS_DENIED", 6);
+        attempts(AccessMethod.RFID, "LOCAL_ACCESS_DENIED", 6);
+        assertThat(service.evaluate(now)).isZero();
+        verify(events, never()).save(any());
+    }
+
+    @Test void repeatedWrongPinIsNotAutoResolved() {
+        Event open = active(AlertRuleService.REPEATED_WRONG_PIN);
         service.evaluate(now);
         assertThat(open.getAlertStatus()).isEqualTo(AlertStatus.OPEN);
     }

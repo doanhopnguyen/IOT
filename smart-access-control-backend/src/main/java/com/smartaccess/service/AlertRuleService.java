@@ -1,9 +1,11 @@
 package com.smartaccess.service;
 
 import com.smartaccess.config.RealtimeConfig;
+import com.smartaccess.model.AccessLog;
 import com.smartaccess.model.Device;
 import com.smartaccess.model.Event;
 import com.smartaccess.model.Telemetry;
+import com.smartaccess.model.enumtype.AccessMethod;
 import com.smartaccess.model.enumtype.AccessResult;
 import com.smartaccess.model.enumtype.AlertStatus;
 import com.smartaccess.model.enumtype.DeviceLifecycleStatus;
@@ -18,7 +20,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -26,20 +29,32 @@ import java.util.UUID;
  * Quy tắc cảnh báo tự sinh cho bộ điều khiển cửa đang hoạt động:
  * DEVICE_OFFLINE (WARNING) khi quá OFFLINE_AFTER_SEC không có heartbeat;
  * DOOR_LEFT_OPEN (CRITICAL) khi cửa mở lâu hơn access_units.door_open_timeout_sec;
- * REPEATED_DENIED (CRITICAL) khi có ≥ DENIED_LIMIT lượt bị từ chối trong DENIED_WINDOW_SEC;
+ * REPEATED_WRONG_PIN (CRITICAL) khi có ≥ PIN_LIMIT lượt nhập sai PIN trong PIN_WINDOW_SEC;
+ * REPEATED_AUTH_FAILED (CRITICAL) khi có ≥ AUTH_LIMIT lượt vân tay/thẻ/khuôn mặt bị từ chối trong AUTH_WINDOW_SEC;
  * SENSOR_FAULT (WARNING) khi cảm biến vân tay báo chưa sẵn sàng liên tục quá SENSOR_FAULT_AFTER_SEC.
  * Mỗi (thiết bị, loại) có tối đa một cảnh báo OPEN/ACKNOWLEDGED. Hết điều kiện thì tự chuyển RESOLVED,
- * trừ REPEATED_DENIED (nghi xâm nhập) phải do chủ cửa xem và xử lý.
+ * trừ hai cảnh báo thử sai (nghi xâm nhập) phải do chủ cửa xem và xử lý.
  */
 @Service
 public class AlertRuleService {
     public static final String DEVICE_OFFLINE = "DEVICE_OFFLINE";
     public static final String DOOR_LEFT_OPEN = "DOOR_LEFT_OPEN";
-    public static final String REPEATED_DENIED = "REPEATED_DENIED";
+    public static final String REPEATED_WRONG_PIN = "REPEATED_WRONG_PIN";
+    public static final String REPEATED_AUTH_FAILED = "REPEATED_AUTH_FAILED";
     public static final String SENSOR_FAULT = "SENSOR_FAULT";
     static final long OFFLINE_AFTER_SEC = 300;
-    static final long DENIED_WINDOW_SEC = 120;
-    static final long DENIED_LIMIT = 5;
+    /** Bàn phím firmware tự khóa 30 giây sau 5 lần sai liên tiếp; cảnh báo dùng cùng ngưỡng. */
+    static final long PIN_WINDOW_SEC = 300;
+    static final long PIN_LIMIT = 5;
+    static final long AUTH_WINDOW_SEC = 120;
+    static final long AUTH_LIMIT = 5;
+    /** Lý do do hệ thống (cửa bận, tắt khuôn mặt, sai model), không phải người thử mở. */
+    static final Set<String> IGNORED_REASONS = Set.of("DOOR_BUSY", "FACE_DISABLED", "MODEL_MISMATCH");
+    private static final List<AccessMethod> PIN_METHODS = List.of(AccessMethod.PIN);
+    private static final List<AccessMethod> AUTH_METHODS =
+            List.of(AccessMethod.FINGERPRINT, AccessMethod.RFID, AccessMethod.FACE);
+    private static final Map<AccessMethod, String> METHOD_LABELS = Map.of(
+            AccessMethod.FINGERPRINT, "vân tay", AccessMethod.RFID, "thẻ", AccessMethod.FACE, "khuôn mặt");
     /** Dây cảm biến chập chờn làm fingerReady nháy false vài giây; chỉ báo khi kéo dài. */
     static final long SENSOR_FAULT_AFTER_SEC = 60;
     private static final List<AlertStatus> ACTIVE = List.of(AlertStatus.OPEN, AlertStatus.ACKNOWLEDGED);
@@ -78,14 +93,19 @@ public class AlertRuleService {
             Outcome o2 = offline ? Outcome.NONE : apply(device, DOOR_LEFT_OPEN, doorOpenTooLong(device, now),
                     true, EventSeverity.CRITICAL, "Cửa " + device.getDeviceName() + " mở quá "
                             + device.getAccessUnit().getDoorOpenTimeoutSec() + " giây", now);
-            long denied = accessLogs.countByAccessUnit_UnitIdAndResultAndOccurredAtGreaterThanEqual(
-                    device.getAccessUnit().getUnitId(), AccessResult.DENIED, now.minusSeconds(DENIED_WINDOW_SEC));
-            Outcome o3 = apply(device, REPEATED_DENIED, denied >= DENIED_LIMIT, false, EventSeverity.CRITICAL,
-                    "Cửa " + device.getDeviceName() + " bị từ chối " + denied + " lần trong "
-                            + DENIED_WINDOW_SEC / 60 + " phút, nghi có người thử mở trái phép", now);
-            Outcome o4 = offline ? Outcome.NONE : apply(device, SENSOR_FAULT, sensorFault(device, now), true,
+            Map<AccessMethod, Long> pins = failedAttempts(device, REPEATED_WRONG_PIN, PIN_METHODS, PIN_WINDOW_SEC, now);
+            long pinCount = pins.values().stream().mapToLong(Long::longValue).sum();
+            Outcome o3 = apply(device, REPEATED_WRONG_PIN, pinCount >= PIN_LIMIT, false, EventSeverity.CRITICAL,
+                    "Cửa " + device.getDeviceName() + ": nhập sai PIN " + pinCount + " lần trong "
+                            + PIN_WINDOW_SEC / 60 + " phút, nghi có người dò mã", now);
+            Map<AccessMethod, Long> auth = failedAttempts(device, REPEATED_AUTH_FAILED, AUTH_METHODS, AUTH_WINDOW_SEC, now);
+            long authCount = auth.values().stream().mapToLong(Long::longValue).sum();
+            Outcome o4 = apply(device, REPEATED_AUTH_FAILED, authCount >= AUTH_LIMIT, false, EventSeverity.CRITICAL,
+                    "Cửa " + device.getDeviceName() + ": xác thực sai " + authCount + " lần trong "
+                            + AUTH_WINDOW_SEC / 60 + " phút (" + breakdown(auth) + ")", now);
+            Outcome o5 = offline ? Outcome.NONE : apply(device, SENSOR_FAULT, sensorFault(device, now), true,
                     EventSeverity.WARNING, "Cảm biến vân tay của " + device.getDeviceName() + " không phản hồi", now);
-            for (Outcome o : List.of(o1, o2, o3, o4)) {
+            for (Outcome o : List.of(o1, o2, o3, o4, o5)) {
                 if (o == Outcome.CREATED) created++;
                 changed |= o != Outcome.NONE;
             }
@@ -116,6 +136,35 @@ public class AlertRuleService {
             return Outcome.RESOLVED;
         }
         return Outcome.NONE;
+    }
+
+    /**
+     * Đếm lượt bị từ chối theo phương thức, bỏ các lỗi do hệ thống. Chỉ tính lượt sau cảnh báo gần nhất cùng loại
+     * (nếu nó còn trong cửa sổ) để chủ cửa đóng cảnh báo xong không bị tạo lại từ chính các lượt đó.
+     */
+    private Map<AccessMethod, Long> failedAttempts(Device device, String type, List<AccessMethod> methods,
+            long windowSec, LocalDateTime now) {
+        LocalDateTime windowStart = now.minusSeconds(windowSec);
+        LocalDateTime after = events.findFirstByDevice_DeviceIdAndEventTypeOrderByOccurredAtDesc(device.getDeviceId(), type)
+                .map(Event::getOccurredAt).filter(t -> t.isAfter(windowStart)).orElse(windowStart);
+        Map<AccessMethod, Long> counts = new EnumMap<>(AccessMethod.class);
+        for (AccessLog log : accessLogs.findByAccessUnit_UnitIdAndMethodInAndResultAndOccurredAtAfter(
+                device.getAccessUnit().getUnitId(), methods, AccessResult.DENIED, after)) {
+            if (isSystemReason(log.getReasonCode())) continue;
+            counts.merge(log.getMethod(), 1L, Long::sum);
+        }
+        return counts;
+    }
+
+    private static boolean isSystemReason(String reasonCode) {
+        if (reasonCode == null) return false;
+        return Arrays.stream(reasonCode.split(",")).map(String::trim).anyMatch(IGNORED_REASONS::contains);
+    }
+
+    /** "vân tay 2, thẻ 3, khuôn mặt 1", bỏ phương thức không có lượt nào, giữ thứ tự cố định. */
+    private static String breakdown(Map<AccessMethod, Long> counts) {
+        return AUTH_METHODS.stream().filter(counts::containsKey)
+                .map(m -> METHOD_LABELS.get(m) + " " + counts.get(m)).collect(Collectors.joining(", "));
     }
 
     private boolean sensorFault(Device device, LocalDateTime now) {

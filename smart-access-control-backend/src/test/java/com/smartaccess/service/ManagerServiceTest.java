@@ -230,16 +230,39 @@ class ManagerServiceTest {
 
     @Test void createsMemberProfileForManagedUnit() {
         managed(true);
-        var request = new CreateMemberProfileRequest("Bé Na", "0912000111", "P302");
+        var request = new CreateMemberProfileRequest("Bé Na", "P302");
         when(memberProfiles.create(unit, request)).thenReturn(member);
         var response = service.createMemberProfile(1L, 10L, request);
         assertThat(response.userId()).isEqualTo(2L); assertThat(response.room()).isEqualTo("P302");
         assertThat(response.deletableAccount()).isTrue();
     }
 
+    @Test void createsMemberProfileEvenWithInvitationFlow() {
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "invitationFlow", mock(InvitationService.class));
+        managed(true);
+        var request = new CreateMemberProfileRequest("Bé Na", "P302");
+        when(memberProfiles.create(unit, request)).thenReturn(member);
+        assertThat(service.createMemberProfile(1L, 10L, request).userId()).isEqualTo(2L);
+    }
+
+    @Test void searchSkipsDoorOnlyProfiles() {
+        searching(); user.setEmail("profile-x@noapp.local");
+        when(accounts.findById(2L)).thenReturn(Optional.of(user));
+        assertThat(service.searchUsers(1L, "2", "account")).isEmpty();
+    }
+
+    @Test void doorOnlyProfileHidesPlaceholderEmail() {
+        user.setEmail("profile-x@noapp.local");
+        managed(false); when(memberships.findMembersByUnitId(10L)).thenReturn(List.of(member));
+        when(memberProfiles.describe(10L, List.of(member)))
+                .thenReturn(java.util.Map.of(2L, new MemberProfileService.ProfileInfo("P302", false, true)));
+        var response = service.getUsers(1L, 10L).get(0);
+        assertThat(response.email()).isNull(); assertThat(response.displayName()).isEqualTo("Member");
+    }
+
     @Test void foreignManagerCannotCreateMemberProfile() {
         managed(true); unit.setManager(account(99L, "Other"));
-        assertStatus(() -> service.createMemberProfile(1L, 10L, new CreateMemberProfileRequest("Bé Na", "0912000111", null)),
+        assertStatus(() -> service.createMemberProfile(1L, 10L, new CreateMemberProfileRequest("Bé Na", null)),
                 HttpStatus.FORBIDDEN);
         verifyNoInteractions(memberProfiles);
     }

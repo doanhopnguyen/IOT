@@ -16,7 +16,6 @@ import {
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -57,6 +56,8 @@ import { Alerts } from '../src/components/Alerts';
 import { useConfirm } from '../src/components/ConfirmationProvider';
 import { colors } from '../src/theme/tokens';
 import { canManageDoor, canRemoteUnlock, canRemoteLock } from '../src/utils/permissions';
+import { memberContactLabel } from '../src/utils/memberProfileInput';
+import { NewPersonMember } from '../src/components/NewPersonMember';
 
 type ViewName =
   | TabKey
@@ -65,6 +66,7 @@ type ViewName =
   | 'member-detail'
   | 'add-member'
   | 'invite-member'
+  | 'new-person-member'
   | 'user-verification'
   | 'approvals'
   | 'history'
@@ -310,12 +312,17 @@ function SmartDoorApp() {
       <AddMemberChoice
         back={() => setView('members')}
         chooseApp={() => setView('invite-member')}
-        choosePerson={() =>
-          Alert.alert(
-            'Mời thành viên',
-            'Người nhận cần đăng ký tài khoản trên app trước; không tạo tài khoản dùng mật khẩu mặc định. Sau đó chủ cửa gửi lời mời bằng email.',
-          )
-        }
+        choosePerson={() => setView('new-person-member')}
+      />
+    ) : view === 'new-person-member' ? (
+      <NewPersonMember
+        unitId={backendUnitId(selected)}
+        back={() => setView('add-member')}
+        done={async (user) => {
+          await Promise.all([load(), loadMembers(selected)]);
+          setSelectedPerson(toPerson(user));
+          setView('member-detail');
+        }}
       />
     ) : view === 'invite-member' ? (
       <ExistingAppMember
@@ -1063,12 +1070,12 @@ function Members({
 function AddMemberChoice({
   back,
   chooseApp,
+  choosePerson,
 }: {
   back: () => void;
   chooseApp: () => void;
   choosePerson: () => void;
 }) {
-  const [guide, setGuide] = useState(false);
   return (
     <ScrollView
       keyboardDismissMode="on-drag"
@@ -1090,24 +1097,19 @@ function AddMemberChoice({
         </Card>
       </Pressable>
       <Pressable
-        onPress={() => setGuide(true)}
+        onPress={choosePerson}
         accessibilityRole="button"
-        accessibilityLabel="Hướng dẫn người chưa có ứng dụng"
+        accessibilityLabel="Thêm người chưa có ứng dụng"
       >
         <Card style={x.choice}>
           <View style={x.choiceIcon}>{icon('person-outline')}</View>
           <View style={{ flex: 1 }}>
             <Text style={x.cardTitle}>Chưa có ứng dụng</Text>
+            <Text style={x.sub}>Chỉ dùng vân tay hoặc thẻ tại cửa</Text>
           </View>
           {icon('chevron-forward-outline', colors.muted)}
         </Card>
       </Pressable>
-      {guide ? (
-        <Notice>
-          Người nhận cần mở Smart Door và tự đăng ký tài khoản. Sau đó bạn chọn “Đã có ứng dụng” để
-          mời bằng email. Mỗi người tự đặt mật khẩu của mình.
-        </Notice>
-      ) : null}
     </ScrollView>
   );
 }
@@ -1305,9 +1307,7 @@ function MemberDetail({
         <View style={{ flex: 1 }}>
           <Text style={x.cardTitle}>{person.name}</Text>
           <Text style={x.sub}>
-            {person.hasAccount
-              ? 'Có tài khoản ứng dụng'
-              : `Chưa đăng nhập ứng dụng${person.contact ? ` · ${person.contact}` : ''}`}
+            {memberContactLabel(person)}
           </Text>
           {person.room ? <Text style={x.caption}>Phòng {person.room}</Text> : null}
         </View>

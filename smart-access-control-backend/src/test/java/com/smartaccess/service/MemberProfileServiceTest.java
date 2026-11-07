@@ -64,14 +64,18 @@ class MemberProfileServiceTest {
                 MemberProfileService.CREATE_ACTION, "ACCOUNT", 2L)).thenReturn(Optional.of(created(10L, null)));
     }
 
-    @Test void createsMinimalAccountWithDefaultPasswordAndDevicePermissions() {
+    @Test void createsDoorOnlyProfileWithUnusablePassword() {
         when(accounts.saveAndFlush(any(Account.class))).thenAnswer(call -> {
             Account saved = call.getArgument(0); saved.setAccountId(2L); return saved;
         });
-        UserAccess membership = service.create(unit, new CreateMemberProfileRequest("Bé Na", "0912000111", "P302"));
+        UserAccess membership = service.create(unit, new CreateMemberProfileRequest("Bé Na", "P302"));
         Account account = membership.getAccount();
-        assertThat(account.getPhone()).isEqualTo("0912000111"); assertThat(account.getEmail()).isNull();
-        assertThat(passwords.matches("123456", account.getPasswordHash())).isTrue();
+        assertThat(account.getFullName()).isEqualTo("Bé Na");
+        assertThat(account.getPhone()).isNull();
+        assertThat(account.getEmail()).matches("profile-[0-9a-f-]{36}@noapp\\.local");
+        assertThat(MemberProfileService.isDoorOnly(account)).isTrue();
+        assertThat(account.getPasswordHash()).isNotNull();
+        assertThat(passwords.matches("123456", account.getPasswordHash())).isFalse();
         assertThat(account.isAdmin()).isFalse(); assertThat(account.getStatus()).isEqualTo(AccountStatus.ACTIVE);
         assertThat(membership.isAllowFingerprint()).isTrue(); assertThat(membership.isAllowRfid()).isTrue();
         assertThat(membership.isAllowRemoteUnlock()).isFalse(); assertThat(membership.isAllowFace()).isFalse();
@@ -82,29 +86,35 @@ class MemberProfileServiceTest {
         assertThat(audit.getValue().getDetails()).containsEntry("unitId", 10L).containsEntry("room", "P302");
     }
 
-    @Test void createsWithLowercasedEmailContact() {
-        when(accounts.saveAndFlush(any(Account.class))).thenAnswer(call -> {
-            Account saved = call.getArgument(0); saved.setAccountId(2L); return saved;
-        });
-        UserAccess membership = service.create(unit, new CreateMemberProfileRequest("Bé Na", "Na@Example.test", null));
-        assertThat(membership.getAccount().getEmail()).isEqualTo("na@example.test");
-        assertThat(membership.getAccount().getPhone()).isNull();
+    @Test void eachProfileGetsItsOwnPlaceholderEmail() {
+        when(accounts.saveAndFlush(any(Account.class))).thenAnswer(call -> call.getArgument(0));
+        String first = service.create(unit, new CreateMemberProfileRequest("Bé Na", null)).getAccount().getEmail();
+        String second = service.create(unit, new CreateMemberProfileRequest("Bé Na", null)).getAccount().getEmail();
+        assertThat(first).isNotEqualTo(second);
     }
 
-    @Test void existingPhoneIs409() {
-        when(accounts.existsByPhone("0912000111")).thenReturn(true);
-        assertStatus(() -> service.create(unit, new CreateMemberProfileRequest("Bé Na", "0912000111", null)), HttpStatus.CONFLICT);
-        verify(accounts, never()).saveAndFlush(any());
+    @Test void selfRegisteredAccountIsNotDoorOnly() {
+        Account self = new Account(); self.setEmail("na@example.test");
+        assertThat(MemberProfileService.isDoorOnly(self)).isFalse();
+        Account phoneOnly = new Account(); phoneOnly.setPhone("0912000111");
+        assertThat(MemberProfileService.isDoorOnly(phoneOnly)).isFalse();
+        Account upper = new Account(); upper.setEmail("profile-x@NOAPP.local");
+        assertThat(MemberProfileService.isDoorOnly(upper)).isTrue();
     }
 
-    @Test void existingEmailIs409() {
-        when(accounts.findByEmailIgnoreCase("na@example.test")).thenReturn(Optional.of(new Account()));
-        assertStatus(() -> service.create(unit, new CreateMemberProfileRequest("Bé Na", "na@example.test", null)), HttpStatus.CONFLICT);
+    @ParameterizedTest @ValueSource(strings = {"", "   "})
+    void blankNameIs400(String name) {
+        assertStatus(() -> service.create(unit, new CreateMemberProfileRequest(name, null)), HttpStatus.BAD_REQUEST);
+        verifyNoInteractions(memberships, audits);
     }
 
-    @ParameterizedTest @ValueSource(strings = {"", "123", "abc", "na@", "0912 000 111"})
-    void invalidContactIs400(String contact) {
-        assertStatus(() -> service.create(unit, new CreateMemberProfileRequest("Bé Na", contact, null)), HttpStatus.BAD_REQUEST);
+    @Test void tooLongNameIs400() {
+        assertStatus(() -> service.create(unit, new CreateMemberProfileRequest("a".repeat(101), null)), HttpStatus.BAD_REQUEST);
+        verifyNoInteractions(memberships, audits);
+    }
+
+    @Test void tooLongRoomIs400() {
+        assertStatus(() -> service.create(unit, new CreateMemberProfileRequest("Bé Na", "r".repeat(51))), HttpStatus.BAD_REQUEST);
         verifyNoInteractions(memberships, audits);
     }
 

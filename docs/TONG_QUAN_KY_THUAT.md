@@ -47,6 +47,8 @@ flowchart LR
 | Quản trị thiết bị | Admin tạo UID, cấp secret một lần, đổi secret, thay vòng đời. Backend chỉ lưu hash; DECOMMISSIONED là trạng thái cuối. |
 | Cập nhật ứng dụng | WebSocket gửi tín hiệu refresh; app tải dữ liệu qua REST đã phân quyền. Có reconnect và polling dự phòng10 giây. |
 | Face AI | Webcam → phát hiện/đặc trưng/liveness → MQTT face → backend kiểm tra quyền → command ESP → ACK. Không tự cho phép bỏ liveness. |
+| Cảnh báo tự sinh | `AlertRuleService` chạy 30 giây/lần, ghi vào `events`; app hỏi `/api/alerts` 30 giây/lần và hiện thông báo WARNING/CRITICAL. `DEVICE_OFFLINE` (mất heartbeat > 5 phút), `DOOR_LEFT_OPEN` (cửa mở quá `door_open_timeout_sec`), `SENSOR_FAULT` (cảm biến vân tay không sẵn sàng > 60 giây) tự đóng khi hết lỗi. `REPEATED_WRONG_PIN` (≥ 5 lần sai PIN trong 5 phút) và `REPEATED_AUTH_FAILED` (≥ 5 lần vân tay/thẻ/khuôn mặt bị từ chối trong 2 phút, nội dung ghi số lần theo từng loại) phải do chủ cửa xử lý; chỉ đếm lượt xảy ra sau cảnh báo cùng loại gần nhất, và bỏ qua các lỗi do hệ thống (`DOOR_BUSY`, `FACE_DISABLED`, `MODEL_MISMATCH`). Cần firmware ≥ 1.9.0 thì lượt PIN sai và vân tay lạ mới được gửi lên. Thay cho `REPEATED_DENIED` gộp chung trước đây. |
+| Người chưa có tài khoản | Chủ cửa tạo hồ sơ chỉ dùng tại cửa (họ tên, phòng) qua `POST /api/manager/units/{id}/member-profiles`. Backend tạo tài khoản với email giả `profile-<UUID>@noapp.local` và mật khẩu ngẫu nhiên không lưu ở đâu, nên không đăng nhập được; quyền vân tay + thẻ bật, mở từ xa tắt. Email giả không hiện trên app, và hồ sơ không xuất hiện khi tìm người để mời. |
 
 Đây là chức năng đã có trong mã nguồn; phạm vi kiểm chứng thực tế được nêu tại mục9, không đồng nghĩa tất cả cảm biến/cơ cấu đã được thử đầy đủ.
 
