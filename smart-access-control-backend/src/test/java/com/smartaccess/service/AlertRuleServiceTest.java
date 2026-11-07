@@ -184,6 +184,14 @@ class AlertRuleServiceTest {
         assertThat(e.getSeverity()).isEqualTo(EventSeverity.CRITICAL);
         assertThat(e.getMessage()).isEqualTo("Cửa Cửa chính: xác thực sai 5 lần trong 2 phút (vân tay 2, thẻ 3)");
     }
+    @Test void alertParticipantsComeOnlyFromIdentifiedContributingAttempts() {
+        attempts(AccessMethod.RFID, "LOCAL_ACCESS_DENIED", 3);
+        attempts(AccessMethod.FACE, "UNKNOWN_FACE", 2);
+        var user = new com.smartaccess.model.Account(); user.setAccountId(12L);
+        deniedLogs.get(0).setAccount(user); deniedLogs.get(1).setAccount(user);
+        service.evaluate(now);
+        assertThat(createdOfType(AlertRuleService.REPEATED_AUTH_FAILED).getRelatedAccounts()).containsExactly(user);
+    }
 
     @Test void faceFailuresAreListedLast() {
         attempts(AccessMethod.FACE, "UNKNOWN_FACE", 4);

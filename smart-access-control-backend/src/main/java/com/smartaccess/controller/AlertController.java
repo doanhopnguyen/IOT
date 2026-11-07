@@ -21,14 +21,30 @@ public class AlertController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
             @RequestParam(required = false) EventSeverity severity,
+            @RequestParam(required = false) Long relatedUserId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "30") int size) {
-        return service.list(accessUnitId, from, to, severity, page, size);
+        return service.list(accessUnitId, from, to, severity, relatedUserId, page, size);
     }
     @GetMapping("/{id}")
     public Alert detail(@PathVariable Long id) {
         return service.detail(id);
     }
+    @GetMapping("/statistics")
+    public AlertStatistics statistics(@RequestParam(defaultValue = "7") int days,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate to,
+            @RequestParam(required = false) EventSeverity severity,
+            @RequestParam(required = false) Long relatedUserId) {
+        if (from == null && to == null) {
+            if (days != 1 && days != 7 && days != 30)
+                throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Chọn 1, 7 hoặc 30 ngày");
+            to = java.time.LocalDate.now(); from = to.minusDays(days - 1);
+        }
+        return service.statistics(from, to, severity, relatedUserId);
+    }
+    @GetMapping("/users")
+    public java.util.List<Reference> users() { return service.users(); }
     public record StatusChange(@jakarta.validation.constraints.NotNull com.smartaccess.model.enumtype.AlertStatus status) {}
     @PatchMapping("/{id}")
     public Alert updateStatus(@PathVariable Long id, @Valid @RequestBody StatusChange change) {

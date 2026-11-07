@@ -22,6 +22,9 @@ public final class HistoryDtos {
             EventSeverity severity,
             AlertStatus status,
             String message,
-            LocalDateTime occurredAt) {}
+            LocalDateTime occurredAt,
+            List<Reference> relatedUsers) {}
     public record PageResponse<T>(List<T> items, int page, int size, long totalElements, boolean hasNext) {}
+    public record AlertDay(java.time.LocalDate date, long info, long warning, long critical) {}
+    public record AlertStatistics(long total, long unread, long urgentUnresolved, List<AlertDay> days) {}
 }

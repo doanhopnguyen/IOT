@@ -52,14 +52,14 @@ class DatabaseIntegrationTest {
 
     @Test
     void migrationCreatesSchemaAndRequiredConstraints() {
-        assertThat(flyway.info().applied()).hasSize(3);
+        assertThat(flyway.info().applied()).hasSize(5);
         assertThat(flyway.validateWithResult().validationSuccessful).isTrue();
         assertThat(jdbc.queryForList(
                 "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME <> 'flyway_schema_history'",
                 String.class))
                 .containsExactlyInAnyOrder("accounts", "access_units", "devices", "user_access", "credentials",
                         "face_requests", "access_logs", "telemetry", "events", "commands", "audit_logs",
-                        "device_inventory", "door_invitations");
+                        "device_inventory", "door_invitations", "event_related_accounts");
         assertThat(jdbc.queryForList(
                 "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_access' AND CONSTRAINT_NAME = 'PRIMARY' ORDER BY ORDINAL_POSITION",
                 String.class))
@@ -87,6 +87,7 @@ class DatabaseIntegrationTest {
                         "access_logs:source_device_id,occurred_at",
                         "telemetry:device_id,occurred_at", "telemetry:device_id,metric_name,occurred_at",
                         "events:device_id,occurred_at", "events:alert_status,severity,occurred_at",
+                        "event_related_accounts:account_id,event_id",
                         "commands:device_id,requested_at", "commands:requested_by,requested_at",
                         "audit_logs:actor_id,created_at");
         assertThat(jdbc.queryForList(

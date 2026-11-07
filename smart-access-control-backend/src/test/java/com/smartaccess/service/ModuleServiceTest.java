@@ -75,7 +75,7 @@ class ModuleServiceTest {
         Account stranger = new Account();
         stranger.setAccountId(8L);
         when(current.requireAccount()).thenReturn(stranger);
-        var service = new AlertService(repository, devices, current, mock(AuditLogRepository.class));
+        var service = new AlertService(repository, devices, current, mock(AuditLogRepository.class), mock(org.springframework.context.ApplicationEventPublisher.class));
         assertThatThrownBy(() -> service.detail(1L)).isInstanceOfSatisfying(ResponseStatusException.class,
                 e -> assertThat(e.getStatusCode().value()).isEqualTo(403));
         assertThatThrownBy(() -> service.recordForManager(input())).isInstanceOf(ResponseStatusException.class);
@@ -91,7 +91,7 @@ class ModuleServiceTest {
             Event e = invocation.getArgument(0); e.setEventId(4L); return e;
         }
         );
-        var service = new AlertService(repository, devices, current, mock(AuditLogRepository.class));
+        var service = new AlertService(repository, devices, current, mock(AuditLogRepository.class), mock(org.springframework.context.ApplicationEventPublisher.class));
         var result = service.recordForManager(input());
         assertThat(result.severity()).isEqualTo(EventSeverity.CRITICAL);
         assertThat(result.status()).isEqualTo(AlertStatus.OPEN);
@@ -107,10 +107,10 @@ class ModuleServiceTest {
         EventRepository repository = mock(EventRepository.class);
         AuditLogRepository audits = mock(AuditLogRepository.class);
         Event event = new Event();
-        event.setDevice(device); event.setEventId(1L); event.setEventType("DEVICE_OFFLINE");
+        event.setDevice(device); event.setEventId(1L); event.setEventType("REPEATED_WRONG_PIN");
         event.setSeverity(EventSeverity.WARNING); event.setAlertStatus(AlertStatus.OPEN);
         when(repository.findById(1L)).thenReturn(Optional.of(event));
-        var service = new AlertService(repository, mock(DeviceRepository.class), current, audits);
+        var service = new AlertService(repository, mock(DeviceRepository.class), current, audits, mock(org.springframework.context.ApplicationEventPublisher.class));
         assertThat(service.updateStatus(1L, AlertStatus.ACKNOWLEDGED).status()).isEqualTo(AlertStatus.ACKNOWLEDGED);
         assertThat(service.updateStatus(1L, AlertStatus.RESOLVED).status()).isEqualTo(AlertStatus.RESOLVED);
         assertThatThrownBy(() -> service.updateStatus(1L, AlertStatus.ACKNOWLEDGED)).isInstanceOfSatisfying(
@@ -128,7 +128,7 @@ class ModuleServiceTest {
         when(repository.findById(1L)).thenReturn(Optional.of(event));
         Account stranger = new Account(); stranger.setAccountId(8L);
         when(current.requireAccount()).thenReturn(stranger);
-        var service = new AlertService(repository, mock(DeviceRepository.class), current, mock(AuditLogRepository.class));
+        var service = new AlertService(repository, mock(DeviceRepository.class), current, mock(AuditLogRepository.class), mock(org.springframework.context.ApplicationEventPublisher.class));
         assertThatThrownBy(() -> service.updateStatus(1L, AlertStatus.RESOLVED)).isInstanceOfSatisfying(
                 ResponseStatusException.class, e -> assertThat(e.getStatusCode().value()).isEqualTo(403));
         assertThat(event.getAlertStatus()).isEqualTo(AlertStatus.OPEN);

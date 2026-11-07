@@ -27,6 +27,12 @@ public class Event {
     @JoinColumn(name = "device_id", nullable = false)
     private Device device;
 
+    // Only identities established by the contributing access logs; never the assumed door owner.
+    @ManyToMany
+    @JoinTable(name = "event_related_accounts", joinColumns = @JoinColumn(name = "event_id"),
+            inverseJoinColumns = @JoinColumn(name = "account_id"))
+    private java.util.Set<Account> relatedAccounts = new java.util.HashSet<>();
+
     @Column(name = "event_type", nullable = false, length = 50)
     private String eventType;
 

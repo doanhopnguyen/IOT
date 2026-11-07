@@ -93,16 +93,17 @@ public class AlertRuleService {
             Outcome o2 = offline ? Outcome.NONE : apply(device, DOOR_LEFT_OPEN, doorOpenTooLong(device, now),
                     true, EventSeverity.CRITICAL, "Cửa " + device.getDeviceName() + " mở quá "
                             + device.getAccessUnit().getDoorOpenTimeoutSec() + " giây", now);
-            Map<AccessMethod, Long> pins = failedAttempts(device, REPEATED_WRONG_PIN, PIN_METHODS, PIN_WINDOW_SEC, now);
+            Set<com.smartaccess.model.Account> pinUsers = new HashSet<>(), authUsers = new HashSet<>();
+            Map<AccessMethod, Long> pins = failedAttempts(device, REPEATED_WRONG_PIN, PIN_METHODS, PIN_WINDOW_SEC, now, pinUsers);
             long pinCount = pins.values().stream().mapToLong(Long::longValue).sum();
             Outcome o3 = apply(device, REPEATED_WRONG_PIN, pinCount >= PIN_LIMIT, false, EventSeverity.CRITICAL,
                     "Cửa " + device.getDeviceName() + ": nhập sai PIN " + pinCount + " lần trong "
-                            + PIN_WINDOW_SEC / 60 + " phút, nghi có người dò mã", now);
-            Map<AccessMethod, Long> auth = failedAttempts(device, REPEATED_AUTH_FAILED, AUTH_METHODS, AUTH_WINDOW_SEC, now);
+                            + PIN_WINDOW_SEC / 60 + " phút, nghi có người dò mã", now, pinUsers);
+            Map<AccessMethod, Long> auth = failedAttempts(device, REPEATED_AUTH_FAILED, AUTH_METHODS, AUTH_WINDOW_SEC, now, authUsers);
             long authCount = auth.values().stream().mapToLong(Long::longValue).sum();
             Outcome o4 = apply(device, REPEATED_AUTH_FAILED, authCount >= AUTH_LIMIT, false, EventSeverity.CRITICAL,
                     "Cửa " + device.getDeviceName() + ": xác thực sai " + authCount + " lần trong "
-                            + AUTH_WINDOW_SEC / 60 + " phút (" + breakdown(auth) + ")", now);
+                            + AUTH_WINDOW_SEC / 60 + " phút (" + breakdown(auth) + ")", now, authUsers);
             Outcome o5 = offline ? Outcome.NONE : apply(device, SENSOR_FAULT, sensorFault(device, now), true,
                     EventSeverity.WARNING, "Cảm biến vân tay của " + device.getDeviceName() + " không phản hồi", now);
             for (Outcome o : List.of(o1, o2, o3, o4, o5)) {
@@ -118,6 +119,10 @@ public class AlertRuleService {
 
     private Outcome apply(Device device, String type, boolean condition, boolean autoResolve, EventSeverity severity,
             String message, LocalDateTime now) {
+        return apply(device, type, condition, autoResolve, severity, message, now, Set.of());
+    }
+    private Outcome apply(Device device, String type, boolean condition, boolean autoResolve, EventSeverity severity,
+            String message, LocalDateTime now, Set<com.smartaccess.model.Account> relatedUsers) {
         Optional<Event> active = events.findFirstByDevice_DeviceIdAndEventTypeAndAlertStatusIn(device.getDeviceId(), type, ACTIVE);
         if (condition && active.isEmpty()) {
             Event event = new Event();
@@ -126,6 +131,7 @@ public class AlertRuleService {
             event.setEventType(type);
             event.setSeverity(severity);
             event.setAlertStatus(AlertStatus.OPEN);
+            event.getRelatedAccounts().addAll(relatedUsers);
             event.setMessage(message.length() > 255 ? message.substring(0, 255) : message);
             event.setOccurredAt(now.truncatedTo(ChronoUnit.MILLIS));
             events.save(event);
@@ -143,7 +149,7 @@ public class AlertRuleService {
      * (nếu nó còn trong cửa sổ) để chủ cửa đóng cảnh báo xong không bị tạo lại từ chính các lượt đó.
      */
     private Map<AccessMethod, Long> failedAttempts(Device device, String type, List<AccessMethod> methods,
-            long windowSec, LocalDateTime now) {
+            long windowSec, LocalDateTime now, Set<com.smartaccess.model.Account> relatedUsers) {
         LocalDateTime windowStart = now.minusSeconds(windowSec);
         LocalDateTime after = events.findFirstByDevice_DeviceIdAndEventTypeOrderByOccurredAtDesc(device.getDeviceId(), type)
                 .map(Event::getOccurredAt).filter(t -> t.isAfter(windowStart)).orElse(windowStart);
@@ -152,6 +158,7 @@ public class AlertRuleService {
                 device.getAccessUnit().getUnitId(), methods, AccessResult.DENIED, after)) {
             if (isSystemReason(log.getReasonCode())) continue;
             counts.merge(log.getMethod(), 1L, Long::sum);
+            if (log.getAccount() != null) relatedUsers.add(log.getAccount());
         }
         return counts;
     }
