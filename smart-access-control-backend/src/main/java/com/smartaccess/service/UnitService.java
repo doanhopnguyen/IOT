@@ -30,15 +30,17 @@ public class UnitService {
     private final DeviceRepository devices;
     private final FaceRequestRepository faceRequests;
     private final ManagerService managerService;
+    private final LockdownService lockdown;
 
     public UnitService(AccountRepository accounts, AccessUnitRepository units, UserAccessRepository memberships,
-            DeviceRepository devices, FaceRequestRepository faceRequests, ManagerService managerService) {
+            DeviceRepository devices, FaceRequestRepository faceRequests, ManagerService managerService, LockdownService lockdown) {
         this.accounts = accounts;
         this.units = units;
         this.memberships = memberships;
         this.devices = devices;
         this.faceRequests = faceRequests;
         this.managerService = managerService;
+        this.lockdown = lockdown;
     }
 
     public List<UnitResponse> listMine(Long accountId) {
@@ -89,10 +91,13 @@ public class UnitService {
         if (unit.getManager() != null && memberships.existsById(new UserAccessId(unit.getManager().getAccountId(), unit.getUnitId())))
             memberCount = Math.max(0, memberCount - 1);
         var state=inventory==null||device==null?null:inventory.findById(device.getDeviceId()).orElse(null);
+        boolean ready = device != null && device.getLifecycleStatus() == DeviceLifecycleStatus.ACTIVE
+                && (state == null || (state.isSetupReady() && "ACTIVE".equals(state.getState())));
+        boolean memberBlocked = "USER".equals(role) && device != null && lockdown.isLockedDown(device);
         return new UnitResponse(unit.getUnitId(), unit.getUnitName(), role, online,
-                memberCount, canRemoteUnlock && unit.isRemoteUnlockEnabled() && (state==null||state.isSetupReady()) && (state==null||!state.getState().equals("RESETTING")), lastSeen,
+                memberCount, canRemoteUnlock && ready && unit.isRemoteUnlockEnabled() && !memberBlocked, lastSeen,
                 online&&state!=null?state.getDoorClosed():null,online&&state!=null?state.getLatchReleased():null,
                 state==null?null:state.getState(),device==null?null:device.getDeviceUid(),
-                canRemoteUnlock && (state==null||state.isSetupReady()) && (state==null||!state.getState().equals("RESETTING")));
+                canRemoteUnlock && ready, device == null ? null : device.getLifecycleStatus());
     }
 }

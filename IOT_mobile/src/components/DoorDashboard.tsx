@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Linking, Switch, Text, View } from 'react-native';
+import { Linking, Switch, Text, View } from 'react-native';
+import { useConfirm } from './ConfirmationProvider';
 import { BarChart } from './BarChart';
 import { rssiStrength } from './chartMath';
 import { Button, Card, Input } from './ui';
@@ -13,6 +14,7 @@ const timeLabel = (iso: string) => new Date(iso).toLocaleTimeString('vi-VN', { h
 
 /** Thống kê + cài đặt cửa cho chủ cửa (đề bài mục 4.5–4.6: biểu đồ, cấu hình từ xa, xuất dữ liệu). */
 export function DoorDashboard({ unitId }: { unitId: number }) {
+  const confirm = useConfirm();
   const [days, setDays] = useState<DailyAccessDto[]>([]);
   const [rssi, setRssi] = useState<TelemetryPointDto[]>([]);
   const [settings, setSettings] = useState<UnitSettingsDto>();
@@ -104,10 +106,8 @@ export function DoorDashboard({ unitId }: { unitId: number }) {
       <Text style={{ color: lockedDown ? colors.error : colors.muted }}>{lockedDown === undefined ? 'Đang tải...' : lockdown.title}</Text>
       <Text style={{ color: colors.muted }}>Khi tạm khóa, chỉ vân tay, thẻ của bạn và lệnh mở từ app của bạn còn mở được cửa. Không tự hết hạn.</Text>
       <Button title={lockdown.button} variant={lockedDown ? 'primary' : 'ghost'} disabled={busy || lockedDown === undefined}
-        onPress={() => Alert.alert(lockdown.button, lockdown.confirm, [
-          { text: 'Hủy', style: 'cancel' },
-          { text: lockdown.button, style: lockedDown ? 'default' : 'destructive', onPress: () => { void toggleLockdown(!lockedDown); } },
-        ])} />
+        onPress={() => { void confirm({ title: lockdown.button, message: lockdown.confirm,
+          confirmLabel: lockdown.button, destructive: !lockedDown }).then(ok => { if (ok) void toggleLockdown(!lockedDown); }); }} />
     </Card>
     <Card>
       <Text style={{ fontWeight: '700', fontSize: 17 }}>Xuất dữ liệu</Text>

@@ -2,27 +2,24 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createFaceService, faceRequestLabel } from '../src/services/api/faceService';
 
-const sample = { model: 'buffalo_l/w600k_r50:v1', embedding: Array.from({length: 512}, (_, i) => i === 0 ? 1 : 0) };
-
-test('face enrollment requires explicit consent and real account/unit IDs before transport', () => {
+test('face requests require valid unit IDs before transport', () => {
   let called = false;
   const service = createFaceService(async <T>() => { called = true; return {} as T; });
-  assert.throws(() => service.create({ ...sample, unitId: 1, consent: false }), /đồng ý/);
-  assert.throws(() => service.create({ ...sample, unitId: 0, consent: true }), /không hợp lệ/);
-  assert.throws(() => service.create({ ...sample, unitId: 1, accountId: -1, consent: true }), /không hợp lệ/);
+  assert.throws(() => service.requestAccess(0), /không hợp lệ/);
+  assert.throws(() => service.memberProfile(1, -1), /không hợp lệ/);
   assert.equal(called, false);
 });
 
-test('app enrollment sends a 512D vector and consent, never photos', async () => {
+test('door access reuses the server-processed media profile and never submits client vectors', async () => {
   const calls: { path: string; method?: string; body?: unknown }[] = [];
   const service = createFaceService(async <T>(path: string, init?: RequestInit) => {
     calls.push({ path, method: init?.method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
     return { id: 31 } as T;
   });
-  const created = await service.create({ ...sample, unitId: 2, accountId: 7, consent: true });
+  const created = await service.requestAccess(2);
   await service.decide(created.id, true);
   assert.deepEqual(calls, [
-    { path: '/api/faces/requests', method: 'POST', body: { ...sample, unitId: 2, accountId: 7, consent: true } },
+    { path: '/api/faces/requests', method: 'POST', body: { unitId: 2, consent: true } },
     { path: '/api/faces/requests/31/decision', method: 'POST', body: { approved: true } },
   ]);
 });

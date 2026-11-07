@@ -21,6 +21,11 @@ $relativePaths = @(
     'face-registration-old.txt', 'admin-overview.png', 'admin-register.png', 'admin-usb-mac.png',
     'mobile-login.png', 'product-mobile-onboarding.png', 'product-setup-portal.png',
     'session-20261106\admin.png', 'session-20261106\mobile.png'
+    'fingerprint-check\before-4mb.bin', 'fingerprint-check\restore-runtime.bin',
+    'fingerprint-check\partitions.bin', 'edge-ai\connections.json', 'camera.identity.env',
+    'qr-ai-20261107\issued-private.json',
+    'system-review-20261107\state.json', 'system-review-20261107\admin-accounts.png',
+    'system-review-20261107\mobile-settings.png'
 )
 $targets = @($relativePaths | ForEach-Object { Join-Path $localRoot $_ } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
 $targets += @(Get-ChildItem -LiteralPath $localRoot -Filter 'backend-*.jar' -File | Select-Object -ExpandProperty FullName)

@@ -1,4 +1,4 @@
-"""Clear this project's isolated local database, retaining only its bootstrap admin.
+"""Clear this project's isolated local database, preserving existing administrator accounts.
 
 Stop project services and reset physical devices before reusing this installation.
 This does not erase a physical ESP32 or its fingerprint sensor.
@@ -9,13 +9,43 @@ import re
 import socket
 from pathlib import Path
 
-import bcrypt
 import pymysql
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL = ROOT / ".local"
 TABLES = {"accounts", "access_units", "devices", "device_inventory", "user_access", "credentials",
           "face_requests", "access_logs", "telemetry", "events", "commands", "audit_logs", "door_invitations"}
+OPTIONAL_TABLES = {"event_related_accounts"}  # V5 may not have run on an older local database yet.
+
+
+def clear_database(db):
+    """Keep original admin IDs/password hashes and delete business rows atomically."""
+    with db.cursor() as cursor:
+        cursor.execute("SHOW TABLES")
+        actual = {row[0] for row in cursor.fetchall()} - {"flyway_schema_history"}
+        if actual - OPTIONAL_TABLES != TABLES:
+            raise RuntimeError("Unexpected database schema; inspect before clearing it.")
+        cursor.execute("SELECT * FROM accounts WHERE is_admin=TRUE ORDER BY account_id")
+        administrators = cursor.fetchall()
+        if not administrators:
+            raise RuntimeError("No existing administrator found; stopped before deleting any data.")
+        cursor.execute("SET FOREIGN_KEY_CHECKS=0")
+        try:
+            for table in sorted(actual - {"accounts"}):
+                cursor.execute("DELETE FROM `" + table + "`")
+            cursor.execute("DELETE FROM accounts WHERE is_admin=FALSE")
+        finally:
+            cursor.execute("SET FOREIGN_KEY_CHECKS=1")
+        cursor.execute("SELECT * FROM accounts WHERE is_admin=TRUE ORDER BY account_id")
+        if cursor.fetchall() != administrators:
+            raise RuntimeError("Administrator verification failed; reset will be rolled back.")
+        for table in sorted(actual):
+            cursor.execute("SELECT COUNT(*) FROM `" + table + "`")
+            expected = len(administrators) if table == "accounts" else 0
+            if cursor.fetchone()[0] != expected:
+                raise RuntimeError("Reset verification failed for " + table)
+    db.commit()
+    return len(administrators)
 
 
 def main():
@@ -26,30 +56,17 @@ def main():
     name = cfg["db_name"]
     if not re.fullmatch(r"smart_access_dev_[a-zA-Z0-9_]+", name) or args.confirm_database != name:
         parser.error("Database scope check failed: use the exact isolated local database name.")
-    for port in (1884, 8080, 8081, 8091):
+    for port in (1884, 8080, 8081, 8091, 8092):
         with socket.socket() as connection:
             connection.settimeout(.3)
             if connection.connect_ex(("127.0.0.1", port)) == 0:
                 parser.error(f"Stop the project listener on port {port} before resetting.")
     db = pymysql.connect(host="127.0.0.1", user=cfg["db_user"], password=cfg["db_password"], database=name)
     try:
-        with db.cursor() as cursor:
-            cursor.execute("SHOW TABLES")
-            actual = {row[0] for row in cursor.fetchall()} - {"flyway_schema_history"}
-            if actual != TABLES:
-                raise RuntimeError("Unexpected database schema; inspect before clearing it.")
-            # Deliberate reset: MySQL TRUNCATE commits immediately and resets identity counters.
-            cursor.execute("SET FOREIGN_KEY_CHECKS=0")
-            try:
-                for table in sorted(TABLES):
-                    cursor.execute("TRUNCATE TABLE `" + table + "`")
-            finally:
-                cursor.execute("SET FOREIGN_KEY_CHECKS=1")
-            cursor.execute("INSERT INTO accounts(full_name,email,password_hash,is_admin,status,created_at,updated_at) "
-                           "VALUES(%s,%s,%s,TRUE,'ACTIVE',NOW(3),NOW(3))",
-                           ("Smart Door Admin", cfg["app_email"],
-                            bcrypt.hashpw(cfg["app_password"].encode(), bcrypt.gensalt()).decode()))
-        db.commit()
+        admin_count = clear_database(db)
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
     for key in ("account_id", "unit_id", "device_uid", "device_secret", "device_mqtt_password",
@@ -69,7 +86,7 @@ def main():
                 path.unlink()
     data = LOCAL / "mosquitto/data/mosquitto.db"
     data.unlink(missing_ok=True)
-    print(f"Cleared {name}: 0 devices/doors/users/credentials/history; 1 bootstrap admin retained.")
+    print(f"Cleared {name}: 0 devices/doors/regular users/credentials/history; {admin_count} existing admin(s) preserved unchanged.")
     print("Run bootstrap_local.py broker to remove old MQTT accounts before starting the broker.")
     print("Physical ESP32 and fingerprint memory must be erased separately; see the run guide.")
 

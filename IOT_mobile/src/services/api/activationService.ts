@@ -1,11 +1,13 @@
 import { ApiError, request } from './client';
 import { activationClaimInput } from './activationInput';
 import type { ProductSetup } from './productQr';
+import type { DeviceLifecycle } from './deviceState';
 
 export interface InventoryDevice {
   deviceId: number; deviceUid: string; unitId: number | null; name: string; state: string;
   generation: number; setupReady: boolean; doorClosed: boolean | null; latchReleased: boolean | null;
   lastSeenAt: string | null; operationUuid: string | null;
+  lifecycleStatus?: DeviceLifecycle;
 }
 export interface ClaimPreview { deviceUid: string; name: string; online: boolean; }
 export function activationPage(state: { hasDevice: boolean; hasProduct: boolean; online: boolean; restartConfirmed: boolean }) {

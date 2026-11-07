@@ -6,7 +6,6 @@ export interface FaceRequestDto {
   id: number; accountId: number; accountName: string; unitId: number; unitName: string;
   status: FaceRequestStatus; requestedAt: string;
 }
-export interface FaceEnrollmentInput { unitId: number; accountId?: number; consent: boolean; model: string; embedding: number[]; }
 type Transport = <T>(path: string, init?: RequestInit) => Promise<T>;
 const post = (body?: unknown): RequestInit => ({
   method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -20,9 +19,6 @@ const id = (value: number) => {
 export function createFaceService(transport: Transport = request) {
   return {
     profile() { return transport<FaceProfile>('/api/faces/me'); },
-    registerProfile(embedding: number[]) {
-      return transport<FaceProfile>('/api/faces/me', { ...post({ consent: true, model: 'buffalo_l/w600k_r50:v1', embedding }), method: 'PUT' });
-    },
     requestAccess(unitId: number) {
       return transport<FaceRequestDto>('/api/faces/requests', post({ unitId: id(unitId), consent: true }));
     },
@@ -31,14 +27,6 @@ export function createFaceService(transport: Transport = request) {
     },
     list(unitId?: number) {
       return transport<FaceRequestDto[]>(`/api/faces/requests${unitId === undefined ? '' : `?unitId=${id(unitId)}`}`);
-    },
-    create(input: FaceEnrollmentInput) {
-      id(input.unitId);
-      if (input.accountId !== undefined) id(input.accountId);
-      if (!input.consent) throw new Error('Cần có sự đồng ý trước khi đăng ký khuôn mặt.');
-      if (input.model !== 'buffalo_l/w600k_r50:v1' || input.embedding.length !== 512 || input.embedding.some(value => !Number.isFinite(value))
-        || input.embedding.every(value => value === 0)) throw new Error('Mẫu khuôn mặt không hợp lệ.');
-      return transport<FaceRequestDto>('/api/faces/requests', post(input));
     },
     decide(requestId: number, approved: boolean) {
       return transport<FaceRequestDto>(`/api/faces/requests/${id(requestId)}/decision`, post({ approved }));

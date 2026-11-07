@@ -4,7 +4,7 @@ export type LockState = 'LOCKED' | 'UNLOCKED' | 'UNKNOWN';
 export type AccessStatus = 'ACTIVE' | 'SUSPENDED' | 'REVOKED' | 'EXPIRED';
 export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'CANCELLED' | 'EXPIRED';
 export type SyncStatus = 'PENDING' | 'SYNCED' | 'FAILED';
-export interface Door { id: string; name: string; role: DoorRole; connectivity: Connectivity; lockState: LockState; members: number; canRemoteUnlock: boolean; canRemoteLock?: boolean; lastUpdate: string; doorClosed?: boolean | null; latchReleased?: boolean | null; activationState?: string; deviceUid?: string; }
+export interface Door { id: string; name: string; role: DoorRole; connectivity: Connectivity; lockState: LockState; members: number; canRemoteUnlock: boolean; canRemoteLock?: boolean; lastUpdate: string; doorClosed?: boolean | null; latchReleased?: boolean | null; activationState?: string; deviceUid?: string; lifecycleStatus?: import('../services/api/deviceState').DeviceLifecycle; }
 // hasAccount = false: hồ sơ do chủ cửa tạo, người đó chưa đăng nhập ứng dụng lần nào.
 export interface Person { id: string; name: string; hasAccount: boolean; methods: string[]; access: AccessStatus; sync: SyncStatus; room?: string | null; contact?: string | null; deletableAccount?: boolean; removalPending?: boolean; }
 export interface Invitation { id: string; owner: string; doorName: string; status: InvitationStatus; }

@@ -1,9 +1,11 @@
 import type { Door } from '../../models/domain';
 import { request } from './client';
+import type { DeviceLifecycle } from './deviceState';
 export interface UnitDto {
   unitId: number; unitName: string; role: 'OWNER' | 'USER'; online: boolean;
   memberCount: number; canRemoteUnlock: boolean; lastSeenAt: string | null;
   canRemoteLock?: boolean;
+  lifecycleStatus?: DeviceLifecycle;
   doorClosed?: boolean | null; latchReleased?: boolean | null; activationState?: string; deviceUid?: string;
 }
 export const unitService = {
@@ -22,6 +24,7 @@ export function toDoor(unit: UnitDto): Door {
     connectivity: unit.online ? 'ONLINE' : 'OFFLINE', lockState: !unit.online ? 'UNKNOWN' : unit.doorClosed === true && unit.latchReleased === false ? 'LOCKED' : unit.doorClosed === false || unit.latchReleased === true ? 'UNLOCKED' : 'UNKNOWN',
     doorClosed: unit.doorClosed ?? null, activationState: unit.activationState, deviceUid: unit.deviceUid,
     latchReleased: unit.latchReleased ?? null,
+    lifecycleStatus: unit.lifecycleStatus,
     members: unit.memberCount, canRemoteUnlock: unit.canRemoteUnlock,
     canRemoteLock: unit.canRemoteLock ?? unit.canRemoteUnlock,
     lastUpdate: unit.lastSeenAt ? new Date(unit.lastSeenAt).toLocaleString('vi-VN') : 'Chưa kết nối',

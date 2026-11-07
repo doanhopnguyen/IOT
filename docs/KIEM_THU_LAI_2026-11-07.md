@@ -1,5 +1,7 @@
 # Kiểm thử lại và trạng thái bàn giao — 07/11/2026
 
+**Báo cáo lịch sử của lượt trước.** Kết quả rà soát mobile/admin, kiểm thử và trạng thái sạch hiện tại nằm trong [báo cáo mới](RA_SOAT_VA_KIEM_THU_HE_THONG_2026-11-07.md). Các ghi chú thiếu Firewall hoặc snapshot chưa được dọn ở cuối tài liệu này đã được xử lý trong lượt sau; dùng [hướng dẫn hiện tại](CHAY_LAI_SAU_RESET_TAILSCALE.md).
+
 Môi trường: Windows, MySQL cô lập `smart_access_dev_772989`, broker dự án 1884, backend 8080, Expo 8081; ESP32-S3 `80:B5:4E:C8:14:9C` ở COM5. Mã firmware đã build/nạp: **1.4.1**. Bắt đầu chạy lại tại [hướng dẫn từ đầu với Tailscale](CHAY_TU_DAU_TAILSCALE.md).
 
 ## Chẩn đoán log ban đầu

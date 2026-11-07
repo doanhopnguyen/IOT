@@ -31,7 +31,7 @@ export function setupPage(status: SetupStatus, pinsAcknowledged = false): SetupP
 }
 export function setupInstruction(status: SetupStatus): string {
   if (!status.online) return 'Cửa chưa kết nối dịch vụ. Sau khi đã thiết lập xong, PIN/thẻ/vân tay đã lưu vẫn mở được ngay trên cửa. Nếu đang hiệu chỉnh, tiếp tục theo màn hình chip; app sẽ cập nhật tiến độ khi kết nối lại.';
-  if (status.ready) return 'Đã hoàn tất. Bạn có thể thêm thành viên và phương thức mở cửa.';
+  if (status.ready && setupPage(status) === 'COMPLETE') return 'Đã hoàn tất. Bạn có thể thêm thành viên và phương thức mở cửa.';
   if (!status.doorPinSet || !status.adminPinSet) return 'Đặt PIN mở cửa và PIN quản trị trong app. Chờ cửa xác nhận rồi bắt đầu hiệu chỉnh.';
   if (status.stage.startsWith('TOUCH_')) {
     const point = Number(status.stage.slice(6));

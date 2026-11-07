@@ -1,5 +1,9 @@
 import { ApiError, request } from './client';
 import type { InventoryDevice } from '../../components/ActivationWizard';
+import type { CommandDto } from './managerService';
+import { resetAvailable } from './deviceState';
+
+export interface IssuedResetCode { activationCode: string; syncCommand: CommandDto; }
 
 export interface ResetInput { password: string; adminPin: string; confirmation: string; recipientEmail: string; }
 export function validateReset(uid: string, input: ResetInput) {
@@ -12,8 +16,7 @@ export function resetComplete(device: InventoryDevice) {
   return device.state === 'INVENTORY' && device.unitId === null && !!device.operationUuid;
 }
 export function resetOnline(device: InventoryDevice, now = Date.now()) {
-  const seen = device.lastSeenAt ? new Date(device.lastSeenAt).getTime() : NaN;
-  return Number.isFinite(seen) && now - seen < 90000;
+  return resetAvailable(device, now);
 }
 export const resetService = {
   status(uid: string) { return request<InventoryDevice>(`/api/activation/devices/${encodeURIComponent(uid)}`); },
@@ -31,8 +34,13 @@ export const resetService = {
     }
   },
   issueCode(uid: string, password: string) {
-    return request<{ activationCode: string }>(`/api/activation/devices/${encodeURIComponent(uid)}/issue-code`, {
+    return request<IssuedResetCode>(`/api/activation/devices/${encodeURIComponent(uid)}/issue-code`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }),
+    });
+  },
+  syncCode(uid: string, password: string, activationCode: string) {
+    return request<CommandDto>(`/api/activation/devices/${encodeURIComponent(uid)}/sync-code`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password, activationCode }),
     });
   },
 };

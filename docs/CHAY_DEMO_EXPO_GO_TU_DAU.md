@@ -1,5 +1,7 @@
 # Chạy demo từ đầu: Expo Go và laptop AI
 
+**Vừa xóa toàn bộ dữ liệu và nạp lại chip:** dùng [hướng dẫn sau reset với Tailscale](CHAY_LAI_SAU_RESET_TAILSCALE.md) để đăng ký và cấp phát trước.
+
 Hướng dẫn cho máy hiện tại tại `D:\DEV\IOT`. Dependency, firmware và model đã được chuẩn bị. Khởi động lại dùng dữ liệu hiện có; không cần xóa database, đăng ký lại chip đã có hoặc build APK.
 
 Địa chỉ đã kiểm tra ngày 07/11/2026: Tailscale máy chủ `100.111.90.116`, LAN Wi-Fi `10.18.0.194`. Nếu đổi mạng hoặc máy chủ, kiểm tra và cập nhật theo [hướng dẫn mạng](CHAY_TU_DAU_TAILSCALE.md).

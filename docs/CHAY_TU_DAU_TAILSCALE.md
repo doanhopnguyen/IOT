@@ -39,17 +39,13 @@ Gateway phải bật, không sleep, có Internet và Tailscale. Router phải ch
 
 ## 2. Trạng thái để bắt đầu lại
 
-Sau kiểm thử, database được đưa về **0 thiết bị, 0 cửa, 0 người dùng thường, 0 lịch sử/credential/lệnh**; giữ một admin khởi tạo để đăng ký chip. Thông tin admin ở `.local/ADMIN_ACCESS.txt`. Chip COM5 được xóa dữ liệu và nạp firmware, cần đăng ký/cấp phát lại từ bước 5. QR và file cấp phát cũ không dùng lại.
+Ngày 07/11/2026 đã xóa dữ liệu nghiệp vụ, giữ **nguyên tài khoản admin cũ** (ID và mật khẩu), đưa cảm biến vân tay về 0 mẫu, xóa flash và nạp firmware **1.11.0** lên COM5. Chip hiện chưa có danh tính cấp phát mới, Wi-Fi hoặc PIN. Thông tin admin nằm tại `.local/ADMIN_ACCESS.txt`.
 
 Các chương trình dự án được dừng. MySQL 3306, Tailscale và broker hệ thống 1883 là dịch vụ nền riêng; broker dự án dùng **1884**.
 
-**Phần dọn file còn lại:** cơ chế duyệt tự động chặn lệnh xóa các bản sao flash/DB cũ (`blocked by policy`), kể cả khi chỉ định một file. Các bản sao và ghi chú credential cũ trong `.local` vẫn còn; chúng không phải dữ liệu đang hoạt động. Trước khi thử lại, tự chạy script dọn đã giới hạn vào các file sinh ra trong `.local`:
+Đã chạy thành công `scripts/clean-local-snapshots.ps1 -Apply`, dọn 65 file sinh ra thuộc danh sách bản sao flash/DB, file cấp phát và danh tính camera cũ, khoảng 1,69 GiB. Không cần chạy lại để bắt đầu thiết lập.
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-local-snapshots.ps1 -Apply
-```
-
-Không có `-Apply` thì script chỉ xem trước số file/dung lượng. Script này chưa được thực thi trong phiên tự động; dùng `.local/ADMIN_ACCESS.txt` cho admin hiện tại.
+**Bắt đầu từ trạng thái vừa reset:** làm theo [hướng dẫn từng bước sau reset với Tailscale](CHAY_LAI_SAU_RESET_TAILSCALE.md). Hướng dẫn chọn một đường đăng ký CLI, chuẩn bị MQTT trước khi chạy broker, cấp phát USB, khởi động lại sau khi lưu Wi-Fi rồi mới lưu PIN.
 
 ## 3. Chuẩn bị và build
 
@@ -105,7 +101,7 @@ cd D:\DEV\IOT
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/configure-network.ps1 -Role server -LanAddress 10.18.0.194 -Firewall
 ```
 
-Phiên tự động thiếu quyền Administrator nên chưa tạo được rule này. Chính sách Tailscale phải cho điện thoại/Edge/gateway đến TCP 8080, 8081, 1884 của máy chủ. Không cần mở cổng router Internet.
+Máy hiện tại đã có rule Smart Door LAN và Tailscale; chỉ cần tạo lại khi đổi cấu hình hoặc máy. Chính sách Tailscale phải cho điện thoại/Edge/gateway đến TCP 8080, 8081, 1884 của máy chủ. Không cần mở cổng router Internet.
 
 Mở ba cửa sổ PowerShell riêng, cùng ở thư mục dự án:
 
@@ -203,7 +199,7 @@ Lặp lại tại mỗi điểm bằng LAN IP của gateway đó. Nếu chip cù
 2. Thêm thiết bị, quét QR sản phẩm hoặc nhập mã nhận cửa mới.
 3. Nối điện thoại vào AP `SmartDoor-...` của đúng chip, theo mật khẩu màn hình/QR. Giữ Wi-Fi dù báo không có Internet. Mở **HTTP** `http://192.168.4.1` nếu portal chưa bật.
 4. Chọn Wi-Fi 2.4 GHz tại nơi đặt cửa, nhập mật khẩu, chờ nối thành công rồi hoàn tất. ESP32 phải truy cập được gateway LAN.
-5. Đưa điện thoại trở về Wi-Fi/4G có Internet, bật lại Tailscale nếu cần, trở lại app. Chờ chip online rồi nhận cửa/đặt tên.
+5. Chờ portal báo Đã lưu Wi-Fi, nhấn/thả RST/EN hoặc rút nguồn khóa 5 giây rồi cấp lại; không khôi phục mặc định. Đưa điện thoại trở về Wi-Fi/4G có Internet, bật lại Tailscale nếu cần, trở lại app. Xác nhận đã khởi động lại, kiểm tra kết nối và chờ chip online rồi nhận cửa/đặt tên.
 6. Đặt PIN mở cửa và PIN admin, mỗi PIN 6 số, hai PIN khác nhau. Chờ `ACKNOWLEDGED / PINS_CONFIGURED`.
 7. App hiển thị từng bước và tự chuyển khi cửa xác nhận. Trên chip: chạm các dấu cộng; xác nhận cửa đóng rồi mở; chọn hành trình servo bằng nút `RANGE 180/360`. Nhích `±1°`/`±5°` sẽ quay ngay; quan sát chốt rồi xác nhận LOCK và OPEN. Xem [luồng quét QR mới](QUET_QR_VA_THIET_LAP.md) và [hướng dẫn căn góc servo](CAN_GOC_SERVO.md).
 8. Khi báo `READY`, thử mở từ xa, PIN, RFID, vân tay và xem lịch sử. Quan sát chốt thật khi thử. Để ghép laptop tự chạy nhận diện, mở **Smart Door AI.cmd**, đăng nhập chủ cửa và chọn mã `SD-…` theo [hướng dẫn demo AI](DEMO_AI_TREN_LAPTOP.md).

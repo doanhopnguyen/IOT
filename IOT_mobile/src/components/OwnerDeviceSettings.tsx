@@ -1,8 +1,8 @@
 import { DoorDashboard } from './DoorDashboard';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { request } from '../services/api/client';
-import { Badge, Button, Card, Input, Notice, PageHeader, styles as s } from './ui';
+import { Badge, Button, Card, Notice, PageHeader, styles as s } from './ui';
 import type { InventoryDevice } from './ActivationWizard';
 import { FactoryReset } from './FactoryReset';
 import { colors } from '../theme/tokens';
@@ -11,32 +11,45 @@ import { DeviceSetup } from './DeviceSetup';
 import { OwnerCredentials } from './OwnerCredentials';
 import { deviceDisplayName } from '../services/api/productQr';
 import type { SetupPage } from '../services/api/setupService';
+import { lifecycleNotice } from '../services/api/deviceState';
 
 export function OwnerDeviceSettings({ unitId, back }: { unitId: number; back: () => void }) {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [device, setDevice] = useState<InventoryDevice>();
-  const [pin, setPin] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const revision = useRef(0);
+  const updateDevice = useCallback((next: InventoryDevice) => { revision.current++; setDevice(next); }, []);
   const deviceUid = device?.deviceUid;
   const reload = useCallback(async () => {
-    if (deviceUid) setDevice(await request(`/api/activation/devices/${deviceUid}`));
+    const ticket = ++revision.current;
+    if (deviceUid) {
+      const next = await request<InventoryDevice>(`/api/activation/devices/${deviceUid}`);
+      if (ticket === revision.current) setDevice(next);
+    }
     else {
       const rows = await request<InventoryDevice[]>('/api/activation/mine');
-      setDevice(rows.find((d) => d.unitId === unitId));
+      if (ticket === revision.current) setDevice(rows.find((d) => d.unitId === unitId));
     }
   }, [unitId, deviceUid]);
   const setupChanged = useCallback((page: SetupPage) => {
     if (page === 'COMPLETE') void reload().catch(e => { setMessage(e.message); setFailed(true); });
   }, [reload]);
   useEffect(() => {
-    void reload()
-      .catch((e) => {
-        setMessage(e.message);
-        setFailed(true);
-      })
-      .finally(() => setLoading(false));
+    let running = false;
+    const refresh = async () => {
+      if (running) return;
+      running = true;
+      try { await reload(); }
+      catch (e) {
+        setMessage(e instanceof Error ? e.message : 'Chưa lấy được trạng thái cửa.'); setFailed(true);
+        if (e && typeof e === 'object' && 'status' in e && [403, 404].includes(Number(e.status))) setDevice(undefined);
+      } finally { setLoading(false); running = false; }
+    };
+    void refresh();
+    const timer = setInterval(() => { void refresh(); }, 3000);
+    return () => clearInterval(timer);
   }, [reload]);
   const act = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -59,13 +72,17 @@ export function OwnerDeviceSettings({ unitId, back }: { unitId: number; back: ()
     >
       <PageHeader back={back} title="Cài đặt cửa" />
       {message ? <Notice tone={failed ? 'error' : 'info'}>{message}</Notice> : null}
+      {lifecycleNotice(device?.lifecycleStatus) ? <Notice tone="warning">{lifecycleNotice(device?.lifecycleStatus)}</Notice> : null}
       <Card>
         <View style={s.row}>
           <Text style={[s.heading, { flex: 1 }]}>Thông tin thiết bị</Text>
           {device ? (
             <Badge
               label={
-                device.state === 'ACTIVE'
+                device.lifecycleStatus === 'SUSPENDED' ? 'Bị tạm ngưng'
+                  : device.lifecycleStatus === 'MAINTENANCE' ? 'Đang bảo trì'
+                  : device.lifecycleStatus === 'DECOMMISSIONED' ? 'Đã thu hồi'
+                  : device.state === 'ACTIVE' && device.setupReady
                   ? 'Đã sẵn sàng'
                   : device.state === 'RESETTING'
                     ? 'Đang reset'
@@ -73,7 +90,7 @@ export function OwnerDeviceSettings({ unitId, back }: { unitId: number; back: ()
                       ? 'Đang thiết lập'
                       : 'Trong danh mục'
               }
-              tone={device.state === 'ACTIVE' ? 'success' : 'warning'}
+              tone={device.state === 'ACTIVE' && device.setupReady && device.lifecycleStatus === 'ACTIVE' ? 'success' : 'warning'}
             />
           ) : null}
         </View>
@@ -109,37 +126,8 @@ export function OwnerDeviceSettings({ unitId, back }: { unitId: number; back: ()
         <DoorDashboard unitId={unitId} />
         <DeviceSetup unitId={unitId} onStepChange={setupChanged} />
       </> : null}
-      {device?.setupReady && device.state !== 'RESETTING' ? <Card>
-        <Text style={s.heading}>Mã PIN mở cửa</Text>
-        <Text style={s.description}>
-          Đặt mã gồm 6 chữ số. Mã cũ không thể xem lại; mã mới cần được thiết bị xác nhận.
-        </Text>
-        <Input
-          label="Mã PIN mới"
-          value={pin}
-          onChangeText={setPin}
-          secureTextEntry
-          keyboardType="numeric"
-          placeholder="6 số mới"
-        />
-        <Button
-          title="Gửi yêu cầu đổi PIN"
-          disabled={busy || !/^\d{6}$/.test(pin)}
-          onPress={() => {
-            void act(async () => {
-              await request(`/api/manager/units/${unitId}/pin`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pin, confirmPin: pin }),
-              });
-              setPin('');
-              setMessage('Đã gửi yêu cầu đổi PIN. Chỉ áp dụng sau khi thiết bị xác nhận.');
-            });
-          }}
-        />
-      </Card> : null}
       {device?.unitId && device.state !== 'RESETTING' ? <OwnerCredentials key={unitId} unitId={unitId} ready={device.setupReady} /> : null}
-      {device ? <FactoryReset key={device.deviceUid} device={device} onUpdated={setDevice} /> : null}
+      {device ? <FactoryReset key={device.deviceUid} device={device} onUpdated={updateDevice} /> : null}
       {device?.unitId && device.state !== 'RESETTING' ? <CameraNodeSettings unitId={unitId} /> : null}
     </ScrollView>
   );

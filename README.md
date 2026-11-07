@@ -46,6 +46,8 @@ Web admin: `http://localhost:8080/admin/index.html` (tạo admin đầu tiên b�
 
 Chạy từ đầu trên Windows, nhiều ESP32/mobile/Edge AI ở các mạng khác nhau: xem [hướng dẫn Tailscale và gateway](docs/CHAY_TU_DAU_TAILSCALE.md). Cài môi trường: [docs/HUONG_DAN_MAY_PHAT_TRIEN.md](docs/HUONG_DAN_MAY_PHAT_TRIEN.md).
 
+Sau lần xóa dữ liệu và nạp lại chip: làm theo [hướng dẫn từng bước từ trạng thái sạch](docs/CHAY_LAI_SAU_RESET_TAILSCALE.md). [Báo cáo rà soát mobile/admin và kiểm thử hệ thống](docs/RA_SOAT_VA_KIEM_THU_HE_THONG_2026-11-07.md) ghi kết quả mới nhất và phạm vi phần cứng đã xác nhận.
+
 ## Thiết bị
 
 1. Lắp theo [hardware/README.md](hardware/README.md); nạp `cd firmware && pio run -c platformio.connected.ini -t upload`.

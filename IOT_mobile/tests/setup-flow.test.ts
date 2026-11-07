@@ -20,7 +20,7 @@ test('guides every touch point and separates closed/open sensor samples', () => 
   assert.match(setupInstruction({ ...pinsReady, stage: 'DOOR_OPEN' }), /Mở cánh cửa/);
   assert.match(setupInstruction({ ...pinsReady, stage: 'SERVO_LOCK', doorCalibrated: true }), /TEST LOCK POSITION/);
   assert.match(setupInstruction({ ...pinsReady, stage: 'SERVO_OPEN', doorCalibrated: true }), /CONFIRM OPEN \/ FINISH/);
-  assert.match(setupInstruction({ ...pinsReady, ready: true }), /Đã hoàn tất/);
+  assert.match(setupInstruction({ ...pinsReady, ready: true, touchCalibrated: true, doorCalibrated: true, servoCalibrated: true, stage: 'READY' }), /Đã hoàn tất/);
 });
 test('offline instructions retain local authentication and allow on-chip calibration to continue', () => {
   const text = setupInstruction({ ...status, online: false });
@@ -40,4 +40,10 @@ test('wizard advances only after each confirmed stage and resumes at the current
   assert.equal(setupPage(calibrated), 'VERIFY'); // Calibrated is not backend-ready yet.
   assert.equal(setupPage({ ...calibrated, ready: true }), 'COMPLETE');
   assert.equal(setupPage({ ...next, online: false }), 'SERVO_LOCK');
+});
+test('a calibration stage arriving before an updated ready flag never displays a completion instruction', () => {
+  const next = { ...status, ready: true, doorPinSet: true, adminPinSet: true, touchCalibrated: true, stage: 'TOUCH_1' };
+  assert.equal(setupPage(next), 'TOUCH');
+  assert.match(setupInstruction(next), /dấu cộng số 1/);
+  assert.doesNotMatch(setupInstruction(next), /Đã hoàn tất/);
 });

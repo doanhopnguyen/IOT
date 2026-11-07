@@ -13,7 +13,7 @@ import {
   ChangePassword,
   SignOutButton,
 } from '../src/components/AccountSettings';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -58,6 +58,7 @@ import { colors } from '../src/theme/tokens';
 import { canManageDoor, canRemoteUnlock, canRemoteLock } from '../src/utils/permissions';
 import { memberContactLabel } from '../src/utils/memberProfileInput';
 import { NewPersonMember } from '../src/components/NewPersonMember';
+import { lifecycleNotice, reconcileSelection } from '../src/services/api/deviceState';
 
 type ViewName =
   | TabKey
@@ -132,6 +133,8 @@ export default function App() {
 function SmartDoorApp() {
   const [booting, setBooting] = useState(true);
   const [account, setAccount] = useState<AccountDto | null>(null);
+  const accountId = useRef<number | null>(null);
+  useEffect(() => { accountId.current = account?.accountId ?? null; }, [account?.accountId]);
   const authenticated = account !== null;
   const [registering, setRegistering] = useState(false);
   const { setEnabled, openAlerts: openAlertsRef } = useNotificationBanner();
@@ -141,6 +144,7 @@ function SmartDoorApp() {
   const [addOpen, setAddOpen] = useState(false);
   const [pinDoor, setPinDoor] = useState<Door | null>(null);
   const [selected, setSelected] = useState<Door | null>(null);
+  const [settingsUnitId, setSettingsUnitId] = useState<number | null>(null);
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
   const [, setVerificationDoorName] = useState<string | undefined>();
   useEffect(() => {
@@ -160,6 +164,7 @@ function SmartDoorApp() {
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');
   const loadMembers = async (door: Door | null) => {
+    const actor = accountId.current;
     const unitId = backendUnitId(door);
     if (!unitId) {
       setMembers([]);
@@ -169,38 +174,48 @@ function SmartDoorApp() {
     setMembersError('');
     try {
       const users = await managerService.listUnitUsers(unitId);
+      if (actor !== accountId.current) return;
       const people = users.map(toPerson);
       setMembers(people);
       setSelectedPerson((current) =>
-        current ? (people.find((p) => p.id === current.id) ?? current) : current,
+        reconcileSelection(current, people),
       );
     } catch (e) {
+      if (actor !== accountId.current) return;
       setMembersError(errorText(e, 'Không tải được thành viên. Vui lòng thử lại.'));
     } finally {
-      setMembersLoading(false);
+      if (actor === accountId.current) setMembersLoading(false);
     }
   };
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState('');
+  const loadRevision = useRef(0);
   const load = async (silent = false) => {
+    const actor = accountId.current;
+    const revision = ++loadRevision.current;
     if (!silent) setDataLoading(true);
     try {
       const next = (await unitService.listMine()).map(toDoor);
+      if (actor !== accountId.current || revision !== loadRevision.current) return;
       setDoors(next);
       setDataError('');
       // Màn chi tiết đang mở cũng nhận trạng thái mới (trực tuyến/ngoại tuyến)
       setSelected((current) =>
-        current ? (next.find((d) => d.id === current.id) ?? current) : current,
+        reconcileSelection(current, next),
       );
+      setPinDoor(current => reconcileSelection(current, next));
     } catch (e) {
+      if (actor !== accountId.current || revision !== loadRevision.current) return;
       if (e instanceof ApiError && e.status === 401) {
-        authService.logout();
+        accountId.current = null;
+        setDoors([]); setSelected(null); setPinDoor(null); setSelectedPerson(null); setMembers([]);
+        setSettingsUnitId(null); setAddOpen(false); setView('home');
         setAccount(null);
         return;
       }
       setDataError(errorText(e, 'Không tải được danh sách cửa. Kiểm tra kết nối rồi thử lại.'));
     } finally {
-      setDataLoading(false);
+      if (actor === accountId.current && revision === loadRevision.current) setDataLoading(false);
     }
   };
   useEffect(() => {
@@ -209,6 +224,14 @@ function SmartDoorApp() {
       void load(true);
     });
   }, [authenticated]);
+  useEffect(() => {
+    if (!selected && !['home', 'devices', 'invitations', 'profile', 'settings', 'alerts', 'account', 'password', 'account-settings', 'user-verification'].includes(view)) {
+      setView('home'); setMembers([]); setSelectedPerson(null);
+    }
+  }, [selected, view]);
+  useEffect(() => {
+    if (view === 'member-detail' && !selectedPerson) setView(selected ? 'members' : 'home');
+  }, [selectedPerson, selected, view]);
   // Khôi phục phiên từ cookie khi mở/tải lại app, tránh phải đăng nhập lại
   useEffect(() => {
     void authService
@@ -236,8 +259,12 @@ function SmartDoorApp() {
     setView('detail');
   };
   const logout = () => {
-    authService.logout();
+    setBooting(true);
+    void authService.logout().catch(() => undefined).finally(() => setBooting(false));
+    accountId.current = null;
     setAccount(null);
+    setDoors([]); setMembers([]); setSelected(null); setSelectedPerson(null);
+    setPinDoor(null); setAddOpen(false); setSettingsUnitId(null);
     setView('home');
   };
   const body =
@@ -290,7 +317,7 @@ function SmartDoorApp() {
           setView('user-verification');
         }}
         history={() => setView('history')}
-        settings={() => setView('settings')}
+        settings={() => { setSettingsUnitId(Number(selected.id)); setView('settings'); }}
       />
     ) : view === 'members' && selected ? (
       <Members
@@ -341,7 +368,7 @@ function SmartDoorApp() {
       />
     ) : view === 'approvals' && selected ? (
       <FaceApprovals door={selected} back={() => setView('detail')} />
-    ) : view === 'member-detail' && selectedPerson ? (
+    ) : view === 'member-detail' && selectedPerson && selected ? (
       <MemberDetail
         person={selectedPerson}
         unitId={backendUnitId(selected)}
@@ -356,8 +383,8 @@ function SmartDoorApp() {
       <ChangePassword back={() => setView('profile')} />
     ) : view === 'account-settings' ? (
       <AccountSettings logout={logout} back={() => setView('profile')} />
-    ) : view === 'settings' && selected ? (
-      <OwnerDeviceSettings unitId={Number(selected.id)} back={() => setView('detail')} />
+    ) : view === 'settings' && settingsUnitId ? (
+      <OwnerDeviceSettings key={settingsUnitId} unitId={settingsUnitId} back={() => setView(selected ? 'detail' : 'home')} />
     ) : view === 'alerts' ? (
       <Alerts back={() => setView('home')} />
     ) : (
@@ -374,7 +401,7 @@ function SmartDoorApp() {
         />
       )}
       <AddDevice open={addOpen} close={() => setAddOpen(false)} onCreated={load} />
-      <PinModal door={pinDoor} close={() => setPinDoor(null)} />
+      <PinModal key={pinDoor?.id ?? 'closed'} door={pinDoor} close={() => setPinDoor(null)} />
     </Screen>
   );
 }
@@ -843,6 +870,7 @@ function Detail({
       contentContainerStyle={x.page}
     >
       <PageHeader back={back} title={door.name} />
+      {lifecycleNotice(door.lifecycleStatus) ? <Notice tone="warning">{lifecycleNotice(door.lifecycleStatus)}</Notice> : null}
       <Card style={x.hero}>
         <View style={x.heroHeading}>
           <View style={x.largeLock}>

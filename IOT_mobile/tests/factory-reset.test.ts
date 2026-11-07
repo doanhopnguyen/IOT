@@ -47,3 +47,23 @@ test('reset API sends both credentials only in the POST body and surfaces a wron
     assert.ok(!call.url.includes(input.password) && !call.url.includes(input.adminPin));
   } finally { globalThis.fetch = oldFetch; }
 });
+test('reissued QR retains device sync command and retry sends the same activation code', async () => {
+  setApiBaseUrl('http://reset-code.test');
+  const oldFetch = globalThis.fetch;
+  const command = { commandUuid: 'qr-command', status: 'SENT', resultMessage: null };
+  const calls: { url: string; body: unknown }[] = [];
+  globalThis.fetch = (async (url, init) => {
+    calls.push({ url: String(url), body: init?.body ? JSON.parse(String(init.body)) : null });
+    const value = String(url).endsWith('/csrf') ? { token: 'csrf' }
+      : String(url).endsWith('/issue-code') ? { activationCode: 'new-code', syncCommand: command } : command;
+    return new Response(JSON.stringify(value), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const issued = await resetService.issueCode(uid, 'password');
+    assert.equal(issued.syncCommand.status, 'SENT');
+    assert.equal(issued.syncCommand.commandUuid, 'qr-command');
+    await resetService.syncCode(uid, 'password', issued.activationCode);
+    assert.deepEqual(calls.find(c => c.url.endsWith('/sync-code'))?.body, { password: 'password', activationCode: 'new-code' });
+    assert.equal(calls.filter(c => c.url.endsWith('/issue-code')).length, 1);
+  } finally { globalThis.fetch = oldFetch; }
+});

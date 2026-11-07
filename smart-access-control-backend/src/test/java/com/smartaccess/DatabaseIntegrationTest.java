@@ -104,6 +104,8 @@ class DatabaseIntegrationTest {
                         "access_logs.fk_access_logs_account_id:RESTRICT",
                         "access_logs.fk_access_logs_credential_id:RESTRICT",
                         "telemetry.fk_telemetry_device_id:RESTRICT", "events.fk_events_device_id:RESTRICT",
+                        "event_related_accounts.fk_event_related_account:CASCADE",
+                        "event_related_accounts.fk_event_related_event:CASCADE",
                         "commands.fk_commands_device_id:RESTRICT", "commands.fk_commands_requested_by:RESTRICT",
                         "audit_logs.fk_audit_logs_actor_id:SET NULL", "device_inventory.fk_inventory_device:CASCADE",
                         "door_invitations.fk_invitation_unit:CASCADE", "door_invitations.fk_invitation_recipient:CASCADE");
