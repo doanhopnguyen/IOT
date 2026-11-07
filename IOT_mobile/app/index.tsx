@@ -30,6 +30,7 @@ import {
   Button,
   Card,
   EmptyState,
+  FeatureTile,
   Input,
   LoadingState,
   Notice,
@@ -54,7 +55,7 @@ import { useNotificationBanner } from '../src/components/EventNotificationProvid
 import { AccessHistory } from '../src/components/AccessHistory';
 import { Alerts } from '../src/components/Alerts';
 import { useConfirm } from '../src/components/ConfirmationProvider';
-import { colors } from '../src/theme/tokens';
+import { colors, radius } from '../src/theme/tokens';
 import { canManageDoor, canRemoteUnlock, canRemoteLock } from '../src/utils/permissions';
 import { memberContactLabel } from '../src/utils/memberProfileInput';
 import { NewPersonMember } from '../src/components/NewPersonMember';
@@ -134,7 +135,9 @@ function SmartDoorApp() {
   const [booting, setBooting] = useState(true);
   const [account, setAccount] = useState<AccountDto | null>(null);
   const accountId = useRef<number | null>(null);
-  useEffect(() => { accountId.current = account?.accountId ?? null; }, [account?.accountId]);
+  useEffect(() => {
+    accountId.current = account?.accountId ?? null;
+  }, [account?.accountId]);
   const authenticated = account !== null;
   const [registering, setRegistering] = useState(false);
   const { setEnabled, openAlerts: openAlertsRef } = useNotificationBanner();
@@ -177,9 +180,7 @@ function SmartDoorApp() {
       if (actor !== accountId.current) return;
       const people = users.map(toPerson);
       setMembers(people);
-      setSelectedPerson((current) =>
-        reconcileSelection(current, people),
-      );
+      setSelectedPerson((current) => reconcileSelection(current, people));
     } catch (e) {
       if (actor !== accountId.current) return;
       setMembersError(errorText(e, 'Không tải được thành viên. Vui lòng thử lại.'));
@@ -199,17 +200,20 @@ function SmartDoorApp() {
       if (actor !== accountId.current || revision !== loadRevision.current) return;
       setDoors(next);
       setDataError('');
-      // Màn chi tiết đang mở cũng nhận trạng thái mới (trực tuyến/ngoại tuyến)
-      setSelected((current) =>
-        reconcileSelection(current, next),
-      );
-      setPinDoor(current => reconcileSelection(current, next));
+      setSelected((current) => reconcileSelection(current, next));
+      setPinDoor((current) => reconcileSelection(current, next));
     } catch (e) {
       if (actor !== accountId.current || revision !== loadRevision.current) return;
       if (e instanceof ApiError && e.status === 401) {
         accountId.current = null;
-        setDoors([]); setSelected(null); setPinDoor(null); setSelectedPerson(null); setMembers([]);
-        setSettingsUnitId(null); setAddOpen(false); setView('home');
+        setDoors([]);
+        setSelected(null);
+        setPinDoor(null);
+        setSelectedPerson(null);
+        setMembers([]);
+        setSettingsUnitId(null);
+        setAddOpen(false);
+        setView('home');
         setAccount(null);
         return;
       }
@@ -225,14 +229,29 @@ function SmartDoorApp() {
     });
   }, [authenticated]);
   useEffect(() => {
-    if (!selected && !['home', 'devices', 'invitations', 'profile', 'settings', 'alerts', 'account', 'password', 'account-settings', 'user-verification'].includes(view)) {
-      setView('home'); setMembers([]); setSelectedPerson(null);
+    if (
+      !selected &&
+      ![
+        'home',
+        'devices',
+        'invitations',
+        'profile',
+        'settings',
+        'alerts',
+        'account',
+        'password',
+        'account-settings',
+        'user-verification',
+      ].includes(view)
+    ) {
+      setView('home');
+      setMembers([]);
+      setSelectedPerson(null);
     }
   }, [selected, view]);
   useEffect(() => {
     if (view === 'member-detail' && !selectedPerson) setView(selected ? 'members' : 'home');
   }, [selectedPerson, selected, view]);
-  // Khôi phục phiên từ cookie khi mở/tải lại app, tránh phải đăng nhập lại
   useEffect(() => {
     void authService
       .me()
@@ -243,7 +262,6 @@ function SmartDoorApp() {
   useEffect(() => {
     if (authenticated) void load();
   }, [authenticated]);
-  // Tự cập nhật trạng thái cửa mỗi 10 giây, không cần tải lại trang
   useEffect(() => {
     if (!authenticated) return;
     const timer = setInterval(() => {
@@ -260,11 +278,19 @@ function SmartDoorApp() {
   };
   const logout = () => {
     setBooting(true);
-    void authService.logout().catch(() => undefined).finally(() => setBooting(false));
+    void authService
+      .logout()
+      .catch(() => undefined)
+      .finally(() => setBooting(false));
     accountId.current = null;
     setAccount(null);
-    setDoors([]); setMembers([]); setSelected(null); setSelectedPerson(null);
-    setPinDoor(null); setAddOpen(false); setSettingsUnitId(null);
+    setDoors([]);
+    setMembers([]);
+    setSelected(null);
+    setSelectedPerson(null);
+    setPinDoor(null);
+    setAddOpen(false);
+    setSettingsUnitId(null);
     setView('home');
   };
   const body =
@@ -317,7 +343,10 @@ function SmartDoorApp() {
           setView('user-verification');
         }}
         history={() => setView('history')}
-        settings={() => { setSettingsUnitId(Number(selected.id)); setView('settings'); }}
+        settings={() => {
+          setSettingsUnitId(Number(selected.id));
+          setView('settings');
+        }}
       />
     ) : view === 'members' && selected ? (
       <Members
@@ -384,7 +413,11 @@ function SmartDoorApp() {
     ) : view === 'account-settings' ? (
       <AccountSettings logout={logout} back={() => setView('profile')} />
     ) : view === 'settings' && settingsUnitId ? (
-      <OwnerDeviceSettings key={settingsUnitId} unitId={settingsUnitId} back={() => setView(selected ? 'detail' : 'home')} />
+      <OwnerDeviceSettings
+        key={settingsUnitId}
+        unitId={settingsUnitId}
+        back={() => setView(selected ? 'detail' : 'home')}
+      />
     ) : view === 'alerts' ? (
       <Alerts back={() => setView('home')} />
     ) : (
@@ -453,7 +486,9 @@ function Auth({
     setError('');
     try {
       if (registering) await authService.register({ fullName: name, email, phone, password });
-      onDone(await authService.login(registering ? email.trim() || phone.trim() : email, password));
+      onDone(
+        await authService.login(registering ? email.trim() || phone.trim() : email, password),
+      );
     } catch (e) {
       setError(errorText(e, 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.'));
     } finally {
@@ -470,88 +505,101 @@ function Auth({
           contentContainerStyle={x.auth}
         >
           <View style={x.authInner}>
-            <View style={x.authBrandRow}>
+            <View style={x.authHero}>
               <Brand large />
+              <View style={x.authSecurityBadge}>
+                <Ionicons name="shield-checkmark" size={14} color={colors.primary} />
+                <Text style={x.authSecurityText}>Smart Access Control · AI Biometrics</Text>
+              </View>
             </View>
-            <Text style={x.authTitle}>{registering ? 'Đăng ký' : 'Đăng nhập'}</Text>
-            {registering ? (
+            <Card style={x.authCard}>
+              <View style={{ gap: 4, alignItems: 'center', marginBottom: 4 }}>
+                <Text style={x.authTitle}>{registering ? 'Đăng ký' : 'Đăng nhập'}</Text>
+                <Text style={x.caption}>
+                  {registering
+                    ? 'Tạo tài khoản quản lý khóa cửa thông minh của bạn'
+                    : 'Chào mừng trở lại hệ thống nhà thông minh'}
+                </Text>
+              </View>
+              {registering ? (
+                <Input
+                  label="Họ và tên"
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="Nhập họ và tên của bạn"
+                  autoComplete="name"
+                />
+              ) : null}
               <Input
-                label="Họ và tên"
-                value={name}
-                onChangeText={setName}
-                placeholder="Nhập họ và tên của bạn"
-                autoComplete="name"
+                label={registering ? 'Email' : 'Email hoặc số điện thoại'}
+                value={email}
+                onChangeText={setEmail}
+                placeholder={registering ? 'ten@example.com' : 'Nhập email hoặc số điện thoại'}
+                keyboardType="email-address"
+                autoComplete="username"
               />
-            ) : null}
-            <Input
-              label={registering ? 'Email' : 'Email hoặc số điện thoại'}
-              value={email}
-              onChangeText={setEmail}
-              placeholder={registering ? 'ten@example.com' : 'Nhập email hoặc số điện thoại'}
-              keyboardType="email-address"
-              autoComplete="username"
-            />
-            {registering ? (
+              {registering ? (
+                <Input
+                  label="Số điện thoại · không bắt buộc"
+                  value={phone}
+                  onChangeText={setPhone}
+                  placeholder="Nhập số điện thoại"
+                  keyboardType="phone-pad"
+                />
+              ) : null}
               <Input
-                label="Số điện thoại · không bắt buộc"
-                value={phone}
-                onChangeText={setPhone}
-                placeholder="Nhập số điện thoại"
-                keyboardType="phone-pad"
-              />
-            ) : null}
-            <Input
-              label="Mật khẩu"
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Ít nhất 8 ký tự"
-              secureTextEntry={!show}
-              autoComplete={registering ? 'new-password' : 'current-password'}
-              onSubmitEditing={() => {
-                if (!registering && !saving) void submit();
-              }}
-              trailing={
-                <Pressable
-                  onPress={() => setShow(!show)}
-                  style={x.eye}
-                  accessibilityRole="button"
-                  accessibilityLabel={show ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-                >
-                  {icon(show ? 'eye-off-outline' : 'eye-outline', colors.muted)}
-                </Pressable>
-              }
-            />
-            {registering ? (
-              <Input
-                label="Xác nhận mật khẩu"
-                value={confirm}
-                onChangeText={setConfirm}
-                placeholder="Nhập lại mật khẩu"
+                label="Mật khẩu"
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Ít nhất 8 ký tự"
                 secureTextEntry={!show}
-              />
-            ) : null}
-            {error ? <Notice tone="error">{error}</Notice> : null}
-            <Button
-              title={saving ? 'Đang xử lý…' : registering ? 'Tạo tài khoản' : 'Đăng nhập'}
-              icon="arrow-forward-outline"
-              loading={saving}
-              onPress={() => {
-                void submit();
-              }}
-            />
-            {!registering ? (
-              <Pressable
-                onPress={() =>
-                  setError(
-                    'Để khôi phục mật khẩu, vui lòng liên hệ bộ phận hỗ trợ quản lý hệ thống.',
-                  )
+                autoComplete={registering ? 'new-password' : 'current-password'}
+                onSubmitEditing={() => {
+                  if (!registering && !saving) void submit();
+                }}
+                trailing={
+                  <Pressable
+                    onPress={() => setShow(!show)}
+                    style={x.eye}
+                    accessibilityRole="button"
+                    accessibilityLabel={show ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                  >
+                    {icon(show ? 'eye-off-outline' : 'eye-outline', colors.muted)}
+                  </Pressable>
                 }
-                accessibilityRole="button"
-                style={{ padding: 8 }}
-              >
-                <Text style={x.link}>Quên mật khẩu?</Text>
-              </Pressable>
-            ) : null}
+              />
+              {registering ? (
+                <Input
+                  label="Xác nhận mật khẩu"
+                  value={confirm}
+                  onChangeText={setConfirm}
+                  placeholder="Nhập lại mật khẩu"
+                  secureTextEntry={!show}
+                />
+              ) : null}
+              {error ? <Notice tone="error">{error}</Notice> : null}
+              <Button
+                title={saving ? 'Đang xử lý…' : registering ? 'Tạo tài khoản' : 'Đăng nhập'}
+                icon="arrow-forward-outline"
+                loading={saving}
+                onPress={() => {
+                  void submit();
+                }}
+              />
+              {!registering ? (
+                <Pressable
+                  onPress={() =>
+                    setError(
+                      'Để khôi phục mật khẩu, vui lòng liên hệ bộ phận hỗ trợ quản lý hệ thống.',
+                    )
+                  }
+                  accessibilityRole="button"
+                  style={{ padding: 6 }}
+                >
+                  <Text style={x.link}>Quên mật khẩu?</Text>
+                </Pressable>
+              ) : null}
+            </Card>
             <View style={x.authSwitch}>
               <Text style={x.sub}>
                 {registering ? 'Đã có tài khoản?' : 'Bạn chưa có tài khoản?'}
@@ -599,10 +647,11 @@ function Home({
       keyboardShouldPersistTaps="handled"
     >
       <View style={x.row}>
-        <View style={{ flex: 1, gap: 6 }}>
+        <View style={{ flex: 1, gap: 4 }}>
           <View style={{ alignSelf: 'flex-start' }}>
             <Brand />
           </View>
+          <Text style={x.caption}>Trung tâm kiểm soát ra vào thông minh</Text>
         </View>
         <Pressable
           onPress={notifications}
@@ -611,29 +660,47 @@ function Home({
           accessibilityLabel="Xem cảnh báo"
         >
           {icon('notifications-outline', colors.text)}
+          <View style={x.bellDot} />
         </Pressable>
       </View>
-      <Card style={x.summary}>
+
+      <View style={x.heroSummaryCard}>
+        <View style={x.heroTopRow}>
+          <View style={x.heroBadgePill}>
+            <View style={x.heroPulseDot} />
+            <Text style={x.heroBadgeText}>An ninh hoạt động 24/7</Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            onPress={add}
+            style={x.heroAddChip}
+          >
+            <Ionicons name="add-circle" size={16} color="#fff" />
+            <Text style={x.heroAddChipText}>+ Thêm cửa</Text>
+          </Pressable>
+        </View>
         <View style={x.summaryStats}>
-          <View style={{ gap: 3 }}>
+          <View style={x.heroStatBox}>
             <Text style={x.big}>{loading ? '—' : String(doors.length).padStart(2, '0')}</Text>
             <Text style={x.summaryCaption}>Cửa của bạn</Text>
           </View>
           <View style={x.statDivider} />
-          <View style={{ gap: 3 }}>
-            <Text style={[x.big, { color: colors.success }]}>
+          <View style={x.heroStatBox}>
+            <Text style={[x.big, { color: '#34D399' }]}>
               {loading ? '—' : String(online).padStart(2, '0')}
             </Text>
             <Text style={x.summaryCaption}>Đang trực tuyến</Text>
           </View>
         </View>
-      </Card>
+      </View>
+
       <View style={x.row}>
         <Text style={[x.section, { flex: 1 }]}>
           Cửa của bạn <Text style={x.sub}>({doors.length})</Text>
         </Text>
-        <Pressable accessibilityRole="button" onPress={add} style={{ padding: 8 }}>
-          <Text style={x.link}>+ Thêm cửa</Text>
+        <Pressable accessibilityRole="button" onPress={add} style={x.softAddPill}>
+          <Ionicons name="add" size={17} color={colors.primary} />
+          <Text style={x.link}>Thêm thiết bị</Text>
         </Pressable>
       </View>
       {error ? (
@@ -646,17 +713,15 @@ function Home({
         <LoadingState label="Đang kết nối với cửa của bạn…" />
       ) : doors.length ? (
         <View style={x.doorGrid}>
-          {
-            <ItemList
-              items={doors}
-              resetKey={''}
-              renderItem={(d) => (
-                <View key={d.id} style={{ width: width >= 720 ? '48.6%' : '100%' }}>
-                  <DoorCard door={d} onPress={() => onDoor(d)} onUnlock={() => onUnlock(d)} />
-                </View>
-              )}
-            />
-          }
+          <ItemList
+            items={doors}
+            resetKey={''}
+            renderItem={(d) => (
+              <View key={d.id} style={{ width: width >= 720 ? '48.6%' : '100%' }}>
+                <DoorCard door={d} onPress={() => onDoor(d)} onUnlock={() => onUnlock(d)} />
+              </View>
+            )}
+          />
         </View>
       ) : !error ? (
         <EmptyState
@@ -673,7 +738,9 @@ const latchLabel = (door: Door) =>
     ? 'Chưa xác nhận trạng thái chốt'
     : door.latchReleased
       ? 'Thiết bị báo: chốt đang mở'
-      : door.doorClosed === true ? 'Đã khóa: cửa đóng và servo hoàn tất lệnh khóa' : 'Chốt ở góc khóa; cánh cửa chưa đóng';
+      : door.doorClosed === true
+        ? 'Đã khóa: cửa đóng và servo hoàn tất lệnh khóa'
+        : 'Chốt ở góc khóa; cánh cửa chưa đóng';
 const physicalLabel = (door: Door) =>
   door.doorClosed == null
     ? 'Chưa có dữ liệu cảm biến'
@@ -696,25 +763,36 @@ function DoorCard({
         onPress={onPress}
         accessibilityRole="button"
         accessibilityLabel={`Xem ${door.name}`}
-        style={{ gap: 15 }}
+        style={{ gap: 14 }}
       >
         <View style={x.row}>
           <View style={x.doorIcon}>{icon('home-outline')}</View>
-          <View style={{ flex: 1, gap: 5 }}>
+          <View style={{ flex: 1, gap: 3 }}>
             <Text style={x.cardTitle}>{door.name}</Text>
             <Text style={x.caption}>
-              {door.role === 'OWNER' ? 'Chủ cửa' : 'Thành viên được chia sẻ'}
+              {door.role === 'OWNER' ? 'Chủ cửa' : 'Thành viên được chia sẻ'} · {door.members} thành
+              viên
             </Text>
           </View>
-          {icon('chevron-forward-outline', colors.muted)}
-        </View>
-        <View style={x.doorStatus}>
           <Status online={door.connectivity === 'ONLINE'} />
-          <Text style={x.caption}>{door.members} thành viên</Text>
         </View>
         <View style={x.doorMeta}>
-          <Text style={x.sub}>{physicalLabel(door)}</Text>
-          <Text style={x.caption}>{latchLabel(door)}</Text>
+          <View style={x.sensorLine}>
+            <Ionicons
+              name={door.doorClosed ? 'shield-checkmark-outline' : 'alert-circle-outline'}
+              size={17}
+              color={door.doorClosed ? colors.success : colors.warning}
+            />
+            <Text style={[x.sub, { flex: 1, fontSize: 14 }]}>{physicalLabel(door)}</Text>
+          </View>
+          <View style={x.sensorLine}>
+            <Ionicons
+              name={door.latchReleased ? 'lock-open-outline' : 'lock-closed-outline'}
+              size={17}
+              color={door.latchReleased ? colors.warning : colors.primary}
+            />
+            <Text style={[x.caption, { flex: 1 }]}>{latchLabel(door)}</Text>
+          </View>
         </View>
       </Pressable>
       {usable ? (
@@ -761,6 +839,8 @@ function Devices({
     >
       <PageHeader
         title="Thiết bị của tôi"
+        description={`${owned.length} thiết bị thuộc quyền sở hữu`}
+        eyebrow="DANH SÁCH PHẦN CỨNG"
         action={
           <Pressable
             onPress={onAdd}
@@ -811,13 +891,14 @@ function Devices({
             <Card key={d.id}>
               <View style={x.row}>
                 <View style={x.doorIcon}>{icon('hardware-chip-outline')}</View>
-                <View style={{ flex: 1, gap: 5 }}>
+                <View style={{ flex: 1, gap: 4 }}>
                   <Text style={x.cardTitle}>{d.name}</Text>
-                  <Text style={x.caption}>{d.members} thành viên</Text>
+                  <Text style={x.caption}>
+                    {d.members} thành viên · Cập nhật {d.lastUpdate}
+                  </Text>
                 </View>
                 <Status online={d.connectivity === 'ONLINE'} />
               </View>
-              <Text style={x.caption}>Cập nhật: {d.lastUpdate}</Text>
               <Button
                 title="Quản lý thiết bị"
                 variant="ghost"
@@ -862,18 +943,37 @@ function Detail({
   history: () => void;
   settings: () => void;
 }) {
+  const { width } = useWindowDimensions();
   const owner = canManageDoor(door);
+  const gridWidth = width >= 680 ? '48.5%' : '48%';
   return (
     <ScrollView
       keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={x.page}
     >
-      <PageHeader back={back} title={door.name} />
-      {lifecycleNotice(door.lifecycleStatus) ? <Notice tone="warning">{lifecycleNotice(door.lifecycleStatus)}</Notice> : null}
+      <PageHeader
+        back={back}
+        title={door.name}
+        description={owner ? 'Chủ sở hữu · Toàn quyền quản trị' : 'Thành viên được chia sẻ'}
+        eyebrow="ĐIỀU KHIỂN & QUẢN LÝ CỬA"
+      />
+      {lifecycleNotice(door.lifecycleStatus) ? (
+        <Notice tone="warning">{lifecycleNotice(door.lifecycleStatus)}</Notice>
+      ) : null}
+
       <Card style={x.hero}>
         <View style={x.heroHeading}>
-          <View style={x.largeLock}>
+          <View
+            style={[
+              x.largeLock,
+              door.lockState === 'LOCKED'
+                ? { backgroundColor: colors.navy }
+                : door.lockState === 'UNLOCKED'
+                  ? { backgroundColor: colors.warning }
+                  : { backgroundColor: colors.muted },
+            ]}
+          >
             {icon(
               door.lockState === 'LOCKED'
                 ? 'lock-closed-outline'
@@ -883,43 +983,115 @@ function Detail({
               '#fff',
             )}
           </View>
-          <View style={{ gap: 7, flex: 1 }}>
+          <View style={{ gap: 6, flex: 1 }}>
             <Text style={x.cardTitle}>Trạng thái thiết bị</Text>
-            <Status online={door.connectivity === 'ONLINE'} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <Status online={door.connectivity === 'ONLINE'} />
+              <Badge label={`${door.members} thành viên`} tone="primary" />
+            </View>
           </View>
         </View>
         <View style={x.divider} />
         <View style={{ gap: 8 }}>
-          <Text style={x.sub}>{physicalLabel(door)}</Text>
-          <Text style={x.sub}>{latchLabel(door)}</Text>
+          <View style={x.sensorLine}>
+            <Ionicons
+              name={door.doorClosed ? 'shield-checkmark-outline' : 'alert-circle-outline'}
+              size={18}
+              color={door.doorClosed ? colors.success : colors.warning}
+            />
+            <Text style={[x.sub, { flex: 1 }]}>{physicalLabel(door)}</Text>
+          </View>
+          <View style={x.sensorLine}>
+            <Ionicons
+              name={door.latchReleased ? 'lock-open-outline' : 'lock-closed-outline'}
+              size={18}
+              color={door.latchReleased ? colors.warning : colors.primary}
+            />
+            <Text style={[x.sub, { flex: 1 }]}>{latchLabel(door)}</Text>
+          </View>
           <Text style={x.caption}>Tín hiệu gần nhất: {door.lastUpdate}</Text>
         </View>
+        {canRemoteUnlock(door) || canRemoteLock(door) ? (
+          <Button title="Mở / khóa từ xa" icon="lock-closed-outline" onPress={unlock} />
+        ) : (
+          <Notice>
+            {door.connectivity === 'OFFLINE'
+              ? 'Cửa đang ngoại tuyến. Chờ thiết bị kết nối lại để gửi lệnh từ xa.'
+              : 'Tài khoản của bạn chưa được cấp quyền mở cửa từ xa.'}
+          </Notice>
+        )}
       </Card>
-      {canRemoteUnlock(door) || canRemoteLock(door) ? (
-        <Button title="Mở / khóa từ xa" icon="lock-closed-outline" onPress={unlock} />
-      ) : (
-        <Notice>
-          {door.connectivity === 'OFFLINE'
-            ? 'Cửa đang ngoại tuyến. Chờ thiết bị kết nối lại để gửi lệnh từ xa.'
-            : 'Tài khoản của bạn chưa được cấp quyền mở cửa từ xa.'}
-        </Notice>
-      )}
+
       <Text style={x.caption}>
         Phản hồi lệnh chốt không thay thế việc kiểm tra trạng thái cơ khí của cửa.
       </Text>
+
       {owner ? (
         <>
-          <Text style={x.section}>Quản lý cửa</Text>
-          {door.activationState && door.activationState !== 'ACTIVE' ? <Button title="Tiếp tục thiết lập PIN và hiệu chỉnh" icon="construct-outline" onPress={settings} /> : null}
-          <Menu icon="people-outline" label="Thành viên" onPress={members} />
-          <Menu
-            icon="shield-checkmark-outline"
-            label="Duyệt đăng ký khuôn mặt"
-            onPress={approvals}
+          <View style={{ gap: 2 }}>
+            <Text style={x.section}>Quản lý cửa</Text>
+            <Text style={x.caption}>Chạm vào nút biểu tượng để mở trang chức năng tương ứng</Text>
+          </View>
+          {door.activationState && door.activationState !== 'ACTIVE' ? (
+            <Button
+              title="Tiếp tục thiết lập PIN và hiệu chỉnh"
+              icon="construct-outline"
+              onPress={settings}
+            />
+          ) : null}
+
+          <View style={x.featureGrid}>
+            <View style={{ width: gridWidth }}>
+              <FeatureTile
+                icon="people-outline"
+                tone="primary"
+                title="Thành viên"
+                subtitle="Mời người dùng & cấp quyền mở cửa"
+                badge={`${door.members}`}
+                onPress={members}
+              />
+            </View>
+            <View style={{ width: gridWidth }}>
+              <FeatureTile
+                icon="shield-checkmark-outline"
+                tone="teal"
+                title="Duyệt đăng ký khuôn mặt"
+                subtitle="Xem ảnh mẫu & phê duyệt quyền AI"
+                badge="Xem ảnh"
+                onPress={approvals}
+              />
+            </View>
+            <View style={{ width: gridWidth }}>
+              <FeatureTile
+                icon="scan-outline"
+                tone="purple"
+                title="Khuôn mặt & xác thực"
+                subtitle="Hồ sơ sinh trắc học cá nhân của bạn"
+                badge="512-D"
+                onPress={setupFace}
+              />
+            </View>
+            <View style={{ width: gridWidth }}>
+              <FeatureTile
+                icon="time-outline"
+                tone="indigo"
+                title="Lịch sử ra vào"
+                subtitle="Nhật ký đóng mở & nguyên nhân từ chối"
+                badge="Nhật ký"
+                onPress={history}
+              />
+            </View>
+          </View>
+
+          <FeatureTile
+            compact
+            icon="settings-outline"
+            tone="warning"
+            title="Cài đặt thiết bị"
+            subtitle="Thống kê, hẹn giờ, tạm khóa, thẻ/vân tay, servo, PIN, Wi-Fi, camera & reset"
+            badge="9 mục"
+            onPress={settings}
           />
-          <Menu icon="scan-outline" label="Khuôn mặt & xác thực" onPress={setupFace} />
-          <Menu icon="time-outline" label="Lịch sử ra vào" onPress={history} />
-          <Menu icon="settings-outline" label="Cài đặt thiết bị" onPress={settings} />
         </>
       ) : (
         <>
@@ -928,6 +1100,7 @@ function Detail({
               <View style={x.choiceIcon}>{icon('scan-outline')}</View>
               <View style={{ flex: 1 }}>
                 <Text style={x.cardTitle}>Khuôn mặt của bạn</Text>
+                <Text style={x.caption}>Đăng ký mẫu sinh trắc học để mở cửa tự động</Text>
               </View>
             </View>
             <Button
@@ -937,7 +1110,14 @@ function Detail({
               onPress={setupFace}
             />
           </Card>
-          <Menu icon="time-outline" label="Lịch sử cá nhân tại cửa" onPress={history} />
+          <FeatureTile
+            compact
+            icon="time-outline"
+            tone="indigo"
+            title="Lịch sử cá nhân tại cửa"
+            subtitle="Xem các lượt đóng/mở cửa của bạn"
+            onPress={history}
+          />
         </>
       )}
     </ScrollView>
@@ -1003,7 +1183,8 @@ function Members({
       <PageHeader
         back={back}
         title="Thành viên"
-        description={`${people.length} thành viên`}
+        description={`${people.length} thành viên được phân quyền`}
+        eyebrow="PHÂN QUYỀN NGƯỜI DÙNG"
         action={
           <Pressable
             onPress={add}
@@ -1034,50 +1215,48 @@ function Members({
         </>
       ) : null}
       {loading ? <LoadingState label="Đang tải thành viên…" /> : null}
-      {
-        <ItemList
-          items={rows}
-          resetKey={`${unitId}:${query}`}
-          renderItem={(p) => (
-            <Card key={p.id} style={x.member}>
-              <Pressable
-                onPress={() => select(p)}
-                style={[x.row, { flex: 1 }]}
-                accessibilityRole="button"
-                accessibilityLabel={`Quản lý ${p.name}`}
-              >
-                <View style={x.avatar}>
-                  <Text style={x.avatarText}>{p.name.charAt(0)}</Text>
-                </View>
-                <View style={{ flex: 1, gap: 5 }}>
-                  <Text style={x.cardTitle}>{p.name}</Text>
-                  <Text style={x.caption}>
-                    {p.room ? `Phòng ${p.room} · ` : ''}
-                    {p.hasAccount ? 'Đã sử dụng ứng dụng' : 'Chưa đăng nhập ứng dụng'}
-                  </Text>
-                  <Text style={x.caption}>
-                    {p.methods.length ? p.methods.join(' · ') : 'Chưa có phương thức được cấp'}
-                  </Text>
-                  <Badge
-                    label={p.access === 'ACTIVE' ? 'Đang cho phép' : 'Đang tạm khóa'}
-                    tone={p.access === 'ACTIVE' ? 'success' : 'warning'}
-                  />
-                </View>
-              </Pressable>
-              <Switch
-                accessibilityLabel={`Quyền ra vào của ${p.name}`}
-                disabled={busy !== null}
-                value={p.access === 'ACTIVE'}
-                onValueChange={() => {
-                  void toggle(p);
-                }}
-                trackColor={{ true: colors.primary, false: colors.border }}
-                thumbColor="#fff"
-              />
-            </Card>
-          )}
-        />
-      }
+      <ItemList
+        items={rows}
+        resetKey={`${unitId}:${query}`}
+        renderItem={(p) => (
+          <Card key={p.id} style={x.member}>
+            <Pressable
+              onPress={() => select(p)}
+              style={[x.row, { flex: 1 }]}
+              accessibilityRole="button"
+              accessibilityLabel={`Quản lý ${p.name}`}
+            >
+              <View style={x.avatar}>
+                <Text style={x.avatarText}>{p.name.charAt(0).toUpperCase()}</Text>
+              </View>
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={x.cardTitle}>{p.name}</Text>
+                <Text style={x.caption}>
+                  {p.room ? `Phòng ${p.room} · ` : ''}
+                  {p.hasAccount ? 'Đã sử dụng ứng dụng' : 'Chưa đăng nhập ứng dụng'}
+                </Text>
+                <Text style={x.caption}>
+                  {p.methods.length ? p.methods.join(' · ') : 'Chưa có phương thức được cấp'}
+                </Text>
+                <Badge
+                  label={p.access === 'ACTIVE' ? 'Đang cho phép' : 'Đang tạm khóa'}
+                  tone={p.access === 'ACTIVE' ? 'success' : 'warning'}
+                />
+              </View>
+            </Pressable>
+            <Switch
+              accessibilityLabel={`Quyền ra vào của ${p.name}`}
+              disabled={busy !== null}
+              value={p.access === 'ACTIVE'}
+              onValueChange={() => {
+                void toggle(p);
+              }}
+              trackColor={{ true: colors.primary, false: colors.borderStrong }}
+              thumbColor="#fff"
+            />
+          </Card>
+        )}
+      />
       {!loading && !loadError && !rows.length ? (
         <EmptyState
           icon="people-outline"
@@ -1108,7 +1287,11 @@ function AddMemberChoice({
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={x.page}
     >
-      <PageHeader back={back} title="Thêm thành viên" />
+      <PageHeader
+        back={back}
+        title="Thêm thành viên"
+        description="Chọn hình thức thêm người dùng vào cửa"
+      />
       <Pressable
         onPress={chooseApp}
         accessibilityRole="button"
@@ -1116,8 +1299,9 @@ function AddMemberChoice({
       >
         <Card style={x.choice}>
           <View style={x.choiceIcon}>{icon('phone-portrait-outline')}</View>
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, gap: 2 }}>
             <Text style={x.cardTitle}>Đã có ứng dụng Smart Door</Text>
+            <Text style={x.sub}>Gửi lời mời qua email tài khoản đã đăng ký</Text>
           </View>
           {icon('chevron-forward-outline', colors.muted)}
         </Card>
@@ -1129,7 +1313,7 @@ function AddMemberChoice({
       >
         <Card style={x.choice}>
           <View style={x.choiceIcon}>{icon('person-outline')}</View>
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, gap: 2 }}>
             <Text style={x.cardTitle}>Chưa có ứng dụng</Text>
             <Text style={x.sub}>Chỉ dùng vân tay hoặc thẻ tại cửa</Text>
           </View>
@@ -1195,54 +1379,58 @@ function ExistingAppMember({
     >
       <PageHeader back={back} title="Mời vào cửa" />
       {feedback ? <Notice tone={sent ? 'success' : 'error'}>{feedback}</Notice> : null}
-      <Input
-        label="Email tài khoản"
-        value={email}
-        onChangeText={(value) => {
-          setEmail(value);
-          setFound(null);
-          setSent(false);
-          setFeedback('');
-        }}
-        placeholder="email@example.com"
-        keyboardType="email-address"
-      />
-      {!found ? (
+      <Card>
+        <Input
+          label="Email tài khoản"
+          value={email}
+          onChangeText={(value) => {
+            setEmail(value);
+            setFound(null);
+            setSent(false);
+            setFeedback('');
+          }}
+          placeholder="email@example.com"
+          keyboardType="email-address"
+        />
+        {!found ? (
+          <Button
+            title={busy ? 'Đang tìm...' : 'Tìm tài khoản'}
+            variant="ghost"
+            icon="search-outline"
+            disabled={busy}
+            onPress={() => {
+              void lookup();
+            }}
+          />
+        ) : (
+          <Card style={x.accountFound}>
+            <View style={x.avatar}>
+              <Text style={x.avatarText}>{found.displayName.charAt(0).toUpperCase()}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={x.cardTitle}>{found.displayName}</Text>
+              <Text style={x.sub}>{found.email ?? `Mã tài khoản ${found.id}`}</Text>
+              <Text
+                style={[
+                  x.caption,
+                  { color: found.status === 'ACTIVE' ? colors.success : colors.error },
+                ]}
+              >
+                {found.status === 'ACTIVE' ? 'Tài khoản đang hoạt động' : 'Tài khoản đã bị khóa'}
+              </Text>
+            </View>
+            {icon('checkmark-circle', colors.success)}
+          </Card>
+        )}
         <Button
-          title={busy ? 'Đang tìm...' : 'Tìm tài khoản'}
-          variant="ghost"
-          disabled={busy}
+          title={busy && found ? 'Đang thêm...' : 'Gửi lời mời'}
+          icon="paper-plane-outline"
+          disabled={!found || found.status !== 'ACTIVE' || busy || sent}
           onPress={() => {
-            void lookup();
+            void submit();
           }}
         />
-      ) : (
-        <Card style={x.accountFound}>
-          <View style={x.avatar}>
-            <Text style={x.avatarText}>{found.displayName.charAt(0).toUpperCase()}</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={x.cardTitle}>{found.displayName}</Text>
-            <Text style={x.sub}>{found.email ?? `Mã tài khoản ${found.id}`}</Text>
-            <Text
-              style={[
-                x.caption,
-                { color: found.status === 'ACTIVE' ? colors.success : colors.error },
-              ]}
-            >
-              {found.status === 'ACTIVE' ? 'Tài khoản đang hoạt động' : 'Tài khoản đã bị khóa'}
-            </Text>
-          </View>
-          {icon('checkmark-circle', colors.success)}
-        </Card>
-      )}
-      <Button
-        title={busy && found ? 'Đang thêm...' : 'Gửi lời mời'}
-        disabled={!found || found.status !== 'ACTIVE' || busy || sent}
-        onPress={() => {
-          void submit();
-        }}
-      />
+      </Card>
       {sent ? (
         <Button
           title="Về danh sách thành viên"
@@ -1267,6 +1455,7 @@ function MemberDetail({
   back: () => void;
 }) {
   const [feedback, setFeedback] = useState<{ text: string; success: boolean; pending?: boolean }>();
+  const [activeTab, setActiveTab] = useState<'permissions' | 'face' | 'enroll'>('permissions');
   const userId = /^[1-9]\d*$/.test(person.id) ? Number(person.id) : null;
   const [removing, setRemoving] = useState(false);
   const confirmAction = useConfirm();
@@ -1311,10 +1500,17 @@ function MemberDetail({
       const result = await managerService.waitForCommand(command);
       await refresh();
       if (result.status === 'ACKNOWLEDGED') back();
-      else setFeedback({ text: 'Đã thu hồi quyền. Đang chờ ESP32 xóa thẻ và mẫu vân tay; giữ cửa online để hệ thống tự gửi lại lệnh.', success: false, pending: true });
+      else
+        setFeedback({
+          text: 'Đã thu hồi quyền. Đang chờ ESP32 xóa thẻ và mẫu vân tay; giữ cửa online để hệ thống tự gửi lại lệnh.',
+          success: false,
+          pending: true,
+        });
     } catch (e) {
       setFeedback({ text: errorText(e, 'Không xóa được thành viên.'), success: false });
-    } finally { setRemoving(false); }
+    } finally {
+      setRemoving(false);
+    }
   };
   return (
     <ScrollView
@@ -1322,26 +1518,42 @@ function MemberDetail({
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={x.page}
     >
-      <PageHeader back={back} title="Chi tiết thành viên" />
+      <PageHeader
+        back={back}
+        title="Chi tiết thành viên"
+        description={person.name}
+        eyebrow="HỒ SƠ & PHƯƠNG THỨC"
+      />
       {feedback ? (
-        <Notice tone={feedback.pending ? 'info' : feedback.success ? 'success' : 'error'}>{feedback.text}</Notice>
+        <Notice tone={feedback.pending ? 'info' : feedback.success ? 'success' : 'error'}>
+          {feedback.text}
+        </Notice>
       ) : null}
       <Card style={x.profile}>
         <View style={x.profileAvatar}>
-          <Text style={x.profileInitial}>{person.name.charAt(0)}</Text>
+          <Text style={x.profileInitial}>{person.name.charAt(0).toUpperCase()}</Text>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={x.cardTitle}>{person.name}</Text>
-          <Text style={x.sub}>
+        <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+          <Text style={x.cardTitle} numberOfLines={1}>
+            {person.name}
+          </Text>
+          <Text style={x.sub} numberOfLines={1}>
             {memberContactLabel(person)}
           </Text>
           {person.room ? <Text style={x.caption}>Phòng {person.room}</Text> : null}
+          <View style={{ alignSelf: 'flex-start', marginTop: 2 }}>
+            <Badge
+              label={accessActive ? 'Đang hoạt động' : 'Tạm khóa'}
+              tone={accessActive ? 'success' : 'warning'}
+            />
+          </View>
         </View>
       </Card>
-      <Card style={{ gap: 12 }}>
+      <Card style={{ gap: 10 }}>
         <View style={x.row}>
           <View style={{ flex: 1 }}>
             <Text style={x.cardTitle}>Cho phép ra vào</Text>
+            <Text style={x.caption}>Bật hoặc tạm khóa toàn bộ quyền tại cửa này</Text>
           </View>
           <Switch
             value={accessActive}
@@ -1350,16 +1562,41 @@ function MemberDetail({
             }}
             disabled={removing || person.removalPending}
             accessibilityLabel="Cho phép ra vào cửa"
-            trackColor={{ true: colors.primary, false: colors.border }}
+            trackColor={{ true: colors.primary, false: colors.borderStrong }}
             thumbColor="#fff"
           />
         </View>
-        <Text style={x.caption}>
-          Quyền được lưu trên hệ thống. Thiết bị cần nhận đồng bộ để áp dụng khi hoạt động cục bộ.
-        </Text>
       </Card>
-      <Text style={x.section}>Xác thực</Text>
-      {unitId && userId ? (
+
+      <View style={x.segmentedBar}>
+        {(
+          [
+            ['permissions', 'Quyền & Thẻ', 'key-outline'],
+            ['face', 'Khuôn mặt AI', 'scan-outline'],
+            ['enroll', 'Thêm thẻ/vân tay', 'add-circle-outline'],
+          ] as const
+        ).map(([key, label, tabIcon]) => {
+          const selected = activeTab === key;
+          return (
+            <Pressable
+              key={key}
+              onPress={() => setActiveTab(key)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected }}
+              style={[x.segmentBtn, selected && x.segmentBtnActive]}
+            >
+              <Ionicons
+                name={tabIcon}
+                size={16}
+                color={selected ? '#fff' : colors.muted}
+              />
+              <Text style={selected ? x.segmentTextActive : x.segmentText}>{label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {activeTab === 'permissions' && unitId && userId ? (
         <MemberPermissions
           unitId={unitId}
           userId={userId}
@@ -1368,7 +1605,7 @@ function MemberDetail({
           disabled={removing || person.removalPending}
         />
       ) : null}
-      {unitId && userId && !person.removalPending ? (
+      {activeTab === 'face' && unitId && userId && !person.removalPending ? (
         <MemberFacePanel
           key={`${unitId}-${userId}`}
           unitId={unitId}
@@ -1378,10 +1615,29 @@ function MemberDetail({
           onChanged={refresh}
         />
       ) : null}
-      {unitId && userId && !person.removalPending ? <CredentialEnrollment unitId={unitId} userId={userId} changed={refresh} disabled={removing} /> : null}
-      {person.removalPending ? <Notice tone="info">Đã thu hồi quyền. Chờ cửa online và xác nhận xóa thẻ/vân tay để hoàn tất xóa thành viên.</Notice> : null}
+      {activeTab === 'enroll' && unitId && userId && !person.removalPending ? (
+        <CredentialEnrollment
+          unitId={unitId}
+          userId={userId}
+          changed={refresh}
+          disabled={removing}
+        />
+      ) : null}
+
+      {person.removalPending ? (
+        <Notice tone="info">
+          Đã thu hồi quyền. Chờ cửa online và xác nhận xóa thẻ/vân tay để hoàn tất xóa thành viên.
+        </Notice>
+      ) : null}
       <Button
-        title={removing ? "Đang chờ cửa xác nhận xóa…" : person.removalPending ? "Kiểm tra hoàn tất xóa" : "Xóa thành viên"}
+        title={
+          removing
+            ? 'Đang chờ cửa xác nhận xóa…'
+            : person.removalPending
+              ? 'Kiểm tra hoàn tất xóa'
+              : 'Xóa thành viên'
+        }
+        icon="trash-outline"
         disabled={removing}
         variant="danger"
         onPress={() => {
@@ -1410,7 +1666,11 @@ function Profile({
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={x.page}
     >
-      <PageHeader title="Cá nhân" />
+      <PageHeader
+        title="Cá nhân"
+        description="Quản lý thông tin tài khoản và bảo mật sinh trắc học"
+        eyebrow="TÀI KHOẢN CỦA TÔI"
+      />
       <Card style={x.profile}>
         <View style={x.profileAvatar}>
           <Text style={x.profileInitial}>
@@ -1418,16 +1678,45 @@ function Profile({
           </Text>
         </View>
         <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-          <Text style={x.profileName}>{account.fullName}</Text>
+          <Text style={x.profileName} numberOfLines={1}>
+            {account.fullName}
+          </Text>
           {account.email || account.phone ? (
-            <Text style={x.sub}>{account.email || account.phone}</Text>
+            <Text style={x.sub} numberOfLines={1}>
+              {account.email || account.phone}
+            </Text>
           ) : null}
+          <View style={{ alignSelf: 'flex-start', marginTop: 2 }}>
+            <Badge label="Đang hoạt động" tone="success" />
+          </View>
         </View>
       </Card>
       <Text style={x.section}>Hồ sơ & bảo mật</Text>
-      <Menu icon="person-outline" label="Thông tin cá nhân" onPress={edit} />
-      <Menu icon="key-outline" label="Đổi mật khẩu" onPress={password} />
-      <Menu icon="scan-outline" label="Phương thức xác thực của tôi" onPress={verify} />
+      <FeatureTile
+        compact
+        icon="person-outline"
+        tone="primary"
+        title="Thông tin cá nhân"
+        subtitle="Cập nhật họ tên, email và số điện thoại liên hệ"
+        onPress={edit}
+      />
+      <FeatureTile
+        compact
+        icon="key-outline"
+        tone="warning"
+        title="Đổi mật khẩu"
+        subtitle="Thay đổi mật khẩu đăng nhập và làm mới phiên bảo mật"
+        onPress={password}
+      />
+      <FeatureTile
+        compact
+        icon="scan-outline"
+        tone="purple"
+        title="Phương thức xác thực của tôi"
+        subtitle="Quản lý mẫu khuôn mặt AI dùng chung cho các cửa"
+        badge="AI"
+        onPress={verify}
+      />
       <SignOutButton logout={logout} />
     </ScrollView>
   );
@@ -1446,18 +1735,29 @@ function PinModal({ door, close }: { door: Door | null; close: () => void }) {
   }, [door]);
   const unitId = backendUnitId(door);
   const send = async (nextAction: 'OPEN' | 'LOCK') => {
-    if (!unitId || !door || !(nextAction === 'LOCK' ? canRemoteLock(door) : canRemoteUnlock(door))) {
+    if (
+      !unitId ||
+      !door ||
+      !(nextAction === 'LOCK' ? canRemoteLock(door) : canRemoteUnlock(door))
+    ) {
       setError('Bạn chưa có quyền hoặc thiết bị không sẵn sàng.');
       setState('FAILED');
       return;
     }
     setState('VERIFYING');
-    setAction(nextAction); setWaitingForDoor(false);
+    setAction(nextAction);
+    setWaitingForDoor(false);
     setError('');
     try {
-      const result = await managerService.waitForCommand(await (nextAction === 'LOCK' ? managerService.remoteLock(unitId) : managerService.remoteUnlock(unitId)));
-      if (result.status === 'ACKNOWLEDGED') { setWaitingForDoor(result.resultMessage === 'LOCK_WAITING_FOR_DOOR'); setState('SUCCESS'); }
-      else {
+      const result = await managerService.waitForCommand(
+        await (nextAction === 'LOCK'
+          ? managerService.remoteLock(unitId)
+          : managerService.remoteUnlock(unitId)),
+      );
+      if (result.status === 'ACKNOWLEDGED') {
+        setWaitingForDoor(result.resultMessage === 'LOCK_WAITING_FOR_DOOR');
+        setState('SUCCESS');
+      } else {
         setError(commandMessage(result, ''));
         setState('FAILED');
       }
@@ -1468,7 +1768,11 @@ function PinModal({ door, close }: { door: Door | null; close: () => void }) {
   };
   const message =
     state === 'SUCCESS'
-      ? action === 'LOCK' ? waitingForDoor ? 'Đã nhận yêu cầu khóa. Đóng cánh cửa; thiết bị sẽ tự khóa khi cảm biến xác nhận cửa đóng ổn định.' : 'Thiết bị đã nhận lệnh khóa. Theo dõi trạng thái chốt và cánh cửa để xác nhận đã khóa.' : 'Thiết bị đã xác nhận lệnh nhả chốt. Servo sẽ tự trở về góc khóa theo thời gian và chế độ đã cài đặt.'
+      ? action === 'LOCK'
+        ? waitingForDoor
+          ? 'Đã nhận yêu cầu khóa. Đóng cánh cửa; thiết bị sẽ tự khóa khi cảm biến xác nhận cửa đóng ổn định.'
+          : 'Thiết bị đã nhận lệnh khóa. Theo dõi trạng thái chốt và cánh cửa để xác nhận đã khóa.'
+        : 'Thiết bị đã xác nhận lệnh nhả chốt. Servo sẽ tự trở về góc khóa theo thời gian và chế độ đã cài đặt.'
       : state === 'VERIFYING'
         ? 'Đang chờ thiết bị xác nhận...'
         : state === 'FAILED'
@@ -1505,57 +1809,70 @@ function PinModal({ door, close }: { door: Door | null; close: () => void }) {
       {state === 'SUCCESS' ? (
         <Button title="Đóng" onPress={close} />
       ) : (
-        <View style={{ gap: 12 }}><Button
-          title={state === 'VERIFYING' ? 'Đang xác nhận...' : 'Mở cửa'}
-          onPress={() => {
-            void send('OPEN');
-          }}
-          loading={state === 'VERIFYING'}
-          disabled={state === 'VERIFYING' || !door || !canRemoteUnlock(door)}
-        /><Button title={state === 'VERIFYING' && action === 'LOCK' ? 'Đang gửi lệnh khóa…' : 'Khóa cửa'} icon="lock-closed-outline" variant="ghost"
-          disabled={state === 'VERIFYING' || !door || !canRemoteLock(door)} onPress={() => { void send('LOCK'); }} /></View>
+        <View style={{ gap: 12 }}>
+          <Button
+            title={state === 'VERIFYING' ? 'Đang xác nhận...' : 'Mở cửa'}
+            icon="lock-open-outline"
+            onPress={() => {
+              void send('OPEN');
+            }}
+            loading={state === 'VERIFYING'}
+            disabled={state === 'VERIFYING' || !door || !canRemoteUnlock(door)}
+          />
+          <Button
+            title={state === 'VERIFYING' && action === 'LOCK' ? 'Đang gửi lệnh khóa…' : 'Khóa cửa'}
+            icon="lock-closed-outline"
+            variant="ghost"
+            disabled={state === 'VERIFYING' || !door || !canRemoteLock(door)}
+            onPress={() => {
+              void send('LOCK');
+            }}
+          />
+        </View>
       )}
     </AppModal>
   );
 }
-function Menu({
-  icon: i,
-  label,
-  onPress,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>
-      <Card style={x.menu}>
-        {icon(i)}
-        <Text style={[x.cardTitle, { flex: 1 }]}>{label}</Text>
-        {icon('chevron-forward-outline', colors.muted)}
-      </Card>
-    </Pressable>
-  );
-}
 const x = StyleSheet.create({
-  page: { padding: 20, gap: 20, paddingBottom: 150 },
+  page: { padding: 20, gap: 18, paddingBottom: 150 },
   splash: {
     flex: 1,
     backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  authLayout: { flex: 1, backgroundColor: colors.surface },
-  auth: { padding: 24, paddingVertical: 40, flexGrow: 1, justifyContent: 'center' },
-  authInner: { width: '100%', maxWidth: 440, alignSelf: 'center', gap: 20 },
-  authBrandRow: { alignItems: 'center', marginBottom: 4 },
+  authLayout: { flex: 1, backgroundColor: colors.background },
+  auth: { padding: 20, paddingVertical: 36, flexGrow: 1, justifyContent: 'center' },
+  authInner: { width: '100%', maxWidth: 440, alignSelf: 'center', gap: 18 },
+  authHero: { alignItems: 'center', gap: 10, marginBottom: 4 },
+  authSecurityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primarySoft,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+  },
+  authSecurityText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  authCard: {
+    borderRadius: 28,
+    padding: 24,
+    gap: 16,
+  },
   authTitle: {
     color: colors.text,
-    fontSize: 28,
-    lineHeight: 42,
-    fontWeight: '700',
+    fontSize: 26,
+    lineHeight: 34,
+    fontWeight: '800',
     textAlign: 'center',
-    marginBottom: 12,
+    letterSpacing: -0.5,
   },
   authSwitch: {
     flexDirection: 'row',
@@ -1567,140 +1884,238 @@ const x = StyleSheet.create({
   eyebrow: { color: colors.success, fontSize: 14, letterSpacing: 1.5, fontWeight: '700' },
   sub: { color: colors.muted, fontSize: 15, lineHeight: 21 },
   label: { color: colors.text, fontSize: 15, fontWeight: '600' },
-  link: { color: colors.primary, textAlign: 'center', fontSize: 15, fontWeight: '700' },
+  link: { color: colors.primary, textAlign: 'center', fontSize: 14, fontWeight: '800' },
   eye: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   iconButton: {
-    width: 45,
-    height: 45,
-    borderRadius: 13,
+    width: 46,
+    height: 46,
+    borderRadius: 16,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
-  summary: { backgroundColor: colors.surface, gap: 20 },
+  bellDot: {
+    position: 'absolute',
+    top: 11,
+    right: 11,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.error,
+    borderWidth: 1.5,
+    borderColor: '#fff',
+  },
+  heroSummaryCard: {
+    backgroundColor: colors.navy,
+    borderRadius: radius.hero,
+    padding: 22,
+    gap: 18,
+    shadowColor: colors.navy,
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 10,
+  },
+  heroBadgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  heroPulseDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#34D399',
+  },
+  heroBadgeText: {
+    color: '#E2E8F0',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  heroAddChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primary,
+  },
+  heroAddChipText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   summaryStats: {
     flexDirection: 'row',
-    gap: 24,
+    gap: 18,
     alignItems: 'center',
     justifyContent: 'space-around',
   },
-  big: { color: colors.navy, fontSize: 32, fontWeight: '700', letterSpacing: -0.8 },
-  summaryCaption: { color: colors.muted, fontSize: 16, lineHeight: 24 },
-  statDivider: { height: 48, width: 1, backgroundColor: colors.border },
+  heroStatBox: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  big: { color: '#FFFFFF', fontSize: 34, fontWeight: '800', letterSpacing: -0.8 },
+  summaryCaption: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
+  statDivider: { height: 44, width: 1, backgroundColor: 'rgba(255,255,255,0.16)' },
+  softAddPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primarySoft,
+  },
   section: {
     color: colors.text,
     fontSize: 19,
-    fontWeight: '700',
+    fontWeight: '800',
     letterSpacing: -0.3,
-    marginTop: 5,
+    marginTop: 4,
   },
   doorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
-  door: { gap: 16 },
+  door: { gap: 14, borderRadius: radius.card },
   doorIcon: {
-    width: 44,
+    width: 48,
     height: 48,
-    borderRadius: 13,
+    borderRadius: 16,
     backgroundColor: colors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  doorStatus: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 10,
-    alignItems: 'center',
-  },
   doorMeta: {
-    gap: 5,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
+    gap: 8,
+    padding: 13,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
     borderColor: colors.border,
   },
+  sensorLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   disabledMessage: { flexDirection: 'row', gap: 9, alignItems: 'center', paddingVertical: 4 },
-  cardTitle: { color: colors.text, fontSize: 18, fontWeight: '700', lineHeight: 26 },
-  hero: { gap: 18 },
-  heroHeading: { flexDirection: 'row', gap: 16, alignItems: 'center' },
+  cardTitle: { color: colors.text, fontSize: 17, fontWeight: '800', lineHeight: 24 },
+  hero: { gap: 16, borderRadius: radius.hero },
+  heroHeading: { flexDirection: 'row', gap: 15, alignItems: 'center' },
   largeLock: {
-    width: 62,
-    height: 68,
-    borderRadius: 18,
+    width: 60,
+    height: 60,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.navy,
   },
   divider: { height: 1, backgroundColor: colors.border },
   faceRequired: { backgroundColor: colors.primarySoft, gap: 15 },
-  menu: {
-    borderRadius: 13,
-    paddingVertical: 17,
+  featureGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 13,
+    flexWrap: 'wrap',
+    gap: 12,
+    justifyContent: 'space-between',
   },
-  choice: { flexDirection: 'row', alignItems: 'center', gap: 13 },
+  choice: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   choiceIcon: {
-    width: 47,
-    height: 51,
-    borderRadius: 14,
+    width: 48,
+    height: 48,
+    borderRadius: 16,
     backgroundColor: colors.primarySoft,
     justifyContent: 'center',
     alignItems: 'center',
   },
   accountFound: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  back: {
-    width: 44,
-    height: 44,
-    backgroundColor: colors.surface,
-    borderRadius: 13,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  member: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16 },
+  member: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 },
   avatar: {
-    width: 43,
-    height: 43,
-    borderRadius: 14,
+    width: 46,
+    height: 46,
+    borderRadius: 16,
     backgroundColor: colors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { color: colors.primary, fontWeight: '800' },
-  caption: { fontSize: 14, color: colors.muted, lineHeight: 21 },
+  avatarText: { color: colors.primary, fontWeight: '800', fontSize: 17 },
+  caption: { fontSize: 13, color: colors.muted, lineHeight: 19 },
   filters: { flexDirection: 'row', gap: 9, flexWrap: 'wrap' },
   filterChip: {
-    minHeight: 48,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
+    minHeight: 42,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: radius.pill,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
+    justifyContent: 'center',
   },
-  filterSelected: { backgroundColor: colors.primarySoft, borderColor: '#CBDEFF' },
-  filterActiveText: { color: colors.primary, fontSize: 14, fontWeight: '700', lineHeight: 21 },
-  profile: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  filterSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
+  filterActiveText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  profile: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   profileAvatar: {
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: 20,
     flexShrink: 0,
     backgroundColor: colors.navy,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  profileName: { color: colors.text, fontSize: 20, lineHeight: 28, fontWeight: '700' },
-  profileInitial: { color: '#fff', fontSize: 22, lineHeight: 28, fontWeight: '700' },
+  profileName: { color: colors.text, fontSize: 19, lineHeight: 26, fontWeight: '800' },
+  profileInitial: { color: '#fff', fontSize: 22, lineHeight: 28, fontWeight: '800' },
+  segmentedBar: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    padding: 5,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 4,
+  },
+  segmentBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 15,
+  },
+  segmentBtnActive: {
+    backgroundColor: colors.primary,
+  },
+  segmentText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.muted,
+  },
+  segmentTextActive: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#fff',
+  },
   unlockSymbol: {
     alignSelf: 'center',
-    width: 70,
-    height: 70,
-    borderRadius: 22,
+    width: 72,
+    height: 72,
+    borderRadius: 24,
     backgroundColor: colors.primarySoft,
     justifyContent: 'center',
     alignItems: 'center',

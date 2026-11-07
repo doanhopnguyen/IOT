@@ -18,7 +18,7 @@ export function BarChart({ data, colors: series, height = 120, max, legend }: {
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', height, gap: 2 }}>
           {group.values.map((value, i) => {
             const h = heights[index++];
-            return <View key={i} style={{ width: 8, height: Math.max(h, value > 0 ? 2 : 0), backgroundColor: series[i % series.length], borderRadius: 2 }} />;
+            return <View key={i} style={{ width: 9, height: Math.max(h, value > 0 ? 4 : 0), backgroundColor: series[i % series.length], borderRadius: 999 }} />;
           })}
         </View>
         <Text style={{ fontSize: 10, color: colors.text }}>{group.label}</Text>

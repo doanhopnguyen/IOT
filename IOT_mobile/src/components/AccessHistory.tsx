@@ -101,20 +101,21 @@ export function AccessHistory({ doorId, back }: { doorId?: string; back: () => v
               setDays(d);
             }}
             style={{
-              paddingHorizontal: 16,
-              paddingVertical: 12,
-              minHeight: 44,
-              borderRadius: 11,
-              backgroundColor: days === d ? colors.primarySoft : colors.surface,
+              paddingHorizontal: 18,
+              paddingVertical: 10,
+              minHeight: 42,
+              borderRadius: 999,
+              backgroundColor: days === d ? colors.primary : colors.surface,
               borderWidth: 1,
-              borderColor: days === d ? '#CBDEFF' : colors.border,
+              borderColor: days === d ? colors.primary : colors.border,
+              justifyContent: 'center',
             }}
           >
             <Text
               style={{
-                color: days === d ? colors.primary : colors.muted,
-                fontSize: 15,
-                fontWeight: '600',
+                color: days === d ? '#fff' : colors.muted,
+                fontSize: 14,
+                fontWeight: '700',
               }}
             >
               {d === 1 ? 'Hôm nay' : `${d} ngày`}

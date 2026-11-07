@@ -74,7 +74,10 @@ public class FaceEnrollmentService {
         request.setAccount(target); request.setAccessUnit(unit);
         request.setRequestType(active(targetId).isPresent() ? FaceRequestType.REENROLL : FaceRequestType.ENROLL);
         requests.saveAndFlush(request);
-        audit(actor, "REQUEST_FACE_ENROLLMENT", request.getRequestId(), Map.of("accountId", targetId, "unitId", unit.getUnitId(), "consent", true, "credentialId", sample.getCredentialId()));
+        Map<String, Object> auditDetails = new HashMap<>(Map.of("accountId", targetId, "unitId", unit.getUnitId(), "consent", true, "credentialId", sample.getCredentialId()));
+        String preview = accountPreviewImage(targetId);
+        if (preview != null) auditDetails.put("previewImage", preview);
+        audit(actor, "REQUEST_FACE_ENROLLMENT", request.getRequestId(), auditDetails);
         return dto(request);
     }
 
@@ -157,6 +160,15 @@ public class FaceEnrollmentService {
         for(FaceRequest r:requests.findByAccount_AccountIdAndStatusIn(actor.getAccountId(),List.of(FaceRequestStatus.PENDING,FaceRequestStatus.APPROVED)))r.setStatus(FaceRequestStatus.REJECTED);
         Credential c=new Credential();c.setAccount(actor);c.setCredentialType(CredentialType.FACE);c.setEmbeddingModel(FaceEmbedding.MODEL);
         c.setFaceEmbedding(vector);c.setStatus(CredentialStatus.ACTIVE);credentials.saveAndFlush(c);
+        if (input.previewImage() != null && !input.previewImage().isBlank()) {
+            AuditLog profileAudit = new AuditLog();
+            profileAudit.setActor(actor);
+            profileAudit.setAction("REGISTER_FACE_PROFILE");
+            profileAudit.setEntityType("ACCOUNT");
+            profileAudit.setEntityId(actor.getAccountId());
+            profileAudit.setDetails(Map.of("credentialId", c.getCredentialId(), "previewImage", input.previewImage()));
+            audits.save(profileAudit);
+        }
         return profileOf(actor.getAccountId());
     }
 
@@ -178,8 +190,9 @@ public class FaceEnrollmentService {
     }
 
     public Profile profileOf(Long accountId) {
-        return active(accountId).map(c -> new Profile(true, c.getCredentialId(), c.getEmbeddingModel()))
-                .orElse(new Profile(false, null, null));
+        String preview = accountPreviewImage(accountId);
+        return active(accountId).map(c -> new Profile(true, c.getCredentialId(), c.getEmbeddingModel(), preview))
+                .orElse(new Profile(false, null, null, null));
     }
 
     @Transactional
@@ -265,9 +278,36 @@ public class FaceEnrollmentService {
     }
 
     private RequestView dto(FaceRequest request) {
+        String preview = requestPreviewImage(request);
+        String email = request.getAccount().getEmail();
+        if (email != null && email.endsWith("@noapp.local")) email = null;
+        if (email == null) email = request.getAccount().getPhone();
+        String reqType = request.getRequestType() != null ? request.getRequestType().name() : null;
         return new RequestView(request.getRequestId(), request.getAccount().getAccountId(), request.getAccount().getFullName(),
                 request.getAccessUnit().getUnitId(), request.getAccessUnit().getUnitName(), request.getStatus().name(),
-                request.getRequestedAt());
+                request.getRequestedAt(), preview, email, reqType);
+    }
+
+    private String requestPreviewImage(FaceRequest request) {
+        if (request.getRequestId() != null) {
+            Optional<String> fromReq = audits.findFirstByActionAndEntityTypeAndEntityIdOrderByAuditLogIdDesc(
+                    "REQUEST_FACE_ENROLLMENT", "FACE_REQUEST", request.getRequestId())
+                    .map(log -> log.getDetails() != null ? log.getDetails().get("previewImage") : null)
+                    .filter(String.class::isInstance).map(String.class::cast)
+                    .filter(s -> !s.isBlank());
+            if (fromReq.isPresent()) return fromReq.get();
+        }
+        return request.getAccount() != null ? accountPreviewImage(request.getAccount().getAccountId()) : null;
+    }
+
+    private String accountPreviewImage(Long accountId) {
+        if (accountId == null) return null;
+        return audits.findFirstByActionAndEntityTypeAndEntityIdOrderByAuditLogIdDesc(
+                "REGISTER_FACE_PROFILE", "ACCOUNT", accountId)
+                .map(log -> log.getDetails() != null ? log.getDetails().get("previewImage") : null)
+                .filter(String.class::isInstance).map(String.class::cast)
+                .filter(s -> !s.isBlank())
+                .orElse(null);
     }
 
     private void audit(Account actor, String action, Long id, Map<String, Object> details) {

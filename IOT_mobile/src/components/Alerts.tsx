@@ -142,20 +142,21 @@ export function Alerts({ back }: { back: () => void }) {
             accessibilityRole="button"
             accessibilityState={{ selected: severity === value }}
             style={{
-              paddingHorizontal: 13,
-              paddingVertical: 11,
-              minHeight: 44,
-              borderRadius: 10,
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              minHeight: 42,
+              borderRadius: 999,
               borderWidth: 1,
-              borderColor: severity === value ? '#CBDEFF' : colors.border,
-              backgroundColor: severity === value ? colors.primarySoft : colors.surface,
+              borderColor: severity === value ? colors.primary : colors.border,
+              backgroundColor: severity === value ? colors.primary : colors.surface,
+              justifyContent: 'center',
             }}
           >
             <Text
               style={{
-                fontSize: 14,
-                fontWeight: '600',
-                color: severity === value ? colors.primary : colors.muted,
+                fontSize: 13,
+                fontWeight: '700',
+                color: severity === value ? '#fff' : colors.muted,
               }}
             >
               {value ? labels[value] : 'Tất cả'}

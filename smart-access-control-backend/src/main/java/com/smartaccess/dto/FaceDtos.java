@@ -8,12 +8,27 @@ public final class FaceDtos {
     private FaceDtos() { }
     public record CreateRequest(@NotNull @Positive Long unitId, @Positive Long accountId, @AssertTrue boolean consent,
                                 String model, @Size(min = 512, max = 512) List<@NotNull Float> embedding) { }
-    public record ProfileInput(@AssertTrue boolean consent,@NotBlank String model,
-                               @NotNull @Size(min=512,max=512) List<@NotNull Float> embedding) {}
+    public record ProfileInput(@AssertTrue boolean consent, @NotBlank String model,
+                               @NotNull @Size(min=512,max=512) List<@NotNull Float> embedding,
+                               String previewImage) {
+        public ProfileInput(boolean consent, String model, List<Float> embedding) {
+            this(consent, model, embedding, null);
+        }
+    }
     public record Decision(boolean approved) { }
     public record RequestView(Long id, Long accountId, String accountName, Long unitId, String unitName,
-                              String status, LocalDateTime requestedAt) { }
-    public record Profile(boolean hasTemplate, Long credentialId, String model) { }
+                              String status, LocalDateTime requestedAt, String previewImage,
+                              String accountEmail, String requestType) {
+        public RequestView(Long id, Long accountId, String accountName, Long unitId, String unitName,
+                           String status, LocalDateTime requestedAt) {
+            this(id, accountId, accountName, unitId, unitName, status, requestedAt, null, null, null);
+        }
+    }
+    public record Profile(boolean hasTemplate, Long credentialId, String model, String previewImage) {
+        public Profile(boolean hasTemplate, Long credentialId, String model) {
+            this(hasTemplate, credentialId, model, null);
+        }
+    }
     public record Template(Long credentialId, Long accountId, List<Float> embedding) { }
     public record Templates(String model, List<Template> templates) { }
 }

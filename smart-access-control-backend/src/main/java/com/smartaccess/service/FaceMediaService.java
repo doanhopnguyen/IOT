@@ -6,11 +6,18 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.http.*;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.Set;
 import java.util.Map;
+import javax.imageio.ImageIO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import static org.springframework.http.HttpStatus.*;
@@ -69,11 +76,45 @@ public class FaceMediaService {
                 throw new ResponseStatusException(SERVICE_UNAVAILABLE,"Dịch vụ khuôn mặt đang bận hoặc chưa sẵn sàng. Thử lại sau.");
             }
             ProfileInput input=json.readValue(response.body(),ProfileInput.class);
+            String previewImage = buildPreviewDataUri(file.getBytes(), type);
             // Consent is established by this authenticated upload, not by the processor response.
-            return enrollment.registerProfile(new ProfileInput(true,input.model(),input.embedding()));
+            return enrollment.registerProfile(new ProfileInput(true,input.model(),input.embedding(),previewImage));
         } catch (ResponseStatusException e) { throw e;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt(); throw new ResponseStatusException(SERVICE_UNAVAILABLE,"Xử lý khuôn mặt bị gián đoạn.");
         } catch (Exception e) { throw new ResponseStatusException(SERVICE_UNAVAILABLE,"Không kết nối được dịch vụ xử lý khuôn mặt."); }
+    }
+
+    private static String buildPreviewDataUri(byte[] rawBytes, String contentType) {
+        if (rawBytes == null || contentType == null || !contentType.startsWith("image/")) return null;
+        try {
+            BufferedImage src = ImageIO.read(new ByteArrayInputStream(rawBytes));
+            if (src == null || src.getWidth() <= 0 || src.getHeight() <= 0) return null;
+            int maxEdge = 320;
+            int w = src.getWidth();
+            int h = src.getHeight();
+            if (Math.max(w, h) > maxEdge) {
+                if (w >= h) {
+                    h = Math.max(1, (int) Math.round((double) h * maxEdge / w));
+                    w = maxEdge;
+                } else {
+                    w = Math.max(1, (int) Math.round((double) w * maxEdge / h));
+                    h = maxEdge;
+                }
+            }
+            BufferedImage dst = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g = dst.createGraphics();
+            try {
+                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                g.drawImage(src, 0, 0, w, h, null);
+            } finally {
+                g.dispose();
+            }
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            ImageIO.write(dst, "jpg", out);
+            return "data:image/jpeg;base64," + Base64.getEncoder().encodeToString(out.toByteArray());
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 }

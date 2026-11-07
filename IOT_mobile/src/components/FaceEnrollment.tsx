@@ -1,7 +1,15 @@
 import { ItemList } from './ItemList';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import {
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
 import type { Door } from '../models/domain';
 import {
   faceRequestLabel,
@@ -10,8 +18,17 @@ import {
   type FaceRequestDto,
 } from '../services/api/faceService';
 import { managerService } from '../services/api/managerService';
-import { colors } from '../theme/tokens';
-import { Badge, Button, Card, EmptyState, LoadingState, Notice, PageHeader } from './ui';
+import { colors, radius } from '../theme/tokens';
+import {
+  AppModal,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  LoadingState,
+  Notice,
+  PageHeader,
+} from './ui';
 import { useConfirm } from './ConfirmationProvider';
 import { FaceCapture } from './FaceCapture';
 import type { ImagePickerAsset } from 'expo-image-picker';
@@ -19,7 +36,12 @@ import { uploadFaceMedia } from '../services/api/faceMediaUpload';
 
 const message = (error: unknown) =>
   error instanceof Error ? error.message : 'Không kết nối được hệ thống.';
-const emptyProfile: FaceProfile = { hasTemplate: false, credentialId: null, model: null };
+const emptyProfile: FaceProfile = {
+  hasTemplate: false,
+  credentialId: null,
+  model: null,
+  previewImage: null,
+};
 const unfinished = (requests: FaceRequestDto[]) =>
   requests.some((item) => item.status === 'PENDING' || item.status === 'APPROVED');
 
@@ -116,7 +138,7 @@ function EnrollmentForm({
     setConsent(false);
     setReplace(false);
     setNotice(
-      `Đã gửi mẫu cho yêu cầu #${created.id}. Mẫu có hiệu lực sau khi chủ cửa duyệt; máy chủ chỉ lưu đặc trưng khuôn mặt.`,
+      `Đã gửi mẫu cho yêu cầu #${created.id}. Mẫu có hiệu lực sau khi chủ cửa duyệt; máy chủ lưu đặc trưng khuôn mặt và ảnh đối chiếu.`,
     );
     onChanged();
   };
@@ -150,13 +172,12 @@ function EnrollmentForm({
       {!hasTemplate || replace ? (
         <>
           <Text style={s.caption}>
-            Chọn ảnh từ thư viện hoặc chụp ảnh. Chỉ chủ tài
-            khoản được tải mẫu của mình.
+            Chọn ảnh từ thư viện hoặc chụp ảnh. Chỉ chủ tài khoản được tải mẫu của mình.
           </Text>
           <View style={s.row}>
             <Switch
               accessibilityLabel="Đồng ý thu thập khuôn mặt"
-              trackColor={{ true: colors.primary, false: colors.border }}
+              trackColor={{ true: colors.primary, false: colors.borderStrong }}
               thumbColor="#fff"
               disabled={captureOpen}
               value={consent}
@@ -173,6 +194,7 @@ function EnrollmentForm({
           ) : (
             <Button
               title={hasTemplate ? 'Quét để thay mẫu' : 'Quét khuôn mặt trong app'}
+              icon="camera-outline"
               disabled={!consent}
               onPress={() => {
                 setNotice('');
@@ -191,10 +213,12 @@ function RequestCard({
   item,
   manager,
   onChanged,
+  onInspect,
 }: {
   item: FaceRequestDto;
   manager: boolean;
   onChanged: () => void;
+  onInspect?: (item: FaceRequestDto) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -211,24 +235,102 @@ function RequestCard({
     }
   };
   return (
-    <Card style={s.stack}>
-      <Text style={s.heading}>
-        {item.accountName} · Yêu cầu #{item.id}
-      </Text>
-      <Text style={s.caption}>
-        {item.unitName} · {new Date(item.requestedAt).toLocaleString('vi-VN')}
-      </Text>
-      <Badge
-        label={faceRequestLabel(item)}
-        tone={
-          item.status === 'REJECTED' ? 'error' : item.status === 'PENDING' ? 'warning' : 'success'
-        }
-      />
+    <Card style={s.requestCard}>
+      <View style={s.row}>
+        <View style={s.avatarBadge}>
+          <Text style={s.avatarText}>{item.accountName.trim().charAt(0).toUpperCase()}</Text>
+        </View>
+        <View style={{ flex: 1, gap: 3 }}>
+          <Text style={s.heading}>
+            {item.accountName} <Text style={s.reqId}>#{item.id}</Text>
+          </Text>
+          <Text style={s.caption}>
+            {item.accountEmail ? `${item.accountEmail} · ` : ''}
+            {item.unitName}
+          </Text>
+        </View>
+        <Badge
+          label={
+            item.status === 'PENDING'
+              ? 'Chờ duyệt'
+              : item.status === 'COMPLETED'
+                ? 'Đã duyệt'
+                : item.status === 'REJECTED'
+                  ? 'Từ chối'
+                  : 'Cần cập nhật'
+          }
+          tone={
+            item.status === 'REJECTED'
+              ? 'error'
+              : item.status === 'PENDING'
+                ? 'warning'
+                : 'success'
+          }
+        />
+      </View>
+
+      {item.previewImage ? (
+        <Pressable
+          onPress={() => onInspect?.(item)}
+          accessibilityRole="button"
+          accessibilityLabel={`Xem ảnh khuôn mặt của ${item.accountName}`}
+          style={s.photoPreviewWrap}
+        >
+          <Image
+            source={{ uri: item.previewImage }}
+            style={s.photoPreviewImg}
+            resizeMode="cover"
+          />
+          <View style={s.photoOverlayBar}>
+            <View style={s.photoTagPill}>
+              <Ionicons name="scan-outline" size={14} color="#fff" />
+              <Text style={s.photoTagText} numberOfLines={1}>
+                Ảnh mẫu · ArcFace 512-D
+              </Text>
+            </View>
+            <View style={s.zoomPill}>
+              <Ionicons name="expand-outline" size={14} color="#fff" />
+              <Text style={s.photoTagText}>Phóng to</Text>
+            </View>
+          </View>
+        </Pressable>
+      ) : (
+        <View style={s.noPhotoBox}>
+          <View style={s.noPhotoIcon}>
+            <Ionicons name="person-circle-outline" size={32} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={s.noPhotoTitle}>Đã lưu đặc trưng khuôn mặt 512 chiều</Text>
+            <Text style={s.caption}>
+              Mẫu sinh trắc học được trích xuất trên máy chủ ({item.unitName}).
+            </Text>
+          </View>
+        </View>
+      )}
+
+      <View style={s.metaRow}>
+        <View style={s.row}>
+          <Ionicons name="time-outline" size={15} color={colors.muted} />
+          <Text style={s.metaText}>{new Date(item.requestedAt).toLocaleString('vi-VN')}</Text>
+        </View>
+        <Text style={s.metaStatusText}>{faceRequestLabel(item)}</Text>
+      </View>
+
+      {onInspect ? (
+        <Button
+          title="Xem ảnh & chi tiết mẫu khuôn mặt"
+          icon="eye-outline"
+          variant="ghost"
+          onPress={() => onInspect(item)}
+        />
+      ) : null}
+
       {manager && item.status === 'PENDING' ? (
         <View style={s.row}>
           <View style={s.flex}>
             <Button
               title="Từ chối"
+              icon="close-outline"
               variant="ghost"
               disabled={busy}
               onPress={() => {
@@ -239,6 +341,7 @@ function RequestCard({
           <View style={s.flex}>
             <Button
               title="Duyệt"
+              icon="checkmark-outline"
               disabled={busy}
               onPress={() => {
                 void act(() => faceService.decide(item.id, true));
@@ -262,6 +365,143 @@ function RequestCard({
   );
 }
 
+function FaceInspectModal({
+  item,
+  manager,
+  onClose,
+  onChanged,
+}: {
+  item: FaceRequestDto | null;
+  manager: boolean;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  if (!item) return null;
+
+  const decide = async (approved: boolean) => {
+    setBusy(true);
+    setError('');
+    try {
+      await faceService.decide(item.id, approved);
+      onChanged();
+      onClose();
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <AppModal
+      visible={!!item}
+      title={`Ảnh khuôn mặt · ${item.accountName}`}
+      onClose={() => {
+        if (!busy) onClose();
+      }}
+    >
+      {item.previewImage ? (
+        <View style={s.modalPhotoContainer}>
+          <Image
+            source={{ uri: item.previewImage }}
+            style={s.modalPhoto}
+            resizeMode="contain"
+            accessibilityLabel={`Ảnh khuôn mặt chi tiết của ${item.accountName}`}
+          />
+        </View>
+      ) : (
+        <Card style={{ alignItems: 'center', paddingVertical: 28 }}>
+          <Ionicons name="scan-circle-outline" size={56} color={colors.primary} />
+          <Text style={s.heading}>Mẫu đặc trưng 512 chiều</Text>
+          <Text style={[s.caption, { textAlign: 'center' }]}>
+            Yêu cầu này được tạo từ vector đặc trưng, không đính kèm ảnh chụp gốc.
+          </Text>
+        </Card>
+      )}
+
+      <Card style={{ gap: 10, padding: 16 }}>
+        <View style={s.row}>
+          <View style={s.avatarBadge}>
+            <Text style={s.avatarText}>{item.accountName.trim().charAt(0).toUpperCase()}</Text>
+          </View>
+          <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+            <Text style={s.heading} numberOfLines={1}>
+              {item.accountName} <Text style={s.reqId}>#{item.id}</Text>
+            </Text>
+            <Text style={s.caption} numberOfLines={1}>
+              {item.accountEmail ?? `Mã tài khoản #${item.accountId}`} · {item.unitName}
+            </Text>
+          </View>
+          <Badge
+            label={
+              item.status === 'PENDING'
+                ? 'Chờ duyệt'
+                : item.status === 'COMPLETED'
+                  ? 'Đã duyệt'
+                  : item.status === 'REJECTED'
+                    ? 'Từ chối'
+                    : 'Cần cập nhật'
+            }
+            tone={
+              item.status === 'REJECTED'
+                ? 'error'
+                : item.status === 'PENDING'
+                  ? 'warning'
+                  : 'success'
+            }
+          />
+        </View>
+        <View style={s.checkRow}>
+          <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+          <Text style={s.checkText}>Đã trích xuất vector đặc trưng khuôn mặt (ArcFace 512-D)</Text>
+        </View>
+        <View style={s.checkRow}>
+          <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
+          <Text style={s.checkText}>
+            Chủ tài khoản đã xác nhận đồng ý sử dụng sinh trắc học tại cửa
+          </Text>
+        </View>
+        <Text style={s.caption}>
+          Thời gian gửi: {new Date(item.requestedAt).toLocaleString('vi-VN')}
+        </Text>
+      </Card>
+
+      {error ? <Notice tone="error">{error}</Notice> : null}
+
+      {manager && item.status === 'PENDING' ? (
+        <View style={s.row}>
+          <View style={s.flex}>
+            <Button
+              title="Từ chối mẫu"
+              icon="close-circle-outline"
+              variant="ghost"
+              disabled={busy}
+              onPress={() => {
+                void decide(false);
+              }}
+            />
+          </View>
+          <View style={s.flex}>
+            <Button
+              title="Duyệt mẫu này"
+              icon="checkmark-circle-outline"
+              loading={busy}
+              disabled={busy}
+              onPress={() => {
+                void decide(true);
+              }}
+            />
+          </View>
+        </View>
+      ) : (
+        <Button title="Đóng" variant="ghost" onPress={onClose} />
+      )}
+    </AppModal>
+  );
+}
+
 export function FaceRegistration({
   doors,
   initialDoorName,
@@ -278,6 +518,7 @@ export function FaceRegistration({
   const [confirmRevoke, setConfirmRevoke] = useState(false);
   const [busy, setBusy] = useState(false);
   const [revokeError, setRevokeError] = useState('');
+  const [inspectItem, setInspectItem] = useState<FaceRequestDto | null>(null);
   const revoke = async () => {
     setBusy(true);
     setRevokeError('');
@@ -340,24 +581,22 @@ export function FaceRegistration({
       {doors.length ? (
         <>
           <Text style={s.heading}>Chọn chủ cửa tiếp nhận yêu cầu</Text>
-          {
-            <ItemList
-              items={doors}
-              resetKey={''}
-              renderItem={(door) => (
-                <Pressable key={door.id} onPress={() => setDoorId(door.id)}>
-                  <Card style={[s.row, door.id === doorId && s.selected]}>
-                    <Text style={[s.heading, s.flex]}>{door.name}</Text>
-                    <Ionicons
-                      name={door.id === doorId ? 'checkmark-circle' : 'ellipse-outline'}
-                      size={23}
-                      color={colors.primary}
-                    />
-                  </Card>
-                </Pressable>
-              )}
-            />
-          }
+          <ItemList
+            items={doors}
+            resetKey={''}
+            renderItem={(door) => (
+              <Pressable key={door.id} onPress={() => setDoorId(door.id)}>
+                <Card style={[s.row, door.id === doorId && s.selected]}>
+                  <Text style={[s.heading, s.flex]}>{door.name}</Text>
+                  <Ionicons
+                    name={door.id === doorId ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={23}
+                    color={colors.primary}
+                  />
+                </Card>
+              </Pressable>
+            )}
+          />
           {!loading && !error ? (
             unfinished(requests) ? (
               <PendingNotice />
@@ -384,7 +623,13 @@ export function FaceRegistration({
           items={requests}
           resetKey={''}
           renderItem={(item) => (
-            <RequestCard key={item.id} item={item} manager={false} onChanged={refresh} />
+            <RequestCard
+              key={item.id}
+              item={item}
+              manager={false}
+              onChanged={refresh}
+              onInspect={setInspectItem}
+            />
           )}
         />
       ) : (
@@ -392,6 +637,12 @@ export function FaceRegistration({
           <Text style={s.caption}>Chưa có yêu cầu đăng ký.</Text>
         </Card>
       )}
+      <FaceInspectModal
+        item={inspectItem}
+        manager={false}
+        onClose={() => setInspectItem(null)}
+        onChanged={refresh}
+      />
     </ScrollView>
   );
 }
@@ -401,6 +652,8 @@ export function FaceApprovals({ door, back }: { door: Door; back: () => void }) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'COMPLETED' | 'REJECTED'>('ALL');
+  const [inspectItem, setInspectItem] = useState<FaceRequestDto | null>(null);
   const refresh = useCallback(() => setRevision((value) => value + 1), []);
   useEffect(() => {
     let active = true;
@@ -428,27 +681,100 @@ export function FaceApprovals({ door, back }: { door: Door; back: () => void }) 
       clearTimeout(timer);
     };
   }, [door.id, revision]);
+
+  const pendingCount = requests.filter((r) => r.status === 'PENDING').length;
+  const approvedCount = requests.filter((r) => r.status === 'COMPLETED').length;
+  const filtered = [...requests]
+    .filter((r) => (filter === 'ALL' ? true : r.status === filter))
+    .sort((a, b) => {
+      const rank = (status: string) =>
+        status === 'PENDING' ? 0 : status === 'COMPLETED' ? 1 : 2;
+      return rank(a.status) - rank(b.status) || b.id - a.id;
+    });
+
   return (
     <ScrollView
       keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={s.page}
     >
-      <PageHeader back={back} title="Duyệt khuôn mặt" description={door.name} />
+      <PageHeader
+        back={back}
+        title="Duyệt khuôn mặt"
+        description={`${door.name} · Kiểm tra ảnh trước khi cấp quyền`}
+        eyebrow="PHÊ DUYỆT SINH TRẮC HỌC"
+      />
+
+      <View style={s.summaryRow}>
+        <Card style={[s.summaryBox, { backgroundColor: colors.warningSoft, borderColor: '#FEF3C7' }]}>
+          <Text style={[s.summaryValue, { color: colors.warning }]}>{pendingCount}</Text>
+          <Text style={s.summaryLabel}>Chờ duyệt</Text>
+        </Card>
+        <Card style={[s.summaryBox, { backgroundColor: colors.successSoft, borderColor: '#D1FAE5' }]}>
+          <Text style={[s.summaryValue, { color: colors.success }]}>{approvedCount}</Text>
+          <Text style={s.summaryLabel}>Đã duyệt</Text>
+        </Card>
+        <Card style={[s.summaryBox, { backgroundColor: colors.primarySoft, borderColor: '#DBEAFE' }]}>
+          <Text style={[s.summaryValue, { color: colors.primary }]}>{requests.length}</Text>
+          <Text style={s.summaryLabel}>Tổng yêu cầu</Text>
+        </Card>
+      </View>
+
+      <View style={s.filterRow}>
+        {(
+          [
+            ['ALL', 'Tất cả'],
+            ['PENDING', 'Chờ duyệt'],
+            ['COMPLETED', 'Đã duyệt'],
+            ['REJECTED', 'Từ chối'],
+          ] as const
+        ).map(([key, label]) => {
+          const active = filter === key;
+          return (
+            <Pressable
+              key={key}
+              onPress={() => setFilter(key)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              style={[s.filterPill, active && s.filterPillActive]}
+            >
+              <Text style={active ? s.filterPillTextActive : s.filterPillText}>{label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
       {error ? <Notice tone="error">{error}</Notice> : null}
       {loading && !error ? (
         <LoadingState />
-      ) : requests.length ? (
+      ) : filtered.length ? (
         <ItemList
-          items={requests}
-          resetKey={''}
+          items={filtered}
+          resetKey={filter}
           renderItem={(item) => (
-            <RequestCard key={item.id} item={item} manager onChanged={refresh} />
+            <RequestCard
+              key={item.id}
+              item={item}
+              manager
+              onChanged={refresh}
+              onInspect={setInspectItem}
+            />
           )}
         />
       ) : error ? null : (
-        <EmptyState icon="scan-outline" title="Chưa có yêu cầu khuôn mặt" />
+        <EmptyState
+          icon="scan-outline"
+          title="Chưa có yêu cầu khuôn mặt"
+          description="Khi thành viên gửi ảnh đăng ký khuôn mặt, bạn có thể xem ảnh và duyệt tại đây."
+        />
       )}
+
+      <FaceInspectModal
+        item={inspectItem}
+        manager
+        onClose={() => setInspectItem(null)}
+        onChanged={refresh}
+      />
     </ScrollView>
   );
 }
@@ -471,6 +797,8 @@ export function MemberFacePanel({
   const [enabled, setEnabled] = useState(allowed);
   const [saving, setSaving] = useState(false);
   const [permissionError, setPermissionError] = useState('');
+  const [inspectItem, setInspectItem] = useState<FaceRequestDto | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
   useEffect(() => setEnabled(allowed), [allowed]);
   const toggle = async (value: boolean) => {
     if (
@@ -495,18 +823,34 @@ export function MemberFacePanel({
       setSaving(false);
     }
   };
+  const previewUri =
+    profile.previewImage ?? requests.find((r) => r.previewImage)?.previewImage ?? null;
+
   return (
     <View style={s.stack}>
       <Card style={s.stack}>
         <View style={s.row}>
+          <View
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 15,
+              backgroundColor: colors.purpleSoft,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="scan-outline" size={22} color={colors.purple} />
+          </View>
           <View style={s.flex}>
             <Text style={s.heading}>Cho phép khuôn mặt tại cửa này</Text>
+            <Text style={s.caption}>Đồng bộ mẫu nhận diện với Camera AI của cửa</Text>
           </View>
           <Switch
             accessibilityLabel="Cho phép khuôn mặt"
             disabled={saving}
             value={enabled}
-            trackColor={{ true: colors.primary, false: colors.border }}
+            trackColor={{ true: colors.primary, false: colors.borderStrong }}
             thumbColor="#fff"
             onValueChange={(value) => {
               void toggle(value);
@@ -522,35 +866,200 @@ export function MemberFacePanel({
               : 'Chưa có mẫu khuôn mặt đang hoạt động.'}
           </Text>
         )}
+        {previewUri ? (
+          <Pressable
+            onPress={() => setPreviewOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`Xem ảnh khuôn mặt của ${name}`}
+            style={s.photoPreviewWrap}
+          >
+            <Image source={{ uri: previewUri }} style={s.photoPreviewImg} resizeMode="cover" />
+            <View style={s.photoOverlayBar}>
+              <View style={s.photoTagPill}>
+                <Ionicons name="person-circle-outline" size={14} color="#fff" />
+                <Text style={s.photoTagText} numberOfLines={1}>
+                  Ảnh mẫu · {name}
+                </Text>
+              </View>
+              <View style={s.zoomPill}>
+                <Ionicons name="expand-outline" size={14} color="#fff" />
+                <Text style={s.photoTagText}>Phóng to</Text>
+              </View>
+            </View>
+          </Pressable>
+        ) : null}
         {error || permissionError ? (
           <Text accessibilityRole="alert" style={s.error}>
             {permissionError || error}
           </Text>
         ) : null}
       </Card>
-      {
-        <ItemList
-          items={requests}
-          resetKey={''}
-          renderItem={(item) => (
-            <RequestCard key={item.id} item={item} manager onChanged={refresh} />
-          )}
-        />
-      }
+      <ItemList
+        items={requests}
+        resetKey={''}
+        renderItem={(item) => (
+          <RequestCard
+            key={item.id}
+            item={item}
+            manager
+            onChanged={refresh}
+            onInspect={setInspectItem}
+          />
+        )}
+      />
+      <FaceInspectModal
+        item={inspectItem}
+        manager
+        onClose={() => setInspectItem(null)}
+        onChanged={refresh}
+      />
+      <AppModal
+        visible={previewOpen && !!previewUri}
+        title={`Ảnh khuôn mặt · ${name}`}
+        onClose={() => setPreviewOpen(false)}
+      >
+        {previewUri ? (
+          <View style={s.modalPhotoContainer}>
+            <Image source={{ uri: previewUri }} style={s.modalPhoto} resizeMode="contain" />
+          </View>
+        ) : null}
+        <Button title="Đóng" variant="ghost" onPress={() => setPreviewOpen(false)} />
+      </AppModal>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  page: { padding: 20, gap: 20, paddingBottom: 150 },
+  page: { padding: 20, gap: 18, paddingBottom: 150 },
   stack: { gap: 12 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   flex: { flex: 1 },
   title: { color: colors.text, fontSize: 28, lineHeight: 36, fontWeight: '700' },
-  heading: { color: colors.text, fontSize: 20, lineHeight: 28, fontWeight: '700' },
-  caption: { color: colors.muted, fontSize: 15, lineHeight: 23 },
+  heading: { color: colors.text, fontSize: 18, lineHeight: 25, fontWeight: '700' },
+  reqId: { color: colors.muted, fontSize: 14, fontWeight: '600' },
+  caption: { color: colors.muted, fontSize: 14, lineHeight: 20 },
   error: { color: colors.error, lineHeight: 20 },
-  success: { color: colors.success, lineHeight: 20 },
+  success: { color: colors.success, lineHeight: 20, fontWeight: '600' },
   back: { width: 48, height: 48, justifyContent: 'center' },
-  selected: { borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  selected: { borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  summaryRow: { flexDirection: 'row', gap: 10 },
+  summaryBox: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 20,
+    gap: 2,
+    alignItems: 'center',
+  },
+  summaryValue: { fontSize: 24, fontWeight: '800' },
+  summaryLabel: { fontSize: 12, fontWeight: '600', color: colors.muted },
+  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  filterPill: {
+    paddingHorizontal: 15,
+    paddingVertical: 9,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  filterPillActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  filterPillText: { fontSize: 13, fontWeight: '600', color: colors.muted },
+  filterPillTextActive: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  requestCard: { gap: 14 },
+  avatarBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: { color: colors.primary, fontSize: 17, fontWeight: '800' },
+  photoPreviewWrap: {
+    width: '100%',
+    height: 210,
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: colors.navy,
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  photoPreviewImg: {
+    width: '100%',
+    height: '100%',
+  },
+  photoOverlayBar: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    bottom: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  photoTagPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 1,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(15, 23, 42, 0.78)',
+  },
+  zoomPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 0,
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(37, 99, 235, 0.92)',
+  },
+  photoTagText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  noPhotoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  noPhotoIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noPhotoTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
+  metaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  metaText: { fontSize: 13, color: colors.muted },
+  metaStatusText: { fontSize: 13, color: colors.primary, fontWeight: '600' },
+  modalPhotoContainer: {
+    width: '100%',
+    height: 225,
+    borderRadius: 22,
+    overflow: 'hidden',
+    backgroundColor: colors.navy,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modalPhoto: { width: '100%', height: '100%' },
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  checkText: { fontSize: 13, color: colors.text, fontWeight: '600', flex: 1 },
 });

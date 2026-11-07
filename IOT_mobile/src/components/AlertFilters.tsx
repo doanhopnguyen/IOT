@@ -32,9 +32,9 @@ export function AlertFilters({ users, userId, period, range, onUser, onPeriod, o
           if (value === 'custom') {
             setFrom(displayDate(range.from)); setTo(displayDate(range.to)); setCustom(true);
           } else { setCustom(false); onPeriod(value); }
-        }} style={{ minHeight: 44, padding: 11, borderRadius: 10,
-          backgroundColor: period === value ? colors.primarySoft : colors.background }}>
-        <Text style={{ color: period === value ? colors.primary : colors.muted, fontWeight: '600' }}>
+        }} style={{ minHeight: 40, paddingHorizontal: 15, paddingVertical: 9, borderRadius: 999,
+          backgroundColor: period === value ? colors.primary : colors.background, justifyContent: 'center' }}>
+        <Text style={{ color: period === value ? '#fff' : colors.muted, fontWeight: '700', fontSize: 13 }}>
           {value === 'custom' ? 'Tùy chọn' : value === 1 ? 'Hôm nay' : `${value} ngày`}
         </Text>
       </Pressable>)}
