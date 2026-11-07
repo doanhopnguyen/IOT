@@ -943,7 +943,7 @@ function Detail({
 }) {
   const { width } = useWindowDimensions();
   const owner = canManageDoor(door);
-  const gridWidth = width >= 680 ? '48.5%' : '48%';
+  const gridWidth = width >= 680 ? '20%' : '25%';
   return (
     <ScrollView
       keyboardDismissMode="on-drag"
@@ -1034,53 +1034,50 @@ function Detail({
             />
           ) : null}
 
-          <View style={x.featureGrid}>
-            <View style={{ width: gridWidth }}>
-              <FeatureTile
-                icon="people-outline"
-                tone="primary"
-                title="Thành viên"
-                subtitle={`${door.members} người dùng`}
-                onPress={members}
-              />
+          <Card style={{ paddingVertical: 14, paddingHorizontal: 8 }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 10 }}>
+              <View style={{ width: gridWidth }}>
+                <FeatureTile
+                  icon="people-outline"
+                  tone="primary"
+                  title="Thành viên"
+                  onPress={members}
+                />
+              </View>
+              <View style={{ width: gridWidth }}>
+                <FeatureTile
+                  icon="shield-checkmark-outline"
+                  tone="teal"
+                  title="Duyệt khuôn mặt"
+                  onPress={approvals}
+                />
+              </View>
+              <View style={{ width: gridWidth }}>
+                <FeatureTile
+                  icon="scan-outline"
+                  tone="purple"
+                  title="Khuôn mặt AI"
+                  onPress={setupFace}
+                />
+              </View>
+              <View style={{ width: gridWidth }}>
+                <FeatureTile
+                  icon="time-outline"
+                  tone="indigo"
+                  title="Lịch sử ra vào"
+                  onPress={history}
+                />
+              </View>
+              <View style={{ width: gridWidth }}>
+                <FeatureTile
+                  icon="settings-outline"
+                  tone="warning"
+                  title="Cài đặt thiết bị"
+                  onPress={settings}
+                />
+              </View>
             </View>
-            <View style={{ width: gridWidth }}>
-              <FeatureTile
-                icon="shield-checkmark-outline"
-                tone="teal"
-                title="Duyệt khuôn mặt"
-                subtitle="Xem ảnh & cấp quyền"
-                onPress={approvals}
-              />
-            </View>
-            <View style={{ width: gridWidth }}>
-              <FeatureTile
-                icon="scan-outline"
-                tone="purple"
-                title="Khuôn mặt AI"
-                subtitle="Mẫu sinh trắc học"
-                onPress={setupFace}
-              />
-            </View>
-            <View style={{ width: gridWidth }}>
-              <FeatureTile
-                icon="time-outline"
-                tone="indigo"
-                title="Lịch sử ra vào"
-                subtitle="Nhật ký đóng mở"
-                onPress={history}
-              />
-            </View>
-          </View>
-
-          <FeatureTile
-            compact
-            icon="settings-outline"
-            tone="warning"
-            title="Cài đặt thiết bị"
-            subtitle="Thống kê, PIN, Wi-Fi & phần cứng"
-            onPress={settings}
-          />
+          </Card>
         </>
       ) : (
         <>

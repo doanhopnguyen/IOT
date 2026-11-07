@@ -83,6 +83,32 @@ export function FeatureTile({
   style?: StyleProp<ViewStyle>;
 }) {
   const palette = toneMap[tone];
+  if (!compact) {
+    return (
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={title}
+        style={({ pressed }) => [
+          styles.tileMini,
+          pressed && styles.tilePressed,
+          style,
+        ]}
+      >
+        <View
+          style={[
+            styles.tileMiniIcon,
+            { backgroundColor: palette.bg, borderColor: palette.border },
+          ]}
+        >
+          <Ionicons name={icon} size={21} color={palette.ink} />
+        </View>
+        <Text style={styles.tileMiniTitle} numberOfLines={2}>
+          {title}
+        </Text>
+      </Pressable>
+    );
+  }
   return (
     <Pressable
       onPress={onPress}
@@ -90,42 +116,16 @@ export function FeatureTile({
       accessibilityLabel={title}
       style={({ pressed }) => [
         styles.tile,
-        compact ? styles.tileCompact : styles.tileGrid,
+        styles.tileCompact,
         pressed && styles.tilePressed,
         style,
       ]}
     >
-      <View style={compact ? styles.tileRowHead : styles.tileGridHead}>
+      <View style={styles.tileRowHead}>
         <View style={[styles.tileIconWrap, { backgroundColor: palette.bg, borderColor: palette.border }]}>
-          <Ionicons name={icon} size={22} color={palette.ink} />
+          <Ionicons name={icon} size={21} color={palette.ink} />
         </View>
-        {compact ? (
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text style={styles.tileTitle} numberOfLines={1}>
-              {title}
-            </Text>
-            {subtitle ? (
-              <Text style={styles.tileSubtitle} numberOfLines={1}>
-                {subtitle}
-              </Text>
-            ) : null}
-          </View>
-        ) : null}
-        <View style={styles.tileTrailing}>
-          {badge ? (
-            <View style={[styles.tileBadge, { backgroundColor: palette.bg }]}>
-              <Text style={[styles.tileBadgeText, { color: palette.ink }]}>{badge}</Text>
-            </View>
-          ) : null}
-          {compact || !badge ? (
-            <View style={styles.tileArrow}>
-              <Ionicons name="chevron-forward" size={15} color={colors.muted} />
-            </View>
-          ) : null}
-        </View>
-      </View>
-      {!compact ? (
-        <View style={{ gap: 2, marginTop: 8 }}>
+        <View style={{ flex: 1, gap: 2 }}>
           <Text style={styles.tileTitle} numberOfLines={1}>
             {title}
           </Text>
@@ -135,7 +135,17 @@ export function FeatureTile({
             </Text>
           ) : null}
         </View>
-      ) : null}
+        <View style={styles.tileTrailing}>
+          {badge ? (
+            <View style={[styles.tileBadge, { backgroundColor: palette.bg }]}>
+              <Text style={[styles.tileBadgeText, { color: palette.ink }]}>{badge}</Text>
+            </View>
+          ) : null}
+          <View style={styles.tileArrow}>
+            <Ionicons name="chevron-forward" size={15} color={colors.muted} />
+          </View>
+        </View>
+      </View>
     </Pressable>
   );
 }
@@ -480,6 +490,30 @@ export const styles = StyleSheet.create({
   tileGrid: {
     justifyContent: 'space-between',
     minHeight: 114,
+  },
+  tileMini: {
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    gap: 7,
+    borderRadius: 16,
+  },
+  tileMiniIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tileMiniTitle: {
+    fontFamily: fonts.semibold,
+    color: colors.text,
+    fontSize: 12,
+    lineHeight: 15.5,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   tileCompact: {
     paddingVertical: 14,

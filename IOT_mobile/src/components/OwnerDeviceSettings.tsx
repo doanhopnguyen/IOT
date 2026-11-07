@@ -160,7 +160,7 @@ export function OwnerDeviceSettings({
     }
   };
 
-  const gridCellWidth = width >= 680 ? '31.5%' : '48%';
+  const gridCellWidth = width >= 680 ? '20%' : '25%';
   const isResetting = device?.state === 'RESETTING';
   const needsInitialSetup =
     device && !isResetting && (!device.setupReady || device.state !== 'ACTIVE');
@@ -390,121 +390,122 @@ export function OwnerDeviceSettings({
           <View style={oStyles.groupHeader}>
             <Text style={oStyles.groupTitle}>Vận hành & An ninh</Text>
           </View>
+          <Card style={oStyles.iconGroupCard}>
+            <View style={oStyles.bentoGrid}>
+              <View style={{ width: gridCellWidth }}>
+                <FeatureTile
+                  icon="bar-chart-outline"
+                  tone="indigo"
+                  title="Thống kê"
+                  onPress={() => setSection('stats')}
+                />
+              </View>
+              <View style={{ width: gridCellWidth }}>
+                <FeatureTile
+                  icon="timer-outline"
+                  tone="primary"
+                  title="Hẹn giờ & Quyền"
+                  onPress={() => setSection('remote-config')}
+                />
+              </View>
+              <View style={{ width: gridCellWidth }}>
+                <FeatureTile
+                  icon="shield-half-outline"
+                  tone="rose"
+                  title="Tạm khóa"
+                  onPress={() => setSection('lockdown')}
+                />
+              </View>
+              <View style={{ width: gridCellWidth }}>
+                <FeatureTile
+                  icon="finger-print-outline"
+                  tone="teal"
+                  title="Thẻ & Vân tay"
+                  onPress={() => setSection('owner-credentials')}
+                />
+              </View>
+            </View>
+          </Card>
+
+          <View style={oStyles.groupHeader}>
+            <Text style={oStyles.groupTitle}>Phần cứng & Hệ thống</Text>
+          </View>
+          <Card style={oStyles.iconGroupCard}>
+            <View style={oStyles.bentoGrid}>
+              <View style={{ width: gridCellWidth }}>
+                <FeatureTile
+                  icon="keypad-outline"
+                  tone="warning"
+                  title="Mã PIN mở cửa"
+                  onPress={() => setSection('door-pin')}
+                />
+              </View>
+              <View style={{ width: gridCellWidth }}>
+                <FeatureTile
+                  icon="key-outline"
+                  tone="rose"
+                  title="Mã PIN Admin"
+                  onPress={() => setSection('admin-pin')}
+                />
+              </View>
+              <View style={{ width: gridCellWidth }}>
+                <FeatureTile
+                  icon="options-outline"
+                  tone="purple"
+                  title="Góc Servo"
+                  onPress={() => setSection('servo')}
+                />
+              </View>
+              <View style={{ width: gridCellWidth }}>
+                <FeatureTile
+                  icon="locate-outline"
+                  tone="indigo"
+                  title="Hiệu chỉnh"
+                  onPress={() => setSection('calibrate')}
+                />
+              </View>
+              <View style={{ width: gridCellWidth }}>
+                <FeatureTile
+                  icon="wifi-outline"
+                  tone="sky"
+                  title="Wi-Fi"
+                  onPress={() => setSection('wifi')}
+                />
+              </View>
+              <View style={{ width: gridCellWidth }}>
+                <FeatureTile
+                  icon="videocam-outline"
+                  tone="success"
+                  title="Camera AI"
+                  onPress={() => setSection('camera-ai')}
+                />
+              </View>
+              {device ? (
+                <View style={{ width: gridCellWidth }}>
+                  <FeatureTile
+                    icon="refresh-circle-outline"
+                    tone="error"
+                    title="Khôi phục cài đặt gốc"
+                    onPress={() => setSection('factory-reset')}
+                  />
+                </View>
+              ) : null}
+            </View>
+          </Card>
+        </>
+      ) : device ? (
+        <Card style={oStyles.iconGroupCard}>
           <View style={oStyles.bentoGrid}>
             <View style={{ width: gridCellWidth }}>
               <FeatureTile
-                icon="bar-chart-outline"
-                tone="indigo"
-                title="Thống kê"
-                subtitle="Biểu đồ & xuất CSV"
-                onPress={() => setSection('stats')}
-              />
-            </View>
-            <View style={{ width: gridCellWidth }}>
-              <FeatureTile
-                icon="timer-outline"
-                tone="primary"
-                title="Hẹn giờ & Quyền"
-                subtitle="Tự khóa & cấp quyền"
-                onPress={() => setSection('remote-config')}
-              />
-            </View>
-            <View style={{ width: gridCellWidth }}>
-              <FeatureTile
-                icon="shield-half-outline"
-                tone="rose"
-                title="Tạm khóa"
-                subtitle="Khóa khẩn cấp"
-                onPress={() => setSection('lockdown')}
-              />
-            </View>
-            <View style={{ width: gridCellWidth }}>
-              <FeatureTile
-                icon="finger-print-outline"
-                tone="teal"
-                title="Thẻ & Vân tay"
-                subtitle="Phương thức chủ cửa"
-                onPress={() => setSection('owner-credentials')}
+                icon="refresh-circle-outline"
+                tone="error"
+                title="Khôi phục cài đặt gốc"
+                onPress={() => setSection('factory-reset')}
               />
             </View>
           </View>
-
-          <View style={oStyles.groupHeader}>
-            <Text style={oStyles.groupTitle}>Phần cứng & Kết nối</Text>
-          </View>
-          <View style={oStyles.bentoGrid}>
-            <View style={{ width: gridCellWidth }}>
-              <FeatureTile
-                icon="keypad-outline"
-                tone="warning"
-                title="Mã PIN mở cửa"
-                subtitle="Mã 6 số mở cửa"
-                onPress={() => setSection('door-pin')}
-              />
-            </View>
-            <View style={{ width: gridCellWidth }}>
-              <FeatureTile
-                icon="key-outline"
-                tone="rose"
-                title="Mã PIN Admin"
-                subtitle="Mã quản trị trên khóa"
-                onPress={() => setSection('admin-pin')}
-              />
-            </View>
-            <View style={{ width: gridCellWidth }}>
-              <FeatureTile
-                icon="options-outline"
-                tone="purple"
-                title="Góc Servo"
-                subtitle="Chỉnh chốt cơ khí"
-                onPress={() => setSection('servo')}
-              />
-            </View>
-            <View style={{ width: gridCellWidth }}>
-              <FeatureTile
-                icon="locate-outline"
-                tone="indigo"
-                title="Hiệu chỉnh"
-                subtitle="Cảm ứng & cảm biến"
-                onPress={() => setSection('calibrate')}
-              />
-            </View>
-            <View style={{ width: gridCellWidth }}>
-              <FeatureTile
-                icon="wifi-outline"
-                tone="sky"
-                title="Wi-Fi"
-                subtitle="Đổi mạng kết nối"
-                onPress={() => setSection('wifi')}
-              />
-            </View>
-            <View style={{ width: gridCellWidth }}>
-              <FeatureTile
-                icon="videocam-outline"
-                tone="success"
-                title="Camera AI"
-                subtitle="Ghép nối Laptop"
-                onPress={() => setSection('camera-ai')}
-              />
-            </View>
-          </View>
-        </>
-      ) : null}
-
-      {device ? (
-        <>
-          <View style={oStyles.groupHeader}>
-            <Text style={oStyles.groupTitle}>Hệ thống</Text>
-          </View>
-          <FeatureTile
-            compact
-            icon="refresh-circle-outline"
-            tone="error"
-            title="Khôi phục cài đặt gốc"
-            subtitle="Đặt lại mặc định nhà sản xuất"
-            onPress={() => setSection('factory-reset')}
-          />
-        </>
+        </Card>
       ) : null}
     </ScrollView>
   );
@@ -599,10 +600,14 @@ const oStyles = StyleSheet.create({
     color: colors.text,
     letterSpacing: -0.2,
   },
+  iconGroupCard: {
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    borderRadius: radius.card,
+  },
   bentoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
-    justifyContent: 'space-between',
+    rowGap: 8,
   },
 });
