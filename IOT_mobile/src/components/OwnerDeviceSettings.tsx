@@ -18,6 +18,7 @@ export type SettingsSection =
   | 'hub'
   | 'stats'
   | 'remote-config'
+  | 'access-methods'
   | 'lockdown'
   | 'owner-credentials'
   | 'door-pin'
@@ -37,7 +38,10 @@ const sectionMeta: Record<
     title: 'Thống kê & Báo cáo',
   },
   'remote-config': {
-    title: 'Hẹn giờ & Quyền',
+    title: 'Hẹn giờ tự khóa',
+  },
+  'access-methods': {
+    title: 'Phương thức mở cửa',
   },
   lockdown: {
     title: 'Tạm khóa khẩn cấp',
@@ -186,6 +190,9 @@ export function OwnerDeviceSettings({
         {section === 'stats' ? <DoorDashboard unitId={unitId} section="stats" /> : null}
         {section === 'remote-config' ? (
           <DoorDashboard unitId={unitId} section="remote-config" />
+        ) : null}
+        {section === 'access-methods' ? (
+          <DoorDashboard unitId={unitId} section="access-methods" />
         ) : null}
         {section === 'lockdown' ? <DoorDashboard unitId={unitId} section="lockdown" /> : null}
         {section === 'owner-credentials' ? (
@@ -347,21 +354,6 @@ export function OwnerDeviceSettings({
             </Text>
           </View>
         </View>
-
-        <View style={oStyles.heroFooter}>
-          <Text style={[s.caption, { flex: 1 }]}>
-            Trạng thái lệnh không thay thế việc kiểm tra cơ khí.
-          </Text>
-          <Button
-            title="Cập nhật trạng thái"
-            icon="refresh-outline"
-            variant="ghost"
-            disabled={busy}
-            onPress={() => {
-              void act(reload);
-            }}
-          />
-        </View>
       </Card>
 
       {needsInitialSetup ? (
@@ -395,7 +387,6 @@ export function OwnerDeviceSettings({
               <View style={{ width: gridCellWidth }}>
                 <FeatureTile
                   icon="bar-chart-outline"
-                  tone="indigo"
                   title="Thống kê"
                   onPress={() => setSection('stats')}
                 />
@@ -403,23 +394,20 @@ export function OwnerDeviceSettings({
               <View style={{ width: gridCellWidth }}>
                 <FeatureTile
                   icon="timer-outline"
-                  tone="primary"
-                  title="Hẹn giờ & Quyền"
+                  title="Hẹn giờ"
                   onPress={() => setSection('remote-config')}
                 />
               </View>
               <View style={{ width: gridCellWidth }}>
                 <FeatureTile
-                  icon="shield-half-outline"
-                  tone="rose"
-                  title="Tạm khóa"
-                  onPress={() => setSection('lockdown')}
+                  icon="toggle-outline"
+                  title="Phương thức"
+                  onPress={() => setSection('access-methods')}
                 />
               </View>
               <View style={{ width: gridCellWidth }}>
                 <FeatureTile
                   icon="finger-print-outline"
-                  tone="teal"
                   title="Thẻ & Vân tay"
                   onPress={() => setSection('owner-credentials')}
                 />
@@ -435,23 +423,20 @@ export function OwnerDeviceSettings({
               <View style={{ width: gridCellWidth }}>
                 <FeatureTile
                   icon="keypad-outline"
-                  tone="warning"
-                  title="Mã PIN mở cửa"
+                  title="PIN mở cửa"
                   onPress={() => setSection('door-pin')}
                 />
               </View>
               <View style={{ width: gridCellWidth }}>
                 <FeatureTile
                   icon="key-outline"
-                  tone="rose"
-                  title="Mã PIN Admin"
+                  title="PIN Admin"
                   onPress={() => setSection('admin-pin')}
                 />
               </View>
               <View style={{ width: gridCellWidth }}>
                 <FeatureTile
                   icon="options-outline"
-                  tone="purple"
                   title="Góc Servo"
                   onPress={() => setSection('servo')}
                 />
@@ -459,7 +444,6 @@ export function OwnerDeviceSettings({
               <View style={{ width: gridCellWidth }}>
                 <FeatureTile
                   icon="locate-outline"
-                  tone="indigo"
                   title="Hiệu chỉnh"
                   onPress={() => setSection('calibrate')}
                 />
@@ -467,7 +451,6 @@ export function OwnerDeviceSettings({
               <View style={{ width: gridCellWidth }}>
                 <FeatureTile
                   icon="wifi-outline"
-                  tone="sky"
                   title="Wi-Fi"
                   onPress={() => setSection('wifi')}
                 />
@@ -475,9 +458,16 @@ export function OwnerDeviceSettings({
               <View style={{ width: gridCellWidth }}>
                 <FeatureTile
                   icon="videocam-outline"
-                  tone="success"
                   title="Camera AI"
                   onPress={() => setSection('camera-ai')}
+                />
+              </View>
+              <View style={{ width: gridCellWidth }}>
+                <FeatureTile
+                  icon="shield-half-outline"
+                  tone="rose"
+                  title="Tạm khóa"
+                  onPress={() => setSection('lockdown')}
                 />
               </View>
               {device ? (
@@ -485,7 +475,7 @@ export function OwnerDeviceSettings({
                   <FeatureTile
                     icon="refresh-circle-outline"
                     tone="error"
-                    title="Khôi phục cài đặt gốc"
+                    title="Khôi phục gốc"
                     onPress={() => setSection('factory-reset')}
                   />
                 </View>

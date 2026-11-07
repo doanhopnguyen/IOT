@@ -1,17 +1,30 @@
 import { useEffect, useState } from 'react';
 import { Text } from 'react-native';
 import { request, getApiBaseUrl } from '../services/api/client';
-import { Badge, Button, Card, Input, Notice, styles as s } from './ui';
+import { AppModal, Badge, Button, Card, Input, Notice, styles as s } from './ui';
 import { useConfirm } from './ConfirmationProvider';
 import { LaptopAiSetup } from './LaptopAiSetup';
 
 export function CameraNodeSettings({ unitId }: { unitId: number }) {
   const [manual, setManual] = useState(false);
-  return <>
-    <LaptopAiSetup unitId={unitId} />
-    <Button title={manual ? 'Ẩn cấp phát camera thủ công' : 'Cấp phát camera thủ công'} variant="ghost" onPress={() => setManual(value => !value)} />
-    {manual ? <ManualCameraNodeSettings unitId={unitId} /> : null}
-  </>;
+  return (
+    <>
+      <LaptopAiSetup unitId={unitId} />
+      <Button
+        title="Cấp phát camera thủ công"
+        icon="options-outline"
+        variant="ghost"
+        onPress={() => setManual(true)}
+      />
+      <AppModal
+        visible={manual}
+        title="Cấp phát camera thủ công"
+        onClose={() => setManual(false)}
+      >
+        <ManualCameraNodeSettings unitId={unitId} />
+      </AppModal>
+    </>
+  );
 }
 function ManualCameraNodeSettings({ unitId }: { unitId: number }) {
   const confirm = useConfirm();

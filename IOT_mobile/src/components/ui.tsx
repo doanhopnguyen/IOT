@@ -82,7 +82,10 @@ export function FeatureTile({
   onPress: () => void;
   style?: StyleProp<ViewStyle>;
 }) {
-  const palette = toneMap[tone];
+  const isDanger = tone === 'error' || tone === 'rose';
+  const palette = isDanger
+    ? { bg: '#FEF2F2', ink: '#DC2626', border: '#FEE2E2' }
+    : { bg: '#F1F5F9', ink: colors.primary, border: '#E2E8F0' };
   if (!compact) {
     return (
       <Pressable
@@ -101,7 +104,7 @@ export function FeatureTile({
             { backgroundColor: palette.bg, borderColor: palette.border },
           ]}
         >
-          <Ionicons name={icon} size={21} color={palette.ink} />
+          <Ionicons name={icon} size={20} color={palette.ink} />
         </View>
         <Text style={styles.tileMiniTitle} numberOfLines={2}>
           {title}
@@ -123,7 +126,7 @@ export function FeatureTile({
     >
       <View style={styles.tileRowHead}>
         <View style={[styles.tileIconWrap, { backgroundColor: palette.bg, borderColor: palette.border }]}>
-          <Ionicons name={icon} size={21} color={palette.ink} />
+          <Ionicons name={icon} size={20} color={palette.ink} />
         </View>
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={styles.tileTitle} numberOfLines={1}>
@@ -293,7 +296,6 @@ export function Status({ online }: { online: boolean }) {
 
 export function PageHeader({
   title,
-  description,
   back,
   action,
 }: {
@@ -313,19 +315,12 @@ export function PageHeader({
             accessibilityLabel="Quay lại"
             style={styles.back}
           >
-            <Ionicons name="arrow-back" size={20} color={colors.text} />
+            <Ionicons name="chevron-back" size={20} color={colors.text} />
           </Pressable>
         ) : null}
-        <View style={{ flex: 1, gap: 1 }}>
-          <Text style={styles.pageTitle} numberOfLines={1}>
-            {title}
-          </Text>
-          {description ? (
-            <Text style={styles.description} numberOfLines={1}>
-              {description}
-            </Text>
-          ) : null}
-        </View>
+        <Text style={styles.pageTitle} numberOfLines={1}>
+          {title}
+        </Text>
         {action}
       </View>
     </View>
@@ -662,27 +657,24 @@ export const styles = StyleSheet.create({
   dot: { width: 7, height: 7, borderRadius: 4 },
   caption: { fontFamily: fonts.regular, fontSize: 13, lineHeight: 19, color: colors.muted },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  header: { gap: 4, marginBottom: 2 },
-  headerTopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  header: { marginBottom: 2 },
+  headerTopRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 38 },
   back: {
-    width: 42,
-    height: 42,
-    borderRadius: 15,
+    width: 38,
+    height: 38,
+    borderRadius: 13,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: colors.shadow,
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
   },
   pageTitle: {
+    flex: 1,
     fontFamily: fonts.bold,
     color: colors.text,
-    fontSize: 22,
-    lineHeight: 28,
+    fontSize: 19,
+    lineHeight: 25,
     fontWeight: '700',
     letterSpacing: -0.3,
   },

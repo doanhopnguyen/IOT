@@ -869,7 +869,12 @@ function Devices({
             accessibilityState={{ selected: filter === key }}
             style={[x.filterChip, filter === key && x.filterSelected]}
           >
-            <Text style={filter === key ? x.filterActiveText : x.caption}>{label}</Text>
+            <Text
+              style={filter === key ? x.filterActiveText : x.filterInactiveText}
+              numberOfLines={1}
+            >
+              {label}
+            </Text>
           </Pressable>
         ))}
       </View>
@@ -941,9 +946,7 @@ function Detail({
   history: () => void;
   settings: () => void;
 }) {
-  const { width } = useWindowDimensions();
   const owner = canManageDoor(door);
-  const gridWidth = width >= 680 ? '20%' : '25%';
   return (
     <ScrollView
       keyboardDismissMode="on-drag"
@@ -1036,7 +1039,7 @@ function Detail({
 
           <Card style={{ paddingVertical: 14, paddingHorizontal: 8 }}>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 10 }}>
-              <View style={{ width: gridWidth }}>
+              <View style={{ width: '25%' }}>
                 <FeatureTile
                   icon="people-outline"
                   tone="primary"
@@ -1044,15 +1047,15 @@ function Detail({
                   onPress={members}
                 />
               </View>
-              <View style={{ width: gridWidth }}>
+              <View style={{ width: '25%' }}>
                 <FeatureTile
                   icon="shield-checkmark-outline"
                   tone="teal"
-                  title="Duyệt khuôn mặt"
+                  title="Duyệt mặt"
                   onPress={approvals}
                 />
               </View>
-              <View style={{ width: gridWidth }}>
+              <View style={{ width: '25%' }}>
                 <FeatureTile
                   icon="scan-outline"
                   tone="purple"
@@ -1060,24 +1063,24 @@ function Detail({
                   onPress={setupFace}
                 />
               </View>
-              <View style={{ width: gridWidth }}>
+              <View style={{ width: '25%' }}>
                 <FeatureTile
                   icon="time-outline"
                   tone="indigo"
-                  title="Lịch sử ra vào"
+                  title="Lịch sử"
                   onPress={history}
-                />
-              </View>
-              <View style={{ width: gridWidth }}>
-                <FeatureTile
-                  icon="settings-outline"
-                  tone="warning"
-                  title="Cài đặt thiết bị"
-                  onPress={settings}
                 />
               </View>
             </View>
           </Card>
+          <FeatureTile
+            compact
+            icon="settings-outline"
+            tone="primary"
+            title="Cài đặt thiết bị"
+            subtitle="Thống kê, mã PIN, Servo, Wi-Fi & Camera AI"
+            onPress={settings}
+          />
         </>
       ) : (
         <>
@@ -1552,11 +1555,11 @@ function MemberDetail({
       <View style={x.segmentedBar}>
         {(
           [
-            ['permissions', 'Quyền & Thẻ', 'key-outline'],
-            ['face', 'Khuôn mặt AI', 'scan-outline'],
-            ['enroll', 'Thêm thẻ/vân tay', 'add-circle-outline'],
+            ['permissions', 'Quyền & Thẻ'],
+            ['face', 'Khuôn mặt AI'],
+            ['enroll', 'Thêm mới'],
           ] as const
-        ).map(([key, label, tabIcon]) => {
+        ).map(([key, label]) => {
           const selected = activeTab === key;
           return (
             <Pressable
@@ -1566,12 +1569,12 @@ function MemberDetail({
               accessibilityState={{ selected }}
               style={[x.segmentBtn, selected && x.segmentBtnActive]}
             >
-              <Ionicons
-                name={tabIcon}
-                size={16}
-                color={selected ? '#fff' : colors.muted}
-              />
-              <Text style={selected ? x.segmentTextActive : x.segmentText}>{label}</Text>
+              <Text
+                style={selected ? x.segmentTextActive : x.segmentText}
+                numberOfLines={1}
+              >
+                {label}
+              </Text>
             </Pressable>
           );
         })}
@@ -2037,19 +2040,27 @@ const x = StyleSheet.create({
   },
   avatarText: { fontFamily: fonts.bold, color: colors.primary, fontWeight: '700', fontSize: 16 },
   caption: { fontFamily: fonts.regular, fontSize: 13, color: colors.muted, lineHeight: 19 },
-  filters: { flexDirection: 'row', gap: 9, flexWrap: 'wrap' },
-  filterChip: {
-    minHeight: 40,
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: radius.pill,
+  filters: {
+    flexDirection: 'row',
+    gap: 6,
     backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 4,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  filterChip: {
+    flex: 1,
+    minHeight: 36,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 12,
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  filterSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
-  filterActiveText: { fontFamily: fonts.semibold, color: '#fff', fontSize: 13, fontWeight: '600' },
+  filterSelected: { backgroundColor: colors.primary },
+  filterActiveText: { fontFamily: fonts.bold, color: '#fff', fontSize: 13, fontWeight: '700' },
+  filterInactiveText: { fontFamily: fonts.semibold, color: colors.muted, fontSize: 13, fontWeight: '600' },
   profile: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   profileAvatar: {
     width: 52,

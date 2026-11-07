@@ -124,47 +124,61 @@ export function Alerts({ back }: { back: () => void }) {
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={s.page}
     >
-      <PageHeader back={back} title="Cảnh báo & thông báo" />
+      <PageHeader back={back} title="Cảnh báo" />
+      <AlertStatistics data={statistics} />
       <AlertFilters users={users} userId={userId} period={period} range={filters}
         onUser={id => { if (id !== userId) { resetResults(); setUserId(id); } }}
         onPeriod={value => { if (value !== period) { resetResults(); setPeriod(value); } }}
         onRange={range => { resetResults(); setCustomRange(range); setPeriod('custom'); }} />
       {usersError ? <Notice tone="error">{usersError}</Notice> : null}
-      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-        {([undefined, 'INFO', 'WARNING', 'CRITICAL'] as const).map((value) => (
-          <Pressable
-            key={value ?? 'all'}
-            onPress={() => {
-              if (severity === value) return;
-              resetResults();
-              setSeverity(value);
-            }}
-            accessibilityRole="button"
-            accessibilityState={{ selected: severity === value }}
-            style={{
-              paddingHorizontal: 16,
-              paddingVertical: 10,
-              minHeight: 42,
-              borderRadius: 999,
-              borderWidth: 1,
-              borderColor: severity === value ? colors.primary : colors.border,
-              backgroundColor: severity === value ? colors.primary : colors.surface,
-              justifyContent: 'center',
-            }}
-          >
-            <Text
+      <View
+        style={{
+          flexDirection: 'row',
+          gap: 6,
+          backgroundColor: colors.surface,
+          borderRadius: 16,
+          padding: 4,
+          borderWidth: 1,
+          borderColor: colors.border,
+        }}
+      >
+        {([undefined, 'INFO', 'WARNING', 'CRITICAL'] as const).map((value) => {
+          const active = severity === value;
+          return (
+            <Pressable
+              key={value ?? 'all'}
+              onPress={() => {
+                if (active) return;
+                resetResults();
+                setSeverity(value);
+              }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
               style={{
-                fontSize: 13,
-                fontWeight: '700',
-                color: severity === value ? '#fff' : colors.muted,
+                flex: 1,
+                paddingHorizontal: 6,
+                paddingVertical: 8,
+                minHeight: 36,
+                borderRadius: 12,
+                backgroundColor: active ? colors.primary : 'transparent',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
-              {value ? labels[value] : 'Tất cả'}
-            </Text>
-          </Pressable>
-        ))}
+              <Text
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: active ? '700' : '600',
+                  color: active ? '#fff' : colors.muted,
+                }}
+                numberOfLines={1}
+              >
+                {value ? labels[value] : 'Tất cả'}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
-      <AlertStatistics data={statistics} />
       {loading && !items.length ? <LoadingState label="Đang tải cảnh báo…" /> : null}
       {actionError ? <Notice tone="error">{actionError}</Notice> : null}
       {error ? (
@@ -179,6 +193,8 @@ export function Alerts({ back }: { back: () => void }) {
         <Card
           key={item.id}
           style={{
+            padding: 15,
+            gap: 8,
             borderLeftWidth: 3,
             borderLeftColor:
               item.severity === 'CRITICAL'
@@ -199,17 +215,43 @@ export function Alerts({ back }: { back: () => void }) {
                     : 'primary'
               }
             />
-            <Text style={s.caption}>{statusText[item.status]}</Text>
+            <Text style={s.caption}>
+              {statusText[item.status]} · {new Date(item.occurredAt).toLocaleString('vi-VN')}
+            </Text>
           </View>
           <Text style={s.heading}>{item.message ?? item.eventType.replace(/_/g, ' ')}</Text>
-          <Text style={s.description}>
+          <Text style={s.caption}>
             {item.accessUnit?.name ?? 'Chưa gắn cửa'} · {item.device.name}
+            {item.relatedUsers?.length
+              ? ` · ${item.relatedUsers.map((user) => user.name).join(', ')}`
+              : ''}
           </Text>
-          {item.relatedUsers?.length ? <Text style={s.caption}>
-            Liên quan: {item.relatedUsers.map(user => user.name).join(', ')}
-          </Text> : null}
-          <Text style={s.caption}>{new Date(item.occurredAt).toLocaleString('vi-VN')}</Text>
-          {item.status === 'OPEN' ? (
+          {(item.status === 'OPEN' || item.status === 'ACKNOWLEDGED') &&
+          !automaticTypes.has(item.eventType) ? (
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 2 }}>
+              {item.status === 'OPEN' ? (
+                <View style={{ flex: 1 }}>
+                  <Button
+                    title="Đã xem"
+                    variant="ghost"
+                    disabled={busyId !== undefined}
+                    onPress={() => {
+                      void change(item, 'ACKNOWLEDGED');
+                    }}
+                  />
+                </View>
+              ) : null}
+              <View style={{ flex: 1 }}>
+                <Button
+                  title="Đã xử lý"
+                  disabled={busyId !== undefined}
+                  onPress={() => {
+                    void change(item, 'RESOLVED');
+                  }}
+                />
+              </View>
+            </View>
+          ) : item.status === 'OPEN' ? (
             <Button
               title="Đã xem"
               variant="ghost"
@@ -219,17 +261,10 @@ export function Alerts({ back }: { back: () => void }) {
               }}
             />
           ) : null}
-          {(item.status === 'OPEN' || item.status === 'ACKNOWLEDGED') && !automaticTypes.has(item.eventType) ? (
-            <Button
-              title="Đã xử lý"
-              disabled={busyId !== undefined}
-              onPress={() => {
-                void change(item, 'RESOLVED');
-              }}
-            />
+          {(item.status === 'OPEN' || item.status === 'ACKNOWLEDGED') &&
+          automaticTypes.has(item.eventType) ? (
+            <Text style={s.caption}>Tự xử lý khi sự cố được khắc phục</Text>
           ) : null}
-          {(item.status === 'OPEN' || item.status === 'ACKNOWLEDGED') && automaticTypes.has(item.eventType)
-            ? <Text style={s.caption}>Tự xử lý khi sự cố được khắc phục</Text> : null}
         </Card>
       ))}
       <Button

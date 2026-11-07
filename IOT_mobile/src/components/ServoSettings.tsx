@@ -1,10 +1,12 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Text, View } from 'react-native';
+import { AppState, Pressable, Text, View } from 'react-native';
 import { managerService } from '../services/api/managerService';
 import { servoService, convertServoRange, displayServoAngle, parseServoAngle, stepServoAngle, type ServoAngles, type ServoTarget, type ServoRange } from '../services/api/servoService';
 import { ServoPreviewQueue } from '../services/api/servoPreview';
 import { servoSyncDecision, type ServoConfirmation } from '../services/api/servoSync';
-import { Button, Card, Input, Notice, styles as s } from './ui';
+import { AppModal, Badge, Button, Card, Input, Notice, styles as s } from './ui';
+import { colors, fonts } from '../theme/tokens';
 
 function servoError(error: unknown): string {
   const code = error instanceof Error ? error.message : String(error);
@@ -28,7 +30,7 @@ export function ServoSettings({ unitId, online, calibrating = false }: { unitId:
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState('');
   const initialized = useRef(false), centeredRef = useRef(false);
   const dirty = useRef(false), revision = useRef(0), confirmation = useRef<ServoConfirmation | undefined>(undefined);
-  const [hasDraft, setHasDraft] = useState(false);
+  const [, setHasDraft] = useState(false);
   const editTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const queue = useMemo(() => new ServoPreviewQueue(async jog => {
     await acknowledged(await servoService.preview(unitId, jog.target, jog.angle, jog.servoRange));
@@ -110,69 +112,272 @@ export function ServoSettings({ unitId, online, calibrating = false }: { unitId:
     setLock(displayServoAngle(lockAngle, next, range)); setOpen(displayServoAngle(openAngle, next, range));
     centeredRef.current = next; setCentered(next);
   };
-  const controls = (target: ServoTarget, value: string, label: string) => <>
-    <Input label={`${label} (${centered ? `${5 - range / 2} đến +${range / 2 - 5}` : `5–${range - 5}`}°)`} keyboardType={centered ? 'default' : 'numeric'}
-      value={value} onChangeText={v => edit(target, v)} editable={!busy} />
-    <View style={{ flexDirection: 'row', gap: 4 }}>
-      {[-5, -1, 1, 5].map(delta => <View key={delta} style={{ flex: 1 }}><Button
-        title={`${delta > 0 ? '+' : '−'}${Math.abs(delta)}°`} variant="ghost"
-        disabled={busy || parseServoAngle(value, centered, range) == null}
-        onPress={() => edit(target, stepServoAngle(value, delta, centered, range), true)} /></View>)}
-    </View>
-    <Button title={`Thử ${label.toLowerCase()} tại góc này`} variant="ghost"
-      disabled={busy || !online || calibrating || parseServoAngle(value, centered, range) == null}
-      onPress={() => { cancelEdit(); queue.submit({ target, angle: parseServoAngle(value, centered, range)!, servoRange: range }); }} />
-  </>;
-  return <Card>
-    <Text style={s.heading}>Góc servo</Text>
-    <Text style={s.description}>Nhích 1° hoặc 5°, hoặc nhập bất kỳ góc nguyên nào. Khi bật quay trực tiếp, servo quay theo góc vừa chỉnh; sau đó bấm lưu.</Text>
-    <Text style={s.caption}>Hành trình đang dùng: {range}°. {centered ? `Mốc giữa 0° tương ứng góc servo ${range / 2}°.` : 'Có thể chuyển sang góc âm/dương quanh mốc giữa.'} Giữ cách hai đầu 5°, không quay vòng qua điểm chặn.</Text>
-    <Button title={`Đổi hành trình và lưu: ${range === 180 ? 360 : 180}°`} variant="ghost" disabled={busy || inputError || !online || calibrating} onPress={() => {
-      if (lockAngle == null || openAngle == null) return;
-      cancelEdit(); dirty.current = true; revision.current++; setBusy(true); setError(''); setMessage('');
-      const next = range === 180 ? 360 : 180;
-      const newLock = convertServoRange(lockAngle, range, next), newOpen = convertServoRange(openAngle, range, next);
-      void (async () => {
-        try {
-          await queue.flush(); await acknowledged(await servoService.set(unitId, newLock, newOpen, next));
-          setRange(next); setLock(displayServoAngle(newLock, centered, next)); setOpen(displayServoAngle(newOpen, centered, next));
-          setReported({ lockAngle: newLock, openAngle: newOpen, servoRange: next });
-          confirmation.current = { angles: { lockAngle: newLock, openAngle: newOpen, servoRange: next }, expiresAt: Date.now() + 15000 };
-          dirty.current = false; setHasDraft(false); revision.current++;
-          setMessage(`Đã lưu hành trình ${next}° và quy đổi hai góc. Nhích 1° để kiểm tra chốt thực tế.`);
-        } catch (e) { setError(servoError(e)); }
-        finally { setBusy(false); }
-      })();
-    }} />
-    <Button title={centered ? `Đổi sang góc servo 5–${range - 5}°` : 'Dùng góc âm/dương quanh mốc giữa'} variant="ghost" disabled={busy || inputError} onPress={toggleMode} />
-    <Button title={live ? 'Quay trực tiếp: BẬT · chạm để tắt' : 'Quay trực tiếp: TẮT · chạm để bật'} variant="ghost" disabled={busy || !online || calibrating} onPress={() => {
-      cancelEdit(); setLive(!live);
-      if (live) { setBusy(true); void queue.stop().catch(e => setError(servoError(e))).finally(() => setBusy(false)); }
-    }} />
-    <Text style={s.caption}>Góc đang lưu: {reported?.lockAngle == null || reported.openAngle == null ? 'chờ cửa gửi dữ liệu' : `khóa ${reported.lockAngle}° · mở ${reported.openAngle}°`}</Text>
-    <Text style={s.caption}>{hasDraft ? 'Bạn đang chỉnh bản nháp. Góc thiết bị mới gửi vẫn hiện ở dòng trên; bấm lưu để áp dụng hoặc lấy lại góc đang lưu.' : 'App tự đồng bộ góc khi bạn thay đổi trên thiết bị.'}</Text>
-    {controls('LOCK', lock, 'Góc khóa')}
-    {controls('OPEN', open, 'Góc mở')}
-    {lockAngle != null && lockAngle === openAngle ? <Notice>Hai vị trí đang bằng nhau; lệnh khóa và mở sẽ đến cùng một góc.</Notice> : null}
-    {inputError ? <Text style={s.caption}>Nhập đủ hai góc nguyên trong khoảng cho phép.</Text> : null}
-    <Button title={busy ? 'Đang chờ cửa xác nhận…' : 'Lưu hai góc servo'} disabled={busy || !online || calibrating || inputError} onPress={() => { void save(); }} />
-    <Button title="Dừng quay thử" variant="ghost" disabled={busy} onPress={() => {
-      cancelEdit(); setLive(false); setMessage(''); setBusy(true);
-      void queue.stop().then(() => setMessage('Đã kết thúc quay thử. Kiểm tra chốt thực tế; góc chưa lưu vẫn chỉ là bản nháp.')).catch(e => setError(servoError(e))).finally(() => setBusy(false));
-    }} />
-    <Button title="Lấy lại góc đang lưu" variant="ghost" disabled={busy} onPress={() => {
-      cancelEdit(); setError(''); setBusy(true);
-      void queue.stop().then(() => servoService.get(unitId)).then(angles => {
-        dirty.current = false; confirmation.current = undefined; revision.current++; setHasDraft(false);
-        setReported(angles);
-        if (angles.lockAngle != null && angles.openAngle != null) {
-          const travel = angles.servoRange ?? 180; setRange(travel);
-          initialized.current = true; setLock(displayServoAngle(angles.lockAngle, centered, travel)); setOpen(displayServoAngle(angles.openAngle, centered, travel));
-        }
-      }).catch(e => setError(servoError(e))).finally(() => setBusy(false));
-    }} />
-    <Text style={s.caption}>{calibrating ? 'Hoàn tất hiệu chỉnh ban đầu trên chip trước khi chỉnh từ app.' : online ? 'Đóng cửa trước khi thử góc khóa. Quay thử không tự lưu; cửa thoát phiên chỉnh sau 5 giây không có lệnh. Góc báo là lệnh điều khiển, hãy quan sát chốt thực tế.' : 'Cửa cần online để quay thử và lưu góc.'}</Text>
-    {message ? <Notice tone="info">{message}</Notice> : null}
-    {error ? <Notice tone="error">{error}</Notice> : null}
-  </Card>;
+  const [activeTarget, setActiveTarget] = useState<ServoTarget>('LOCK');
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const currentVal = activeTarget === 'LOCK' ? lock : open;
+  const currentLabel = activeTarget === 'LOCK' ? 'Góc khóa' : 'Góc mở';
+  return (
+    <Card>
+      <View style={s.row}>
+        <View
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 13,
+            backgroundColor: '#F1F5F9',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Ionicons name="options-outline" size={20} color={colors.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={s.heading}>Góc khóa & mở Servo</Text>
+          <Text style={s.caption}>Hành trình {range}° · {live ? 'Quay trực tiếp BẬT' : 'Quay trực tiếp TẮT'}</Text>
+        </View>
+        <Pressable
+          onPress={() => setOptionsOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Tùy chọn nâng cao"
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
+            paddingHorizontal: 11,
+            paddingVertical: 6,
+            borderRadius: 999,
+            backgroundColor: '#F1F5F9',
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}
+        >
+          <Ionicons name="settings-outline" size={15} color={colors.text} />
+          <Text style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.text }}>
+            Tùy chọn
+          </Text>
+        </Pressable>
+      </View>
+
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <Pressable
+          onPress={() => setActiveTarget('LOCK')}
+          style={{
+            flex: 1,
+            padding: 13,
+            borderRadius: 16,
+            backgroundColor: activeTarget === 'LOCK' ? colors.primarySoft : colors.surfaceAlt,
+            borderWidth: 1.5,
+            borderColor: activeTarget === 'LOCK' ? colors.primary : colors.border,
+            gap: 4,
+          }}
+        >
+          <View style={s.row}>
+            <Ionicons
+              name="lock-closed-outline"
+              size={16}
+              color={activeTarget === 'LOCK' ? colors.primary : colors.muted}
+            />
+            <Text style={[s.caption, { fontFamily: fonts.semibold, color: activeTarget === 'LOCK' ? colors.primary : colors.muted }]}>
+              Góc khóa (LOCK)
+            </Text>
+          </View>
+          <Text style={{ fontFamily: fonts.bold, fontSize: 22, color: colors.text }}>
+            {reported?.lockAngle != null ? `${reported.lockAngle}°` : `${lock || '--'}°`}
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => setActiveTarget('OPEN')}
+          style={{
+            flex: 1,
+            padding: 13,
+            borderRadius: 16,
+            backgroundColor: activeTarget === 'OPEN' ? colors.primarySoft : colors.surfaceAlt,
+            borderWidth: 1.5,
+            borderColor: activeTarget === 'OPEN' ? colors.primary : colors.border,
+            gap: 4,
+          }}
+        >
+          <View style={s.row}>
+            <Ionicons
+              name="lock-open-outline"
+              size={16}
+              color={activeTarget === 'OPEN' ? colors.primary : colors.muted}
+            />
+            <Text style={[s.caption, { fontFamily: fonts.semibold, color: activeTarget === 'OPEN' ? colors.primary : colors.muted }]}>
+              Góc mở (OPEN)
+            </Text>
+          </View>
+          <Text style={{ fontFamily: fonts.bold, fontSize: 22, color: colors.text }}>
+            {reported?.openAngle != null ? `${reported.openAngle}°` : `${open || '--'}°`}
+          </Text>
+        </Pressable>
+      </View>
+
+      <Input
+        label={`${currentLabel} (${centered ? `${5 - range / 2} đến +${range / 2 - 5}` : `5–${range - 5}`}°)`}
+        keyboardType={centered ? 'default' : 'numeric'}
+        value={currentVal}
+        onChangeText={(v) => edit(activeTarget, v)}
+        editable={!busy}
+      />
+
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        {[-5, -1, 1, 5].map((delta) => (
+          <View key={delta} style={{ flex: 1 }}>
+            <Button
+              title={`${delta > 0 ? '+' : '−'}${Math.abs(delta)}°`}
+              variant="ghost"
+              disabled={busy || parseServoAngle(currentVal, centered, range) == null}
+              onPress={() =>
+                edit(activeTarget, stepServoAngle(currentVal, delta, centered, range), true)
+              }
+            />
+          </View>
+        ))}
+      </View>
+
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <View style={{ flex: 1 }}>
+          <Button
+            title={`Thử ${currentLabel.toLowerCase()}`}
+            variant="ghost"
+            icon="play-outline"
+            disabled={busy || !online || calibrating || parseServoAngle(currentVal, centered, range) == null}
+            onPress={() => {
+              cancelEdit();
+              queue.submit({
+                target: activeTarget,
+                angle: parseServoAngle(currentVal, centered, range)!,
+                servoRange: range,
+              });
+            }}
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Button
+            title={busy ? 'Đang lưu…' : 'Lưu hai góc'}
+            icon="checkmark-circle-outline"
+            disabled={busy || !online || calibrating || inputError}
+            onPress={() => {
+              void save();
+            }}
+          />
+        </View>
+      </View>
+
+      {lockAngle != null && lockAngle === openAngle ? (
+        <Notice>Hai vị trí đang bằng nhau; lệnh khóa và mở sẽ đến cùng một góc.</Notice>
+      ) : null}
+      {message ? <Notice tone="info">{message}</Notice> : null}
+      {error ? <Notice tone="error">{error}</Notice> : null}
+
+      <AppModal
+        visible={optionsOpen}
+        title="Tùy chọn Servo nâng cao"
+        onClose={() => setOptionsOpen(false)}
+      >
+        <View style={{ gap: 12 }}>
+          <View style={s.row}>
+            <Text style={[s.description, { flex: 1, color: colors.text }]}>
+              Hành trình đang dùng
+            </Text>
+            <Badge label={`${range}°`} tone="primary" />
+          </View>
+          <Button
+            title={`Đổi hành trình và lưu: ${range === 180 ? 360 : 180}°`}
+            variant="ghost"
+            disabled={busy || inputError || !online || calibrating}
+            onPress={() => {
+              if (lockAngle == null || openAngle == null) return;
+              cancelEdit();
+              dirty.current = true;
+              revision.current++;
+              setBusy(true);
+              setError('');
+              setMessage('');
+              const next = range === 180 ? 360 : 180;
+              const newLock = convertServoRange(lockAngle, range, next),
+                newOpen = convertServoRange(openAngle, range, next);
+              void (async () => {
+                try {
+                  await queue.flush();
+                  await acknowledged(await servoService.set(unitId, newLock, newOpen, next));
+                  setRange(next);
+                  setLock(displayServoAngle(newLock, centered, next));
+                  setOpen(displayServoAngle(newOpen, centered, next));
+                  setReported({ lockAngle: newLock, openAngle: newOpen, servoRange: next });
+                  confirmation.current = {
+                    angles: { lockAngle: newLock, openAngle: newOpen, servoRange: next },
+                    expiresAt: Date.now() + 15000,
+                  };
+                  dirty.current = false;
+                  setHasDraft(false);
+                  revision.current++;
+                  setMessage(`Đã lưu hành trình ${next}° và quy đổi hai góc.`);
+                  setOptionsOpen(false);
+                } catch (e) {
+                  setError(servoError(e));
+                } finally {
+                  setBusy(false);
+                }
+              })();
+            }}
+          />
+          <Button
+            title={centered ? `Đổi sang góc 5–${range - 5}°` : 'Dùng góc âm/dương quanh mốc giữa'}
+            variant="ghost"
+            disabled={busy || inputError}
+            onPress={toggleMode}
+          />
+          <Button
+            title={live ? 'Quay trực tiếp: BẬT (Chạm để tắt)' : 'Quay trực tiếp: TẮT (Chạm để bật)'}
+            variant="ghost"
+            disabled={busy || !online || calibrating}
+            onPress={() => {
+              cancelEdit();
+              setLive(!live);
+              if (live) {
+                setBusy(true);
+                void queue
+                  .stop()
+                  .catch((e) => setError(servoError(e)))
+                  .finally(() => setBusy(false));
+              }
+            }}
+          />
+          <Button
+            title="Lấy lại góc đang lưu trên cửa"
+            variant="ghost"
+            disabled={busy}
+            onPress={() => {
+              cancelEdit();
+              setError('');
+              setBusy(true);
+              void queue
+                .stop()
+                .then(() => servoService.get(unitId))
+                .then((angles) => {
+                  dirty.current = false;
+                  confirmation.current = undefined;
+                  revision.current++;
+                  setHasDraft(false);
+                  setReported(angles);
+                  if (angles.lockAngle != null && angles.openAngle != null) {
+                    const travel = angles.servoRange ?? 180;
+                    setRange(travel);
+                    initialized.current = true;
+                    setLock(displayServoAngle(angles.lockAngle, centered, travel));
+                    setOpen(displayServoAngle(angles.openAngle, centered, travel));
+                  }
+                  setOptionsOpen(false);
+                })
+                .catch((e) => setError(servoError(e)))
+                .finally(() => setBusy(false));
+            }}
+          />
+        </View>
+      </AppModal>
+    </Card>
+  );
 }

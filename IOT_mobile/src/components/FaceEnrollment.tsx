@@ -705,17 +705,17 @@ export function FaceApprovals({ door, back }: { door: Door; back: () => void }) 
       />
 
       <View style={s.summaryRow}>
-        <Card style={[s.summaryBox, { backgroundColor: colors.warningSoft, borderColor: '#FEF3C7' }]}>
-          <Text style={[s.summaryValue, { color: colors.warning }]}>{pendingCount}</Text>
+        <Card style={s.summaryBox}>
+          <Text style={[s.summaryValue, { color: colors.text }]}>{pendingCount}</Text>
           <Text style={s.summaryLabel}>Chờ duyệt</Text>
         </Card>
-        <Card style={[s.summaryBox, { backgroundColor: colors.successSoft, borderColor: '#D1FAE5' }]}>
-          <Text style={[s.summaryValue, { color: colors.success }]}>{approvedCount}</Text>
+        <Card style={s.summaryBox}>
+          <Text style={[s.summaryValue, { color: colors.primary }]}>{approvedCount}</Text>
           <Text style={s.summaryLabel}>Đã duyệt</Text>
         </Card>
-        <Card style={[s.summaryBox, { backgroundColor: colors.primarySoft, borderColor: '#DBEAFE' }]}>
-          <Text style={[s.summaryValue, { color: colors.primary }]}>{requests.length}</Text>
-          <Text style={s.summaryLabel}>Tổng yêu cầu</Text>
+        <Card style={s.summaryBox}>
+          <Text style={[s.summaryValue, { color: colors.text }]}>{requests.length}</Text>
+          <Text style={s.summaryLabel}>Tổng cộng</Text>
         </Card>
       </View>
 
@@ -737,7 +737,12 @@ export function FaceApprovals({ door, back }: { door: Door; back: () => void }) 
               accessibilityState={{ selected: active }}
               style={[s.filterPill, active && s.filterPillActive]}
             >
-              <Text style={active ? s.filterPillTextActive : s.filterPillText}>{label}</Text>
+              <Text
+                style={active ? s.filterPillTextActive : s.filterPillText}
+                numberOfLines={1}
+              >
+                {label}
+              </Text>
             </Pressable>
           );
         })}
@@ -831,15 +836,17 @@ export function MemberFacePanel({
         <View style={s.row}>
           <View
             style={{
-              width: 44,
-              height: 44,
-              borderRadius: 15,
-              backgroundColor: colors.purpleSoft,
+              width: 42,
+              height: 42,
+              borderRadius: 14,
+              backgroundColor: colors.surfaceAlt,
+              borderWidth: 1,
+              borderColor: colors.border,
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <Ionicons name="scan-outline" size={22} color={colors.purple} />
+            <Ionicons name="scan-outline" size={20} color={colors.primary} />
           </View>
           <View style={s.flex}>
             <Text style={s.heading}>Cho phép khuôn mặt tại cửa này</Text>
@@ -944,28 +951,36 @@ const s = StyleSheet.create({
   summaryRow: { flexDirection: 'row', gap: 10 },
   summaryBox: {
     flex: 1,
-    padding: 14,
+    padding: 13,
     borderRadius: 20,
     gap: 2,
     alignItems: 'center',
   },
-  summaryValue: { fontSize: 24, fontWeight: '800' },
+  summaryValue: { fontSize: 22, fontWeight: '800' },
   summaryLabel: { fontSize: 12, fontWeight: '600', color: colors.muted },
-  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  filterPill: {
-    paddingHorizontal: 15,
-    paddingVertical: 9,
-    borderRadius: radius.pill,
+  filterRow: {
+    flexDirection: 'row',
+    gap: 6,
     backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 4,
     borderWidth: 1,
     borderColor: colors.border,
   },
+  filterPill: {
+    flex: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 8,
+    minHeight: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   filterPillActive: {
     backgroundColor: colors.primary,
-    borderColor: colors.primary,
   },
-  filterPillText: { fontSize: 13, fontWeight: '600', color: colors.muted },
-  filterPillTextActive: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  filterPillText: { fontSize: 12.5, fontWeight: '600', color: colors.muted },
+  filterPillTextActive: { fontSize: 12.5, fontWeight: '700', color: '#fff' },
   requestCard: { gap: 14 },
   avatarBadge: {
     width: 44,

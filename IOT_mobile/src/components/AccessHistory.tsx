@@ -89,39 +89,52 @@ export function AccessHistory({ doorId, back }: { doorId?: string; back: () => v
       contentContainerStyle={s.page}
     >
       <PageHeader back={back} title="Lịch sử ra vào" />
-      <View style={{ flexDirection: 'row', gap: 9, flexWrap: 'wrap' }}>
-        {[1, 7, 30].map((d) => (
-          <Pressable
-            key={d}
-            accessibilityRole="button"
-            accessibilityState={{ selected: days === d }}
-            onPress={() => {
-              setItems([]);
-              setPage(0);
-              setDays(d);
-            }}
-            style={{
-              paddingHorizontal: 18,
-              paddingVertical: 10,
-              minHeight: 42,
-              borderRadius: 999,
-              backgroundColor: days === d ? colors.primary : colors.surface,
-              borderWidth: 1,
-              borderColor: days === d ? colors.primary : colors.border,
-              justifyContent: 'center',
-            }}
-          >
-            <Text
+      <View
+        style={{
+          flexDirection: 'row',
+          gap: 6,
+          backgroundColor: colors.surface,
+          borderRadius: 16,
+          padding: 4,
+          borderWidth: 1,
+          borderColor: colors.border,
+        }}
+      >
+        {[1, 7, 30].map((d) => {
+          const active = days === d;
+          return (
+            <Pressable
+              key={d}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              onPress={() => {
+                setItems([]);
+                setPage(0);
+                setDays(d);
+              }}
               style={{
-                color: days === d ? '#fff' : colors.muted,
-                fontSize: 14,
-                fontWeight: '700',
+                flex: 1,
+                paddingHorizontal: 10,
+                paddingVertical: 8,
+                minHeight: 36,
+                borderRadius: 12,
+                backgroundColor: active ? colors.primary : 'transparent',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
-              {d === 1 ? 'Hôm nay' : `${d} ngày`}
-            </Text>
-          </Pressable>
-        ))}
+              <Text
+                style={{
+                  color: active ? '#fff' : colors.muted,
+                  fontSize: 13,
+                  fontWeight: active ? '700' : '600',
+                }}
+              >
+                {d === 1 ? 'Hôm nay' : `${d} ngày`}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
       {loading && <LoadingState label="Đang tải lịch sử…" />}
       {error ? (
@@ -133,46 +146,56 @@ export function AccessHistory({ doorId, back }: { doorId?: string; back: () => v
         <EmptyState icon="time-outline" title="Chưa có lượt truy cập" />
       ) : null}
       {items.map((l) => (
-        <Card key={l.id} style={{ gap: 14 }}>
+        <Card key={l.id} style={{ padding: 14, gap: 6 }}>
           <View style={s.row}>
             <View
               style={{
-                width: 45,
-                height: 48,
+                width: 42,
+                height: 42,
                 borderRadius: 14,
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: l.result === 'GRANTED' ? colors.successSoft : colors.errorSoft,
+                backgroundColor: l.result === 'GRANTED' ? colors.surfaceAlt : colors.errorSoft,
+                borderWidth: 1,
+                borderColor: l.result === 'GRANTED' ? colors.border : '#FECACA',
               }}
             >
               <Ionicons
                 name={l.result === 'GRANTED' ? 'checkmark-circle-outline' : 'close-circle-outline'}
-                size={25}
-                color={l.result === 'GRANTED' ? colors.success : colors.error}
+                size={22}
+                color={l.result === 'GRANTED' ? colors.primary : colors.error}
               />
             </View>
-            <View style={{ flex: 1, gap: 4 }}>
-              <Text style={s.heading}>{l.account?.name ?? 'Không xác định'}</Text>
-              <Text style={s.description}>{l.accessUnit.name}</Text>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={s.heading} numberOfLines={1}>
+                {l.account?.name ?? 'Không xác định'}
+              </Text>
+              <Text style={[s.caption, { fontSize: 12.5 }]} numberOfLines={1}>
+                {methodLabels[l.method] ?? 'Phương thức khác'} · {l.accessUnit.name}
+              </Text>
+              <Text style={[s.caption, { fontSize: 12 }]}>
+                {new Date(l.occurredAt).toLocaleString('vi-VN')}
+              </Text>
             </View>
             <Badge
               label={l.result === 'GRANTED' ? 'Cho phép' : l.result === 'ERROR' ? 'Lỗi' : 'Từ chối'}
               tone={l.result === 'GRANTED' ? 'success' : 'error'}
             />
           </View>
-          <View style={{ borderTopWidth: 1, borderColor: colors.border, paddingTop: 12, gap: 6 }}>
-            <Text style={[s.description, { color: colors.text }]}>
-              {methodLabels[l.method] ?? 'Phương thức khác'} · {l.device.name}
+          {l.reasonCode ? (
+            <Text
+              style={[
+                s.caption,
+                {
+                  fontSize: 12,
+                  color: l.result === 'GRANTED' ? colors.muted : colors.error,
+                  paddingLeft: 52,
+                },
+              ]}
+            >
+              {reasonText(l.reasonCode)}
             </Text>
-            <Text style={s.caption}>{new Date(l.occurredAt).toLocaleString('vi-VN')}</Text>
-            {l.reasonCode ? (
-              <Text
-                style={[s.caption, { color: l.result === 'GRANTED' ? colors.muted : colors.error }]}
-              >
-                {reasonText(l.reasonCode)}
-              </Text>
-            ) : null}
-          </View>
+          ) : null}
         </Card>
       ))}
       {more && !error ? (

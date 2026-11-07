@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
-import { Linking, StyleSheet, Switch, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { useConfirm } from './ConfirmationProvider';
 import { BarChart } from './BarChart';
 import { rssiStrength } from './chartMath';
 import { Badge, Button, Card, Input, Notice, styles as s } from './ui';
-import { colors, radius } from '../theme/tokens';
+import { colors, fonts, radius } from '../theme/tokens';
 import { managerService } from '../services/api/managerService';
 import { lockdownCopy } from '../utils/lockdown';
 import {
@@ -23,7 +23,7 @@ const dayLabel = (iso: string) => {
 const timeLabel = (iso: string) =>
   new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 
-export type DashboardSection = 'all' | 'stats' | 'remote-config' | 'lockdown';
+export type DashboardSection = 'all' | 'stats' | 'remote-config' | 'access-methods' | 'lockdown';
 
 /** Thống kê + cài đặt cửa cho chủ cửa (hỗ trợ hiển thị từng trang chi tiết riêng biệt). */
 export function DoorDashboard({
@@ -213,6 +213,7 @@ export function DoorDashboard({
 
   const showStats = section === 'all' || section === 'stats';
   const showRemote = section === 'all' || section === 'remote-config';
+  const showAccessMethods = section === 'all' || section === 'access-methods';
   const showLockdown = section === 'all' || section === 'lockdown';
 
   const synced =
@@ -222,7 +223,7 @@ export function DoorDashboard({
     reportedTiming.waitForClose === (settings.autoLockWaitForClose !== false);
 
   return (
-    <View style={{ gap: 18 }}>
+    <View style={{ gap: 16 }}>
       {message ? (
         <Notice tone={failed ? 'error' : 'success'}>{message}</Notice>
       ) : null}
@@ -230,33 +231,48 @@ export function DoorDashboard({
       {showStats ? (
         <>
           <View style={dStyles.statSummaryRow}>
-            <Card style={[dStyles.statMiniCard, { backgroundColor: colors.successSoft, borderColor: '#D1FAE5' }]}>
-              <View style={[dStyles.statIconCircle, { backgroundColor: '#A7F3D0' }]}>
-                <Ionicons name="checkmark-done" size={20} color={colors.success} />
+            <Card style={dStyles.statMiniCard}>
+              <View style={s.row}>
+                <View style={[dStyles.statIconCircle, { backgroundColor: '#F1F5F9' }]}>
+                  <Ionicons name="checkmark-done" size={18} color={colors.success} />
+                </View>
+                <Text style={dStyles.statBigNumber}>{total.granted}</Text>
               </View>
-              <Text style={[dStyles.statBigNumber, { color: colors.success }]}>{total.granted}</Text>
-              <Text style={dStyles.statCaption}>Lượt cho phép (7 ngày)</Text>
+              <Text style={dStyles.statCaption}>Cho phép (7 ngày)</Text>
             </Card>
-            <Card style={[dStyles.statMiniCard, { backgroundColor: colors.errorSoft, borderColor: '#FEE2E2' }]}>
-              <View style={[dStyles.statIconCircle, { backgroundColor: '#FECACA' }]}>
-                <Ionicons name="close-circle-outline" size={20} color={colors.error} />
+            <Card style={dStyles.statMiniCard}>
+              <View style={s.row}>
+                <View style={[dStyles.statIconCircle, { backgroundColor: '#F1F5F9' }]}>
+                  <Ionicons name="close-circle-outline" size={18} color={colors.error} />
+                </View>
+                <Text style={dStyles.statBigNumber}>{total.denied}</Text>
               </View>
-              <Text style={[dStyles.statBigNumber, { color: colors.error }]}>{total.denied}</Text>
-              <Text style={dStyles.statCaption}>Lượt từ chối (7 ngày)</Text>
+              <Text style={dStyles.statCaption}>Từ chối (7 ngày)</Text>
             </Card>
           </View>
 
           <Card>
             <View style={s.row}>
-              <View style={[dStyles.sectionBadgeIcon, { backgroundColor: colors.indigoSoft }]}>
-                <Ionicons name="bar-chart-outline" size={20} color={colors.indigo} />
+              <View style={[dStyles.sectionBadgeIcon, { backgroundColor: '#F1F5F9' }]}>
+                <Ionicons name="bar-chart-outline" size={20} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={s.heading}>Biểu đồ ra vào 7 ngày</Text>
+                <Text style={s.heading}>Biểu đồ 7 ngày</Text>
                 <Text style={s.caption}>
-                  Cho phép {total.granted} · Từ chối {total.denied}
+                  Tổng {total.granted + total.denied} lượt kiểm tra
                 </Text>
               </View>
+              <Pressable
+                onPress={() => {
+                  void Linking.openURL(statsService.csvUrl(unitId));
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Tải CSV lịch sử"
+                style={dStyles.csvChip}
+              >
+                <Ionicons name="download-outline" size={15} color={colors.primary} />
+                <Text style={dStyles.csvChipText}>Xuất CSV</Text>
+              </Pressable>
             </View>
             {days.length ? (
               <BarChart
@@ -264,7 +280,7 @@ export function DoorDashboard({
                   label: dayLabel(d.day),
                   values: [d.granted, d.denied],
                 }))}
-                colors={[colors.success, colors.error]}
+                colors={[colors.primary, '#94A3B8']}
                 legend={['Cho phép', 'Từ chối']}
               />
             ) : (
@@ -274,24 +290,34 @@ export function DoorDashboard({
 
           <Card>
             <View style={s.row}>
-              <View style={[dStyles.sectionBadgeIcon, { backgroundColor: colors.skySoft }]}>
-                <Ionicons name="wifi-outline" size={20} color={colors.sky} />
+              <View style={[dStyles.sectionBadgeIcon, { backgroundColor: '#F1F5F9' }]}>
+                <Ionicons name="wifi-outline" size={20} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={s.heading}>Sóng Wi-Fi của cửa (24 giờ)</Text>
+                <Text style={s.heading}>Tín hiệu Wi-Fi (24h)</Text>
                 <Text style={s.caption}>
                   {latestRssi === undefined
                     ? 'Chưa có dữ liệu'
-                    : `Hiện tại ${latestRssi} dBm · Độ mạnh ${rssiStrength(latestRssi)}%`}
+                    : `${latestRssi} dBm · Độ mạnh ${rssiStrength(latestRssi)}%`}
                 </Text>
               </View>
               {latestRssi !== undefined ? (
                 <Badge
-                  label={latestRssi >= -67 ? 'Tốt' : latestRssi >= -78 ? 'Trung bình' : 'Yếu'}
+                  label={latestRssi >= -67 ? 'Tốt' : latestRssi >= -78 ? 'Khá' : 'Yếu'}
                   tone={latestRssi >= -67 ? 'success' : latestRssi >= -78 ? 'warning' : 'error'}
                 />
               ) : null}
             </View>
+            {latestRssi !== undefined ? (
+              <View style={dStyles.signalTrack}>
+                <View
+                  style={[
+                    dStyles.signalFill,
+                    { width: `${Math.max(8, rssiStrength(latestRssi))}%` },
+                  ]}
+                />
+              </View>
+            ) : null}
             {rssi.length ? (
               <BarChart
                 data={rssi.map((p) => ({
@@ -300,7 +326,7 @@ export function DoorDashboard({
                 }))}
                 colors={[colors.primary]}
                 max={100}
-                height={68}
+                height={56}
               />
             ) : null}
             {rssi.length ? (
@@ -309,134 +335,107 @@ export function DoorDashboard({
               </Text>
             ) : null}
           </Card>
-
-          <Card>
-            <View style={s.row}>
-              <View style={[dStyles.sectionBadgeIcon, { backgroundColor: colors.tealSoft }]}>
-                <Ionicons name="download-outline" size={20} color={colors.teal} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.heading}>Xuất báo cáo dữ liệu</Text>
-                <Text style={s.caption}>
-                  Lịch sử ra vào 30 ngày gần nhất, tệp CSV mở trực tiếp bằng Excel.
-                </Text>
-              </View>
-            </View>
-            <Button
-              title="Tải CSV lịch sử"
-              icon="document-text-outline"
-              variant="ghost"
-              onPress={() => {
-                void Linking.openURL(statsService.csvUrl(unitId));
-              }}
-            />
-          </Card>
         </>
       ) : null}
 
       {showRemote ? (
-        <>
-          <Card>
-            <View style={s.row}>
-              <View style={[dStyles.sectionBadgeIcon, { backgroundColor: colors.primarySoft }]}>
-                <Ionicons name="timer-outline" size={20} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.heading}>Thời gian tự khóa & Cảnh báo</Text>
-                <Text style={s.caption}>Đồng bộ trực tiếp xuống bộ điều khiển ESP32</Text>
-              </View>
-              <Badge
-                label={synced ? 'Đã đồng bộ' : 'Chờ xác nhận'}
-                tone={synced ? 'success' : 'warning'}
-              />
+        <Card>
+          <View style={s.row}>
+            <View style={[dStyles.sectionBadgeIcon, { backgroundColor: '#F1F5F9' }]}>
+              <Ionicons name="timer-outline" size={20} color={colors.primary} />
             </View>
-
-            <View style={dStyles.infoBox}>
-              <Ionicons name="information-circle-outline" size={18} color={colors.primary} />
-              <Text style={[s.caption, { flex: 1, color: colors.text }]}>
-                {settings?.autoLockWaitForClose !== false
-                  ? 'Hẹn giờ được lưu trên cửa. Nếu cánh cửa còn mở, chốt chờ cửa đóng ổn định rồi mới khóa.'
-                  : 'Servo trở về góc khóa khi hết thời gian, kể cả khi cảm biến còn báo mở. App chỉ báo đã khóa khi cảm biến xác nhận đóng và servo hoàn tất lệnh.'}
-              </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={s.heading}>Hẹn giờ tự khóa & Cảnh báo</Text>
+              <Text style={s.caption}>Đồng bộ trực tiếp xuống bộ điều khiển</Text>
             </View>
+            <Badge
+              label={synced ? 'Đã đồng bộ' : 'Chờ xác nhận'}
+              tone={synced ? 'success' : 'warning'}
+            />
+          </View>
 
-            <Input
-              label="Tự về góc khóa sau (1–30 giây)"
-              value={unlock}
-              onChangeText={setUnlock}
-              keyboardType="numeric"
-              placeholder="5"
-            />
-            <Input
-              label="Cảnh báo khi cửa mở quá (10–600 giây)"
-              value={openLimit}
-              onChangeText={setOpenLimit}
-              keyboardType="numeric"
-              placeholder="60"
-            />
-            <Button
-              title="Lưu thời gian"
-              icon="save-outline"
-              disabled={busy || !settings}
-              onPress={() => {
-                void save({
-                  unlockDurationSec: Number(unlock),
-                  doorOpenTimeoutSec: Number(openLimit),
-                });
-              }}
-            />
-            <Text style={s.caption}>
-              {synced && reportedTiming
-                ? `Thiết bị đã xác nhận: ${reportedTiming.seconds} giây · ${
-                    reportedTiming.waitForClose ? 'chờ cửa đóng' : 'quay về đúng hẹn'
-                  }.`
-                : 'Đang chờ thiết bị xác nhận thời gian và chế độ tự khóa.'}
-            </Text>
-          </Card>
+          <Input
+            label="Tự về góc khóa sau (1–30 giây)"
+            value={unlock}
+            onChangeText={setUnlock}
+            keyboardType="numeric"
+            placeholder="5"
+          />
+          <Input
+            label="Cảnh báo khi cửa mở quá (10–600 giây)"
+            value={openLimit}
+            onChangeText={setOpenLimit}
+            keyboardType="numeric"
+            placeholder="60"
+          />
+          <Button
+            title="Lưu thời gian"
+            icon="save-outline"
+            disabled={busy || !settings}
+            onPress={() => {
+              void save({
+                unlockDurationSec: Number(unlock),
+                doorOpenTimeoutSec: Number(openLimit),
+              });
+            }}
+          />
+          <Text style={s.caption}>
+            {synced && reportedTiming
+              ? `Đã xác nhận trên cửa: tự khóa sau ${reportedTiming.seconds}s.`
+              : 'Đang chờ thiết bị xác nhận thời gian tự khóa.'}
+          </Text>
+        </Card>
+      ) : null}
 
-          <Card>
-            <View style={s.row}>
-              <View style={[dStyles.sectionBadgeIcon, { backgroundColor: colors.purpleSoft }]}>
-                <Ionicons name="toggle-outline" size={20} color={colors.purple} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.heading}>Phương thức & Chính sách mở cửa</Text>
-                <Text style={s.caption}>Bật hoặc tắt nhanh các phương thức trên toàn cửa</Text>
-              </View>
+      {showAccessMethods ? (
+        <Card>
+          <View style={s.row}>
+            <View style={[dStyles.sectionBadgeIcon, { backgroundColor: '#F1F5F9' }]}>
+              <Ionicons name="options-outline" size={20} color={colors.primary} />
             </View>
-            {settings ? (
-              <View style={{ gap: 10 }}>
-                {toggles.map((item) => (
-                  <View key={item.key} style={dStyles.toggleRow}>
-                    <View style={[dStyles.toggleIcon, { backgroundColor: item.bg }]}>
-                      <Ionicons name={item.icon} size={19} color={item.tone} />
-                    </View>
-                    <View style={{ flex: 1, gap: 2 }}>
-                      <Text style={dStyles.toggleTitle}>{item.label}</Text>
-                      <Text style={s.caption}>{item.subtitle}</Text>
-                    </View>
-                    <Switch
-                      accessibilityLabel={item.label}
-                      value={
-                        item.key === 'autoLockWaitForClose'
-                          ? settings[item.key] !== false
-                          : Boolean(settings[item.key])
-                      }
-                      disabled={busy}
-                      trackColor={{ true: colors.primary, false: colors.borderStrong }}
-                      thumbColor="#fff"
-                      onValueChange={(value) => {
-                        void save({ [item.key]: value });
-                      }}
-                    />
+            <View style={{ flex: 1 }}>
+              <Text style={s.heading}>Phương thức mở cửa</Text>
+              <Text style={s.caption}>Bật hoặc tắt các phương thức trên toàn cửa</Text>
+            </View>
+          </View>
+          {settings ? (
+            <View style={{ marginTop: 4 }}>
+              {toggles.map((item, idx) => (
+                <View
+                  key={item.key}
+                  style={[
+                    dStyles.toggleRow,
+                    idx === toggles.length - 1 && { borderBottomWidth: 0 },
+                  ]}
+                >
+                  <View style={[dStyles.toggleIcon, { backgroundColor: '#F1F5F9' }]}>
+                    <Ionicons name={item.icon} size={18} color={colors.primary} />
                   </View>
-                ))}
-              </View>
-            ) : (
-              <Text style={s.caption}>Đang tải cấu hình phương thức…</Text>
-            )}
-          </Card>
-        </>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={dStyles.toggleTitle}>{item.label}</Text>
+                    <Text style={s.caption}>{item.subtitle}</Text>
+                  </View>
+                  <Switch
+                    accessibilityLabel={item.label}
+                    value={
+                      item.key === 'autoLockWaitForClose'
+                        ? settings[item.key] !== false
+                        : Boolean(settings[item.key])
+                    }
+                    disabled={busy}
+                    trackColor={{ true: colors.primary, false: colors.borderStrong }}
+                    thumbColor="#fff"
+                    onValueChange={(value) => {
+                      void save({ [item.key]: value });
+                    }}
+                  />
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={s.caption}>Đang tải cấu hình phương thức…</Text>
+          )}
+        </Card>
       ) : null}
 
       {showLockdown ? (
@@ -516,31 +515,62 @@ const dStyles = StyleSheet.create({
   },
   statMiniCard: {
     flex: 1,
-    padding: 16,
-    gap: 6,
+    padding: 15,
+    gap: 8,
     borderRadius: radius.card,
   },
   statIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 14,
+    width: 34,
+    height: 34,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
   statBigNumber: {
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.6,
+    fontFamily: fonts.bold,
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.text,
+    letterSpacing: -0.5,
   },
   statCaption: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontFamily: fonts.medium,
+    fontSize: 12.5,
+    fontWeight: '500',
     color: colors.muted,
   },
+  csvChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primarySoft,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+  },
+  csvChipText: {
+    fontFamily: fonts.semibold,
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  signalTrack: {
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#F1F5F9',
+    overflow: 'hidden',
+  },
+  signalFill: {
+    height: '100%',
+    borderRadius: 4,
+    backgroundColor: colors.primary,
+  },
   sectionBadgeIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 15,
+    width: 40,
+    height: 40,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -556,22 +586,21 @@ const dStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    padding: 12,
-    borderRadius: 18,
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
+    paddingVertical: 13,
+    borderBottomWidth: 1,
     borderColor: colors.border,
   },
   toggleIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 13,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   toggleTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontFamily: fonts.semibold,
+    fontSize: 14.5,
+    fontWeight: '600',
     color: colors.text,
   },
 });

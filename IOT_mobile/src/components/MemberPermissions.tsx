@@ -1,11 +1,12 @@
+import { Ionicons } from '@expo/vector-icons';
 import { ItemList } from './ItemList';
 import { useEffect, useState } from 'react';
-import { Switch, Text, View } from 'react-native';
+import { Pressable, Switch, Text, View } from 'react-native';
 import { request } from '../services/api/client';
 import { managerService } from '../services/api/managerService';
-import { Badge, Button, Card, Notice, styles as s } from './ui';
+import { Card, Notice, styles as s } from './ui';
 import { useConfirm } from './ConfirmationProvider';
-import { colors } from '../theme/tokens';
+import { colors, fonts } from '../theme/tokens';
 type Credential = {
   id: number;
   type: string;
@@ -110,7 +111,7 @@ export function MemberPermissions({
           />
         </View>
       ))}
-      <Text style={[s.heading, { marginTop: 12 }]}>Thẻ & vân tay</Text>
+      <Text style={[s.heading, !self && { marginTop: 8 }]}>Thẻ & vân tay đã đăng ký</Text>
       {
         <ItemList
           items={active}
@@ -118,21 +119,50 @@ export function MemberPermissions({
           renderItem={(c) => (
             <View
               key={c.id}
-              style={{ paddingTop: 12, borderTopWidth: 1, borderColor: colors.border, gap: 10 }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                paddingVertical: 12,
+                borderTopWidth: 1,
+                borderColor: colors.border,
+              }}
             >
-              <View style={s.row}>
-                <Text style={[s.description, { color: colors.text, flex: 1 }]}>
-                  {c.type === 'RFID' ? `Thẻ ${c.rfidUid}` : `Vân tay #${c.templateId}`}
-                </Text>
-                <Badge
-                  label={c.status === 'ACTIVE' ? 'Đang dùng' : c.status}
-                  tone={c.status === 'ACTIVE' ? 'success' : 'neutral'}
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 12,
+                  backgroundColor: '#F1F5F9',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Ionicons
+                  name={c.type === 'RFID' ? 'card-outline' : 'finger-print-outline'}
+                  size={18}
+                  color={colors.primary}
                 />
               </View>
-              <Button
-                title="Thu hồi phương thức"
-                variant="ghost"
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text
+                  style={{
+                    fontFamily: fonts.semibold,
+                    fontSize: 14.5,
+                    color: colors.text,
+                    fontWeight: '600',
+                  }}
+                >
+                  {c.type === 'RFID' ? `Thẻ ${c.rfidUid}` : `Vân tay #${c.templateId}`}
+                </Text>
+                <Text style={s.caption}>
+                  {c.status === 'ACTIVE' ? 'Đang hoạt động' : c.status}
+                </Text>
+              </View>
+              <Pressable
                 disabled={busy || disabled}
+                accessibilityRole="button"
+                accessibilityLabel="Thu hồi phương thức"
                 onPress={() => {
                   void confirm({
                     title: 'Thu hồi phương thức?',
@@ -156,7 +186,26 @@ export function MemberPermissions({
                       });
                   });
                 }}
-              />
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 999,
+                  backgroundColor: '#FEF2F2',
+                  borderWidth: 1,
+                  borderColor: '#FEE2E2',
+                }}
+              >
+                <Text
+                  style={{
+                    fontFamily: fonts.semibold,
+                    fontSize: 12.5,
+                    color: colors.error,
+                    fontWeight: '600',
+                  }}
+                >
+                  Thu hồi
+                </Text>
+              </Pressable>
             </View>
           )}
         />
