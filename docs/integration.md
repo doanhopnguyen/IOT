@@ -17,8 +17,19 @@ Tham chiếu `D:\BTLIOT\README.md`, `So_do_noi_chan_RC522.md`, `So_do_noi_chan_C
 | Vân tay | V+ / GND | 3V3 theo cấu hình đã thử / GND |
 | SG90 | Signal | 4, **đề xuất mới** |
 | Buzzer active qua transistor | Điều khiển transistor | 5, **đề xuất mới** |
+| Công tắc từ cửa | Hai dây | GPIO6 / GND |
+| HX-543 4×4 | Chân 1 — Cột 4 (A/B/C/D) | GPIO38 |
+| HX-543 4×4 | Chân 2 — Cột 3 (3/6/9/#) | GPIO15 |
+| HX-543 4×4 | Chân 3 — Cột 2 (2/5/8/0) | GPIO14 |
+| HX-543 4×4 | Chân 4 — Cột 1 (1/4/7/*) | GPIO13 |
+| HX-543 4×4 | Chân 5 — Hàng 4 (* / 0 / # / D) | GPIO12 |
+| HX-543 4×4 | Chân 6 — Hàng 3 (7/8/9/C) | GPIO11 |
+| HX-543 4×4 | Chân 7 — Hàng 2 (4/5/6/B) | GPIO8 |
+| HX-543 4×4 | Chân 8 — Hàng 1 (1/2/3/A) | GPIO7 |
 
 Không nối VA/TCH/D+/D− của cảm biến khi chưa xác minh module. Nguồn TFT/LED theo module thực tế. SG90 dùng nguồn 5 V ngoài phù hợp dòng tải, không lấy từ GPIO/3V3. Tất cả nguồn và module chung GND. Buzzer 5 V cần transistor/module driver và điện trở phù hợp; không đưa tải 5 V trực tiếp vào GPIO. Tắt nguồn trước khi thay dây.
+
+Đánh số HX-543 theo ảnh kiểm tra: nhìn từ mặt phím, cáp hướng xuống; chân 1 ở bên phải cạnh chấm trắng, chân 8 ở bên trái. Bàn phím ma trận thụ động, không nối VCC/3V3/5V/GND vào cáp. Sơ đồ chân này đã được xác nhận bằng sketch test riêng. Firmware `connected_door` hiện vẫn dùng bàn phím cảm ứng TFT; cần tích hợp phần đọc HX-543 vào firmware cửa trước khi keypad rời điều khiển khóa.
 
 ```mermaid
 flowchart LR
@@ -28,6 +39,7 @@ flowchart LR
   ESP <-->|UART RX17/TX18, 57600| FP[Vân tay]
   ESP -->|PWM GPIO4| SERVO[SG90 nguồn 5V ngoài]
   ESP -->|GPIO5 qua driver| BUZZER[Buzzer]
+  ESP <-->|GPIO7/8/11/12/13/14/15/38| KEYPAD[HX-543 4x4]
   ESP <-->|MQTT| BROKER[Broker riêng + ACL]
   BROKER <--> API[Spring Boot + MySQL]
   AI[Webcam / Face node] --> BROKER

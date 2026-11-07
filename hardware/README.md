@@ -10,10 +10,11 @@
 | 4 | Cảm biến vân tay UART (dòng R30x/AS608, 57600 baud) | 1 | Lưu mẫu trong bộ nhớ riêng của cảm biến |
 | 5 | Servo SG90 (hoặc chốt điện + relay) | 1 | Cần nguồn 5 V riêng đủ dòng, GND chung |
 | 6 | Công tắc từ (reed switch) cửa | 1 | Hai dây: GPIO6 và GND (INPUT_PULLUP) |
-| 7 | Nguồn 5 V ≥ 2 A + dây, breadboard/PCB | 1 | Nguồn USB máy tính dễ sụt áp khi servo/vân tay chạy |
-| 8 | (Tùy chọn) Laptop + webcam chạy `face-node` | 1 | Nhận diện khuôn mặt, không chạy trên ESP32 |
+| 7 | Bàn phím ma trận HX-543 4×4 | 1 | 8 dây tín hiệu, không cần cấp nguồn riêng |
+| 8 | Nguồn 5 V ≥ 2 A + dây, breadboard/PCB | 1 | Nguồn USB máy tính dễ sụt áp khi servo/vân tay chạy |
+| 9 | (Tùy chọn) Laptop + webcam chạy `face-node` | 1 | Nhận diện khuôn mặt, không chạy trên ESP32 |
 
-## Sơ đồ chân (firmware `firmware/offline_door/offline_door.ino`)
+## Sơ đồ chân (firmware `connected_door` / `offline_door`)
 
 | Thiết bị | Chân thiết bị | GPIO ESP32-S3 |
 |---|---|---|
@@ -24,6 +25,16 @@
 | Vân tay (UART2) | TX cảm biến → RX ESP / RX cảm biến ← TX ESP | 17 / 18 |
 | Servo | Tín hiệu | 4 |
 | Công tắc từ | Hai dây | 6 và GND |
+| HX-543 | Chân 1 — Cột 4 (A/B/C/D) | 38 |
+| HX-543 | Chân 2 — Cột 3 (3/6/9/#) | 15 |
+| HX-543 | Chân 3 — Cột 2 (2/5/8/0) | 14 |
+| HX-543 | Chân 4 — Cột 1 (1/4/7/*) | 13 |
+| HX-543 | Chân 5 — Hàng 4 (* / 0 / # / D) | 12 |
+| HX-543 | Chân 6 — Hàng 3 (7/8/9/C) | 11 |
+| HX-543 | Chân 7 — Hàng 2 (4/5/6/B) | 8 |
+| HX-543 | Chân 8 — Hàng 1 (1/2/3/A) | 7 |
+
+Đánh số HX-543 theo ảnh kiểm tra: nhìn từ mặt phím, cáp hướng xuống; chân 1 ở bên phải cạnh chấm trắng, chân 8 ở bên trái. Đây là bàn phím ma trận thụ động: chỉ nối 8 đường tín hiệu theo bảng, không nối VCC/3V3/5V/GND vào cáp. Sơ đồ hàng/cột này đã được xác nhận bằng sketch test riêng.
 
 Sơ đồ khối:
 
@@ -35,6 +46,7 @@ Sơ đồ khối:
    ESP32-S3 N16R8 ── UART2 (17/18) ── Cảm biến vân tay
            │ GPIO4 ── Servo SG90 (nguồn 5 V riêng, GND chung)
            │ GPIO6 ── Công tắc từ ── GND
+           │ GPIO7/8/11/12/13/14/15/38 ── HX-543 (chân 8/7/6/5/4/3/2/1)
            └── Wi-Fi 2.4 GHz ── MQTT broker ── Backend Spring Boot ── App/Web
 ```
 
