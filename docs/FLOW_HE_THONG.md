@@ -1,5 +1,7 @@
 # Flow hệ thống Smart Door
 
+**Bổ sung bàn phím trong nhà (firmware 1.11.0):** HX-543 dùng chung PIN cửa và luồng xác thực/tự khóa hiện có; xem [hướng dẫn và phạm vi tích hợp](BAN_PHIM_TRONG_NHA.md). Các quy tắc hạn chế cửa vẫn áp dụng cho PIN từ cả hai phía.
+
 **Cập nhật ưu tiên 05/11/2026:** luồng sản phẩm trong [LUONG_SAN_PHAM.md](LUONG_SAN_PHAM.md) thay thế toàn bộ phần demo cũ yêu cầu người mua nhập/đổi backend. Bên sản xuất nạp sẵn mã sản phẩm, QR và kết nối dịch vụ; người mua chỉ quét QR, nối Wi-Fi riêng của cửa rồi chọn Wi-Fi tại trang ESP32.
 
 **Phiên bản:** 1.12 · **Ngày:** 04/11/2026 · **Trạng thái:** Đã có bản tích hợp để demo; xem [hướng dẫn](HUONG_DAN_TRIEN_KHAI.md) và [kết quả kiểm thử/giới hạn thực tế](KET_QUA_KIEM_THU.md). Các phần chưa được kiểm thử vật lý không mặc nhiên coi là hoàn tất.

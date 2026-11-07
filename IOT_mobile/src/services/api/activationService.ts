@@ -8,6 +8,15 @@ export interface InventoryDevice {
   lastSeenAt: string | null; operationUuid: string | null;
 }
 export interface ClaimPreview { deviceUid: string; name: string; online: boolean; }
+export function activationPage(state: { hasDevice: boolean; hasProduct: boolean; online: boolean; restartConfirmed: boolean }) {
+  return state.hasDevice ? 'SETUP' : !state.hasProduct ? 'SCAN' : !state.online ? 'WIFI' : state.restartConfirmed ? 'NAME' : 'RESTART';
+}
+export async function checkRestartConnection(product: ProductSetup,
+  inspect: (product: ProductSetup) => Promise<ClaimPreview> = inspectProduct) {
+  const info = await inspect(product);
+  if (info.online !== true) throw new Error('Cửa chưa kết nối lại dịch vụ. Chờ Wi-Fi ổn định sau khi khởi động lại rồi kiểm tra tiếp.');
+  return info;
+}
 const post = (body: unknown): RequestInit => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 export async function inspectProduct(product: ProductSetup,
   inspect: (code: string) => Promise<ClaimPreview> = code => request('/api/activation/inspect', post({ activationCode: code }), fetch, 5000)) {

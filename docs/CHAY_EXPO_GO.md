@@ -26,10 +26,10 @@ Nếu dùng trực tiếp thư mục mobile, `npm start`, `npm run android`, `np
 
 Expo Go không chứa module riêng để thêm mạng Wi-Fi của Smart Door bằng hộp thoại native. App vẫn đọc được SSID/mật khẩu từ QR và hỗ trợ toàn bộ luồng thiết lập:
 
-1. Nếu cửa đã online, app tự chuyển sang đặt tên và nhận cửa; bỏ qua kết nối AP của khóa.
+1. Nếu cửa đã online, app chuyển sang hướng dẫn khởi động lại trước khi đặt tên và nhận cửa; không cần nối lại AP nếu Wi-Fi đã được lưu.
 2. Nếu cửa chưa online, bấm **Mở Wi-Fi để kết nối khóa**, chọn mạng `SmartDoor-…` và nhập mật khẩu đang hiển thị trong app. Hoặc dùng camera hệ thống quét QR Wi-Fi trên khóa.
 3. Giữ kết nối với khóa dù điện thoại báo mạng không có Internet. Mở `http://192.168.4.1` để chọn Wi-Fi 2.4 GHz cho ESP32.
-4. Khi khóa lưu mạng, đưa điện thoại về Wi-Fi/4G có Internet và bật lại Tailscale nếu cần, rồi trở lại Expo Go. App kiểm tra cửa và tự chuyển bước khi cửa online.
+4. Bấm Hoàn tất, chờ báo Đã lưu Wi-Fi, nhấn/thả RST/EN hoặc rút nguồn khóa 5 giây rồi cấp lại. Đưa điện thoại về Wi-Fi/4G có Internet và bật lại Tailscale nếu cần, rồi trở lại Expo Go. Xác nhận đã khởi động lại; app kiểm tra kết nối trước khi cho nhận cửa/đặt PIN. Không giữ BOOT hay khôi phục mặc định.
 
 Không thể cập nhật JavaScript để bổ sung module native vào Expo Go; giới hạn này được giải thích trong [tài liệu Expo](https://docs.expo.dev/develop/development-builds/introduction/). Khi dùng Expo Go, không cần chạy các lệnh `expo prebuild` hay `expo run:android`.
 

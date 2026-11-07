@@ -3,7 +3,8 @@
  * Mot sketch, khong Wi-Fi/MQTT/backend. Pinout theo README(4).md.
  * Arduino IDE: ESP32S3 Dev Module, Flash 16MB, OPI PSRAM, USB CDC enabled.
  * Libraries: Adafruit GFX, ST7735/ST7789 (or ILI9341), XPT2046_Touchscreen,
- * MFRC522, Adafruit Fingerprint Sensor Library, ESP32Servo.
+ * MFRC522, Adafruit Fingerprint Sensor Library, ESP32Servo, Keypad.
+ * HX-543 inside: 0-9=door PIN, *=clear, #=submit (HOME screen only).
  * TFT mac dinh ST7789 240x320; dat LCD_ILI9341=1 neu module dung ILI9341.
  * Lan dau: cham 3 diem + tam -> tao admin PIN -> user PIN -> dong cua/SAVE.
  * ADMIN tren man hinh: quan ly the/van tay/PIN, touch, cua, goc servo.
@@ -29,6 +30,7 @@
 #include <MFRC522.h>
 #include <Adafruit_Fingerprint.h>
 #include <ESP32Servo.h>
+#include <Keypad.h>
 #include "../include/servo_setup_logic.h"
 #include <mbedtls/sha256.h>
 #include <esp_system.h>
@@ -95,6 +97,15 @@ int reportedLatch(bool finished,int angle,int lockAngle,int openAngle,const Stat
 constexpr int TFT_CS=47, TOUCH_CS=48, RFID_CS=10, RFID_RST=9;
 constexpr int TFT_DC=2, TFT_RST=1, DOOR_PIN=6, SERVO_PIN=4;
 constexpr int FP_RX=17, FP_TX=18;
+// Tested HX-543 connector: pins 8/7/6/5 are rows; 4/3/2/1 are columns.
+byte keypadRowPins[4]={7,8,11,12};
+byte keypadColPins[4]={13,14,15,38};
+char keypadKeys[4][4]={
+  {'1','2','3','A'}, {'4','5','6','B'},
+  {'7','8','9','C'}, {'*','0','#','D'}
+};
+Keypad insideKeypad(makeKeymap(keypadKeys),keypadRowPins,keypadColPins,4,4);
+constexpr uint32_t KEYPAD_IDLE_MS=15000;
 #ifdef CONNECTED_DOOR
 constexpr int HEADER_BUTTON_Y=16;
 constexpr int HEADER_BUTTON_H=17;
@@ -178,6 +189,8 @@ Screen screen=HOME;
 bool adminSession=false;
 uint32_t adminStarted=0, adminActivity=0;
 String digits, firstPin, notice;
+bool physicalPinInput=false,keypadReleaseRequired=true;
+uint32_t lastPhysicalKey=0;
 bool fingerHeld=false, touchDown=false;
 uint32_t lastTouch=0, lastRfid=0, lastFinger=0, lastRefresh=0;
 uint32_t lastServoUiRefresh=0;
@@ -478,9 +491,12 @@ void title(const String &label) {
 }
 void draw();
 void storageError();
+void clearPinEntry() {
+  digits="";physicalPinInput=false;lastPhysicalKey=0;
+}
 void go(Screen next) {
   if(next==DOOR_CAL)doorCalClosedSample=-1;
-  screen=next; digits=""; fingerHeld=true; enrollStage=0;
+  screen=next; clearPinEntry(); fingerHeld=true; enrollStage=0;
   draw();
 }
 void tell(const String &message) {
@@ -690,6 +706,7 @@ void storageError() {
 }
 bool grant(const char *method) {
   if (requestOpen()) {
+    clearPinEntry();if(screen==HOME)drawDigits();
     Serial.printf("[ACCESS] %s GRANTED\n",method);
     tell("OPEN - enter, then close door");
 #ifdef CONNECTED_DOOR
@@ -731,9 +748,17 @@ void submitPin() {
   }
 #endif
   if (storageFault) { storageError(); return; }
-  if (pinBlocked) { digits=""; drawDigits(); tell("PIN blocked for 30 seconds"); return; }
+  if (pinBlocked) { clearPinEntry(); drawDigits(); tell("PIN blocked for 30 seconds"); return; }
+#ifdef CONNECTED_DOOR
+  if (screen==HOME && !connectedAccessReady()) { clearPinEntry();drawDigits();tell("Finish door setup before use");return; }
+  if (screen==HOME && !connectedAllowsPin()) {
+    clearPinEntry();drawDigits();
+    const char *reason=connectedRestrictionNotice();
+    tell(reason?reason:"Door PIN disabled by owner");return;
+  }
+#endif
   if (digits.length()!=6) { tell("Enter exactly 6 digits"); return; }
-  String entered=digits; digits=""; drawDigits();
+  String entered=digits; clearPinEntry(); drawDigits();
   if (screen==HOME || screen==ADMIN_LOGIN) {
     bool ok=pinMatches(screen==HOME?cfg.user:cfg.admin,entered);
     entered="";
@@ -744,10 +769,6 @@ void submitPin() {
       denyPin(); tell(pinBlocked?"Too many attempts - wait 30s":"Incorrect PIN"); return;
     }
     if (!setFailures(0)) { storageError(); return; }
-#ifdef CONNECTED_DOOR
-    // PIN dùng chung: bị chặn khi tạm khóa/tạm ngưng (không tính là nhập sai).
-    if (screen==HOME && !connectedAllowsPin()) { tell(connectedRestrictionNotice()); return; }
-#endif
     if (screen==HOME) { grant("PIN"); return; }
     adminSession=true; adminStarted=adminActivity=millis(); continueSetup(); return;
   }
@@ -767,6 +788,59 @@ void submitPin() {
   if (!saveConfig(next)) { storageError(); return; }
   if (!adminSession) { adminSession=true; adminStarted=adminActivity=millis(); }
   continueSetup(); tell("PIN saved");
+}
+
+// Both input devices use submitPin(): same PIN, failures, policy, audit and motor path.
+// A physical keypad is only an input for the normal door PIN, never an admin menu.
+void handlePinKey(char key,bool physical) {
+  if (physical) {
+    if (screen!=HOME || !configured() || storageFault) return;
+#ifdef CONNECTED_DOOR
+    if (!connectedAccessReady()) return;
+#endif
+  }
+  if (key!='*' && key!='#' && (key<'0' || key>'9')) return;
+  // Starting on the other device discards the previous device's partial entry.
+  if (physicalPinInput!=physical) clearPinEntry();
+  physicalPinInput=physical;
+  if (physical) lastPhysicalKey=millis();
+  if (key=='*') { clearPinEntry();notice="";row(35,""); }
+  else if (key=='#') { submitPin();return; }
+  else {
+    if (pinBlocked) { clearPinEntry();drawDigits();tell("PIN blocked for 30 seconds");return; }
+    if (digits.length()<6) digits+=key;
+  }
+  drawDigits();
+}
+
+void pollPhysicalKeypad() {
+  // Scan even outside HOME to consume presses made during setup/admin pages.
+  bool changed=insideKeypad.getKeys();
+  unsigned active=0;char pressed=NO_KEY;
+  for (int i=0;i<LIST_MAX;i++) {
+    const Key &key=insideKeypad.key[i];
+    if (key.kstate==PRESSED || key.kstate==HOLD) active++;
+    if (changed && key.stateChanged && key.kstate==PRESSED) pressed=key.kchar;
+  }
+  bool ready=screen==HOME && configured() && !storageFault;
+#ifdef CONNECTED_DOOR
+  ready=ready && connectedAccessReady();
+#endif
+  if (!active) keypadReleaseRequired=false;
+  if (!ready) {
+    if (physicalPinInput) clearPinEntry();
+    keypadReleaseRequired=active>0;
+    return;
+  }
+  if (physicalPinInput && uint32_t(millis()-lastPhysicalKey)>=KEYPAD_IDLE_MS) {
+    clearPinEntry();drawDigits();keypadReleaseRequired=active>0;
+  }
+  // A matrix without diodes can ghost. Require all keys released after a chord.
+  if (active>1) {
+    if (!keypadReleaseRequired) { clearPinEntry();drawDigits();tell("Press one key at a time"); }
+    keypadReleaseRequired=true;return;
+  }
+  if (!keypadReleaseRequired && pressed!=NO_KEY) handlePinKey(pressed,true);
 }
 
 bool readFingerBitmap(uint8_t *bitmap) {
@@ -1018,10 +1092,7 @@ void tap(int x,int y) {
     }
     for (int i=0;i<12;i++) if (inside(x,y,8+(i%3)*76,92+(i/3)*55,72,50)) {
       char key="123456789C0E"[i];
-      if (key=='C') { digits=""; notice=""; row(35,""); }
-      else if (key=='E') { submitPin(); return; }
-      else if (digits.length()<6 && !pinBlocked) digits+=key;
-      drawDigits(); return;
+      handlePinKey(key=='C'?'*':key=='E'?'#':key,false);return;
     }
     return;
   }
@@ -1164,6 +1235,7 @@ void setup() {
   Serial.begin(115200);
   uint32_t start=millis(); while (!Serial && millis()-start<1500) delay(10);
   Serial.println("\nSMART DOOR OFFLINE: h=help, s=status, r=retry sensors");
+  insideKeypad.setDebounceTime(30);
   pinMode(DOOR_PIN,INPUT_PULLUP); pinMode(SERVO_PIN,OUTPUT); digitalWrite(SERVO_PIN,LOW);
   for (int pin : {TFT_CS,TOUCH_CS,RFID_CS}) { pinMode(pin,OUTPUT); digitalWrite(pin,HIGH); }
   SPI.begin(41,21,42);
@@ -1228,7 +1300,7 @@ void loop() {
   }
 #endif
   if (touchDiagnostics && millis()-touchDiagnosticAt>=5000) touchDiagnostics=false;
-  pollTouch(); pollRfid(); pollFinger();
+  pollPhysicalKeypad(); pollTouch(); pollRfid(); pollFinger();
   if(screen==SERVO_CAL && millis()-lastServoUiRefresh>=200){
     lastServoUiRefresh=millis();MotorState m=snapshot();
     row(86,m.lastAngle<0?"Last command: unknown":"PWM: "+String(m.lastAngle)+" deg "+ServoSetup::direction(m.previousAngle,m.lastAngle));

@@ -34,7 +34,7 @@
 | HX-543 | Chân 7 — Hàng 2 (4/5/6/B) | 8 |
 | HX-543 | Chân 8 — Hàng 1 (1/2/3/A) | 7 |
 
-Đánh số HX-543 theo ảnh kiểm tra: nhìn từ mặt phím, cáp hướng xuống; chân 1 ở bên phải cạnh chấm trắng, chân 8 ở bên trái. Đây là bàn phím ma trận thụ động: chỉ nối 8 đường tín hiệu theo bảng, không nối VCC/3V3/5V/GND vào cáp. Sơ đồ hàng/cột này đã được xác nhận bằng sketch test riêng.
+Đánh số HX-543 theo ảnh kiểm tra: nhìn từ mặt phím, cáp hướng xuống; chân 1 ở bên phải cạnh chấm trắng, chân 8 ở bên trái. Đây là bàn phím ma trận thụ động: chỉ nối 8 đường tín hiệu theo bảng, không nối VCC/3V3/5V/GND vào cáp. Sơ đồ hàng/cột này đã được xác nhận bằng sketch test riêng. Firmware connected 1.11.0 và offline đã tích hợp nhập PIN mở cửa bằng HX-543: `*` xóa, `#` xác nhận; xem [hướng dẫn bàn phím trong nhà](../docs/BAN_PHIM_TRONG_NHA.md).
 
 Sơ đồ khối:
 

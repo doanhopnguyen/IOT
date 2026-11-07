@@ -13,6 +13,10 @@ Mã test nằm cạnh từng thành phần; thư mục này là mục lục và 
 
 Sau build firmware, chạy `python firmware/tests/test_member_removal.py` để kiểm tra hàm xóa thành viên thật với ArduinoJson, lỗi cảm biến/NVS, gửi lại và chống xóa nhầm slot tái sử dụng.
 
+`python firmware/tests/test_physical_keypad.py` chạy các hàm nhập HX-543 và xác thực PIN thật với phần cứng mô phỏng: cùng PIN/giới hạn sai/lịch sử như TFT, không ghép lượt nhập hai nguồn, hết hạn 15 giây, phím giữ/bấm đồng thời, chặn setup/reset/tạm khóa/tạm ngưng/thu hồi và lưu cờ bật/tắt PIN qua NVS. Test không phát lệnh lên cửa thật; quy trình thử cơ khí ở [hướng dẫn HX-543](../docs/BAN_PHIM_TRONG_NHA.md).
+
+`python firmware/tests/test_wifi_storage.py` chạy các hàm lưu/đọc mạng Wi-Fi thật với NVS giả: mạng mở không bị báo nhầm lỗi khi mật khẩu rỗng, giữ đúng mạng qua reboot, xóa mật khẩu cũ khi chuyển sang mạng mở, và không xác nhận lưu khi ghi/xóa/đọc lại thất bại.
+
 Chạy `python firmware/tests/test_servo_preview.py` để kiểm tra motor task thật: bước 1°, hành trình 180/360, xung PWM, gộp lệnh nhích, dừng/hết phiên và chặn khóa khi cánh cửa mở. `test_offline_door.py` còn kiểm tra nâng cấu hình NVS v1/v2 lên v3, giữ PIN/thẻ/vân tay và góc nguyên trên 255°.
 
 `test_product_qr.py` kiểm tra QR Wi-Fi kèm mã nhận cửa. Sau build, `test_activation_qr_sync.py` kiểm tra cập nhật mã sau reset theo thứ tự/generation, đọc lại NVS và giữ nguyên thông tin nhận dạng/Wi-Fi. Các bài laptop AI nằm trong `face-node/tests/test_desktop_setup.py`; không mở camera hoặc gửi lệnh mở cửa khi chạy test.

@@ -10,7 +10,7 @@ import { LaptopAiSetup } from './LaptopAiSetup';
 
 async function acknowledged(command: CommandDto) {
   const result = await managerService.waitForCommand(command);
-  if (result.status === 'FAILED' && result.resultMessage?.includes('STORAGE')) throw new Error('Cửa chưa lưu được cấu hình. Giữ nguồn ổn định, kiểm tra cửa rồi thử lại.');
+  if (result.status === 'FAILED' && result.resultMessage?.includes('STORAGE')) throw new Error('Cửa chưa lưu được cấu hình. Nếu vừa lưu Wi-Fi lần đầu, nhấn/thả RST/EN hoặc rút nguồn 5 giây rồi cấp lại; chờ cửa online và thử lưu PIN lại. Không khôi phục mặc định.');
   if (result.status === 'FAILED' && result.resultMessage?.startsWith('DEVICE_BUSY')) throw new Error('Cửa đang bận. Hoàn tất thao tác trên màn hình cửa rồi thử lại.');
   if (result.status !== 'ACKNOWLEDGED') throw new Error('Chưa nhận xác nhận từ cửa. Kiểm tra kết nối; app sẽ tiếp tục khi cửa phản hồi.');
 }
@@ -81,7 +81,10 @@ function DeviceSetupFlow({ unitId, onComplete, onStepChange, stepOffset = 0 }: P
   if (page !== 'COMPLETE') return <Card>
     <SetupProgress step={pages[page].position + stepOffset} total={6 + stepOffset} title={pages[page].title} />
     {!effective.online ? <Notice tone="warning">Cửa đang mất kết nối. Giữ nguồn ổn định; tiếp tục theo màn hình cửa, app sẽ tự cập nhật khi kết nối lại.</Notice> : null}
-    {page === 'PINS' ? pinForm : <>
+    {page === 'PINS' ? <>
+      <Notice tone="info">Sau khi trang Wi-Fi báo Đã lưu, hãy khởi động lại cửa một lần trước lần lưu PIN đầu tiên: nhấn/thả RST/EN hoặc rút nguồn 5 giây rồi cấp lại. Chờ cửa online. Không khôi phục mặc định.</Notice>
+      {pinForm}
+    </> : <>
       <Text style={s.description}>{page === 'VERIFY' ? 'Các bước đã được xác nhận. Đang chờ cửa báo sẵn sàng…' : setupInstruction({ ...effective, online: true, doorPinSet: true, adminPinSet: true })}</Text>
       <View style={{ padding: 18, borderRadius: 12, backgroundColor: '#EFF5FF', gap: 8 }}>
         <Text style={s.heading}>{page === 'TOUCH' ? `Điểm ${effective.stage.startsWith('TOUCH_') ? effective.stage.slice(6) : '1'} / 4` : page === 'DOOR_CLOSED' ? 'Đóng cánh cửa' : page === 'DOOR_OPEN' ? 'Mở cánh cửa' : page === 'SERVO_LOCK' ? 'LOCK · vị trí khóa' : page === 'SERVO_OPEN' ? 'OPEN · vị trí mở' : 'Đang xác nhận'}</Text>

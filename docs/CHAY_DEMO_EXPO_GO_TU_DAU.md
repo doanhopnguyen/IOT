@@ -60,9 +60,9 @@ Nếu cửa đã thuộc tài khoản và báo sẵn sàng, đăng nhập tài k
 
 1. Đăng nhập/đăng ký tài khoản người dùng trên app.
 2. Chọn **Thiết lập cửa mới** hoặc **Thêm thiết bị**, quét QR hiện tại trên ESP32. QR phải là mã chưa sử dụng của lượt cấp phát hiện tại.
-3. Cửa đã online thì app tự chuyển sang đặt tên. Nếu chưa online, bấm **Mở Wi-Fi để kết nối khóa**, chọn `SmartDoor-…`, dùng mật khẩu app đọc từ QR. Expo Go dùng bước kết nối trong Cài đặt Wi-Fi.
-4. Giữ mạng của khóa dù không có Internet. Mở `http://192.168.4.1`, chọn Wi-Fi 2.4 GHz và lưu. Sau đó đưa điện thoại về Wi-Fi/4G có Internet, bật lại Tailscale nếu cần rồi trở lại app.
-5. Chờ cửa online, đặt tên và nhận cửa. App chuyển từng trang theo xác nhận của ESP32.
+3. Cửa đã online thì app chuyển sang hướng dẫn khởi động lại trước khi đặt tên. Nếu chưa online, bấm **Mở Wi-Fi để kết nối khóa**, chọn `SmartDoor-…`, dùng mật khẩu app đọc từ QR. Expo Go dùng bước kết nối trong Cài đặt Wi-Fi.
+4. Giữ mạng của khóa dù không có Internet. Mở `http://192.168.4.1`, chọn Wi-Fi 2.4 GHz, bấm Hoàn tất và chờ báo Đã lưu. Nhấn/thả RST/EN hoặc rút nguồn khóa 5 giây rồi cấp lại; không khôi phục mặc định. Đưa điện thoại về Wi-Fi/4G có Internet, bật lại Tailscale nếu cần rồi trở lại app.
+5. Xác nhận đã khởi động lại và kiểm tra kết nối; chờ cửa online rồi đặt tên và nhận cửa. App chuyển từng trang theo xác nhận của ESP32.
 6. Tạo PIN mở và PIN admin, mỗi PIN 6 số và khác nhau. Hoàn tất cảm ứng → xác nhận cửa đóng → xác nhận cửa mở → căn servo LOCK → căn servo OPEN. Theo dõi chuyển động chốt khi căn.
 7. Khi cửa sẵn sàng, thử mở/đóng từ app, PIN, thêm RFID bằng cách quét thẻ và thêm vân tay qua cảm biến.
 

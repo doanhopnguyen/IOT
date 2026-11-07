@@ -119,7 +119,7 @@ Thay đường dẫn `--device` bằng file vừa tải từ admin. Firmware so 
 1. Mở app, đăng ký/đăng nhập tài khoản riêng. Địa chỉ dịch vụ đã có sẵn.
 2. Chọn thêm cửa, quét QR hoặc nhập mã nhận cửa. Một mã chỉ dùng một lần.
 3. Tại cửa, xem SSID và mật khẩu mạng SmartDoor trên TFT. Điện thoại nối mạng này; captive portal thường tự mở, nếu không mở `http://192.168.4.1`. Nhập Wi-Fi nơi lắp. Wi-Fi mở để trống mật khẩu. Chỉ lưu khi kết nối thành công.
-4. Chọn hoàn tất Wi-Fi trên trang cấu hình và mở lại ứng dụng. Khi cửa online, nhận cửa vào tài khoản rồi đặt PIN admin và PIN mở cửa trong app. PIN cục bộ không phải mật khẩu tài khoản.
+4. Bấm Hoàn tất Wi-Fi, chờ báo Đã lưu rồi nhấn/thả RST/EN hoặc rút nguồn 5 giây và cấp lại. Không giữ BOOT hoặc khôi phục mặc định. Mở lại ứng dụng, xác nhận đã khởi động lại và kiểm tra cửa online trước khi nhận cửa, đặt PIN admin/PIN mở cửa. PIN cục bộ không phải mật khẩu tài khoản.
 5. Hiệu chỉnh cảm ứng trên TFT, nối cảm biến từ rồi xác nhận cửa **đóng** và **mở**. Không đổi tín hiệu cảm biến thì không cho hoàn tất.
 6. Chỉ có hiệu lực PIN đã được ESP32 ACK. Bấm kiểm tra hoàn tất; cửa chỉ ACTIVE khi cấu hình cục bộ và PIN backend đều hoàn tất.
 

@@ -44,6 +44,7 @@ uint16_t remoteSlot=0;uint8_t remoteStage=0;uint32_t remoteStarted=0,remotePollA
 uint16_t queueHead=0,queueTail=0;uint32_t droppedEvents=0;
 uint32_t lastSensorRetry=0;
 bool appPinsReady=false;
+bool pinAccessEnabled=true;
 uint32_t wifiPermitUntil=0,wifiOfflineSince=0,lastSetupDraw=0;
 uint32_t lastStatusBarDraw=0;
 String setupError;
@@ -63,11 +64,18 @@ void persistSavedWifiNetworks() {
   bool ok=networkPrefs.putUChar("netCount",savedWifiCount)>0;
   for(uint8_t i=0;i<savedWifiCount;i++){
     ok=networkPrefs.putString(savedWifiNameKey(i).c_str(),savedWifiSsids[i])>0 && ok;
-    ok=networkPrefs.putString(savedWifiPasswordKey(i).c_str(),savedWifiPasswords[i])>0 && ok;
+    String key=savedWifiPasswordKey(i);
+    // Preferences::putString returns 0 for a successfully saved empty string.
+    // An open network has no password key; do not turn that into storageFault.
+    if(savedWifiPasswords[i].isEmpty()){
+      if(networkPrefs.isKey(key.c_str()))ok=networkPrefs.remove(key.c_str()) && ok;
+    }else ok=networkPrefs.putString(key.c_str(),savedWifiPasswords[i])>0 && ok;
   }
   if(savedWifiCount){
     ok=networkPrefs.putString("ssid",savedWifiSsids[0])>0 && ok;
-    if(savedWifiPasswords[0].isEmpty())networkPrefs.remove("password");
+    if(savedWifiPasswords[0].isEmpty()){
+      if(networkPrefs.isKey("password"))ok=networkPrefs.remove("password") && ok;
+    }
     else ok=networkPrefs.putString("password",savedWifiPasswords[0])>0 && ok;
   }
   if(!ok)storageFault=true;
@@ -100,6 +108,14 @@ void rememberSavedWifi(const String &ssid,const String &password) {
   savedWifiSsids[0]=ssid;savedWifiPasswords[0]=password;
   if(found<0 && savedWifiCount<MAX_SAVED_WIFI)savedWifiCount++;
   wifiRetryIndex=0;wifiSsid=ssid;wifiPassword=password;persistSavedWifiNetworks();
+}
+bool confirmSavedWifi() {
+  rememberSavedWifi(wifiSsid,wifiPassword);
+  bool saved=!storageFault && savedWifiCount>0 &&
+    networkPrefs.getUChar("netCount",0)==savedWifiCount &&
+    networkPrefs.getString("net0","")==wifiSsid && networkPrefs.getString("key0","")==wifiPassword;
+  if(!saved)storageFault=true;
+  return saved;
 }
 void attemptSavedWifi(uint8_t index) {
   if(!savedWifiCount)return;
@@ -161,12 +177,26 @@ void setRestriction(DoorRestriction::Mode next){
   if(next==restriction)return;
   restriction=next;
   if(next!=DoorRestriction::RETIRED && !nvs.putUChar("restrict",uint8_t(next)))storageFault=true;
+  clearPinEntry();if(screen==HOME)drawDigits();
   lastStatusBarDraw=0;
   if(screen==HOME)tell(connectedRestrictionNotice()?connectedRestrictionNotice():"PIN / card / fingerprint");
 }
 bool connectedAllowsCard(const String &uid){return DoorRestriction::allowLocal(restriction,ownerCards.indexOf(","+uid+",")>=0);}
 bool connectedAllowsFinger(int id){return DoorRestriction::allowLocal(restriction,ownerFingers.indexOf(","+String(id)+",")>=0);}
-bool connectedAllowsPin(){return DoorRestriction::allowLocal(restriction,false);}
+bool connectedAllowsPin(){return pinAccessEnabled && DoorRestriction::allowLocal(restriction,false);}
+void loadPinAccess(){
+  // Old doors have no key yet; an unreadable existing value must not enable PIN.
+  pinAccessEnabled=nvs.isKey("pinEnabled")?nvs.getBool("pinEnabled",false):true;
+}
+bool savePinAccess(bool enabled) {
+  if (pinAccessEnabled==enabled && nvs.isKey("pinEnabled")) return true;
+  if (nvs.putBool("pinEnabled",enabled)!=1 || nvs.getBool("pinEnabled",!enabled)!=enabled) {
+    storageFault=true;return false;
+  }
+  pinAccessEnabled=enabled;clearPinEntry();
+  if (screen==HOME) drawDigits();
+  return true;
+}
 // Chặn cả lệnh mở từ menu quản trị khi admin tạm ngưng hoặc đã thu hồi; tạm khóa của chủ cửa không chặn ở đây.
 bool connectedOpenBlocked(){return restriction==DoorRestriction::SUSPENDED || restriction==DoorRestriction::RETIRED;}
 void saveOwners(JsonArrayConst cards,JsonArrayConst fingers){
@@ -362,7 +392,10 @@ void startSetupWeb() {
   setupWeb.on("/api/setup/finish",HTTP_POST,[]{
     if(!localHttp() || resetPending || setupWeb.arg("csrf")!=setupCsrf){setupReply(403,"Phiên thiết lập không hợp lệ.");return;}
     if(WiFi.status()!=WL_CONNECTED || WiFi.SSID()!=wifiSsid){setupReply(409,"Cửa chưa kết nối Wi-Fi đã chọn. Kiểm tra lại trước khi hoàn tất.");return;}
-    setupApCloseAt=millis()+3000;setupReply(200,"Đã lưu Wi-Fi. Mạng thiết lập sẽ tắt; mở lại Smart Door để hoàn tất nhận cửa.");
+    if(!confirmSavedWifi()){setupReply(500,"Chưa xác nhận lưu được Wi-Fi. Giữ nguồn ổn định và kiểm tra thiết bị trước khi tiếp tục.");return;}
+    setupApCloseAt=millis()+3000;
+    setupReply(200,appPinsReady?"Đã lưu Wi-Fi. Mạng thiết lập sẽ tắt; mở lại Smart Door để tiếp tục.":
+      "Đã lưu Wi-Fi. Nhấn/thả RST/EN hoặc rút nguồn 5 giây rồi cấp lại. Chờ cửa online, mở app nhận cửa và đặt PIN. Không khôi phục mặc định.");
   });
   setupWeb.onNotFound(captiveRedirect);
   setupWeb.begin();
@@ -532,6 +565,7 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
     if(!claimed)return;
     saveOwners(doc["ownerRfid"].as<JsonArrayConst>(),doc["ownerFingerprints"].as<JsonArrayConst>());
     setRestriction(DoorRestriction::fromServer(restriction,lifecycle,doc["lockdown"]|false));
+    if(doc["pinEnabled"].is<bool>() && !savePinAccess(doc["pinEnabled"].as<bool>()))return;
     if(doc["unlockDurationSec"].is<int>() && doc["doorOpenTimeoutSec"].is<int>()) {
       int seconds=doc["unlockDurationSec"].as<int>(),openSeconds=doc["doorOpenTimeoutSec"].as<int>();
       bool wait=doc["autoLockWaitForClose"]|true;
@@ -678,6 +712,7 @@ void connectedSetup() {
   if(!json.isEmpty() && !deserializeJson(doc,json))loadFactoryJson(doc);
   generation=factoryPrefs.getUInt("gen",1);claimed=factoryPrefs.getBool("claimed",false);
   appPinsReady=nvs.getBool("appPins",false);applyMotorConfig();
+  loadPinAccess();
   restriction=DoorRestriction::decode(nvs.getUChar("restrict",0));
   ownerCards=nvs.getString("ownerCards",",");ownerFingers=nvs.getString("ownerFingers",",");
   uint32_t timing=DoorTiming::load(nvs);

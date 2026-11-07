@@ -23,7 +23,7 @@ flowchart LR
     BE <--> DB[(MySQL)]
     BE <-->|MQTT| BROKER[Mosquitto + ACL]
     ESP[ESP32-S3] <-->|MQTT| BROKER
-    ESP <--> INPUT[RFID / van tay / PIN tren TFT]
+    ESP <--> INPUT[RFID / van tay / PIN tren TFT va HX-543]
     ESP --> OUTPUT[Servo / buzzer]
     CAMERA[Webcam laptop] --> AI[Face node + liveness]
     AI -->|MQTT face| BROKER
@@ -38,7 +38,7 @@ flowchart LR
 | Quyền theo cửa | Kiểm tra manager/thành viên theo từng access unit; quyền RFID, vân tay, face và remote độc lập. Thành viên được mở từ xa nếu có allowRemoteUnlock và cửa bật remote. |
 | RFID | Đọc UID RC522, chuẩn hóa để so với danh sách đã đồng bộ; chỉ credential và quyền hợp lệ mới có trong snapshot. |
 | Vân tay | Quét tại cảm biến UART; manager gửi FP_ENROLL/FP_DELETE. Đăng ký hai lần, timeout 45 giây; đọc bitmap và checksum để tránh đè slot đang có mẫu. |
-| PIN | Keypad TFT nhập6 số; C xóa, E xác nhận. ESP32 lưu salt + SHA-256; backend BCrypt. Sai 5 lần chặn nhập30 giây trong phiên chạy. PIN dùng chung cho cửa. |
+| PIN | PIN cửa 6 số dùng chung cho TFT (C xóa, E xác nhận) và HX-543 phía trong nhà (* xóa, # xác nhận, chỉ HOME; firmware ≥ 1.11.0). ESP32 lưu salt + SHA-256; backend BCrypt. Sai 5 lần chặn 30 giây, bộ đếm giữ qua reboot. Hai bàn phím tuân theo cờ bật/tắt PIN lưu NVS và trạng thái tạm khóa/tạm ngưng/thu hồi. Phần nhập HX-543 hết hạn sau 15 giây; đổi nguồn nhập xóa phần mã dở. Xem [hướng dẫn HX-543](BAN_PHIM_TRONG_NHA.md). |
 | Servo | DOOR_UNLOCK điều khiển góc mở, task riêng tự khóa sau thời gian cấu hình; boot đưa về góc khóa. Chưa có cảm biến xác nhận vị trí chốt. |
 | Wi-Fi | Firmware connected quét/chọn mạng 2.4GHz qua captive portal, giữ tối đa 5 mạng trong NVS và luân phiên thử lại khi mất kết nối. Cửa đã có PIN yêu cầu admin PIN trên TFT để vào Wi-Fi và nhập lại trên portal cho mỗi lần đổi. Mạng mới chỉ lưu khi kết nối thành công. |
 | Offline | Quyền lưu NVS; RFID/vân tay/PIN tiếp tục kiểm tra cục bộ. Hàng đợi tối đa63 sự kiện, chỉ bỏ sau backend xác nhận commit; hàng đợi đầy/lỗi lưu sẽ chặn mở cục bộ. |

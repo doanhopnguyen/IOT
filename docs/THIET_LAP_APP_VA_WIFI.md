@@ -1,15 +1,18 @@
 # Thiết lập bằng app và phục hồi Wi-Fi — 06/11/2026
 
-Áp dụng cho firmware connected **1.4.0**. Không áp dụng cho sketch legacy; sketch offline dùng phần hiệu chỉnh tại chip riêng.
+Áp dụng cho firmware connected **1.11.0**. Không áp dụng cho sketch legacy; sketch offline dùng phần hiệu chỉnh tại chip riêng.
 
 1. Cấp nguồn: chip chỉ hiện QR, mạng SmartDoor và địa chỉ chọn Wi-Fi. Chưa bắt hiệu chỉnh hoặc nhập PIN.
 2. App quét QR và hướng dẫn điện thoại vào Wi-Fi SmartDoor. Điện thoại thường tự mở captive portal; nếu không, mở `http://192.168.4.1`. Portal chỉ quét/chọn mạng 2.4 GHz, nhập mật khẩu mạng và hoàn tất. Thiết lập lần đầu chưa có PIN nên không hỏi PIN ở đây.
-3. Điện thoại trở về mạng có Internet/Tailscale. App kiểm tra kết nối dịch vụ; chỉ sau khi thiết bị online mới cho đặt tên và nhận cửa. Wi-Fi kết nối mà chưa tới được broker/backend thì chưa đủ.
-4. Trong app chủ cửa đặt PIN mở cửa và PIN quản trị: 6 số, khác nhau, nhập lại để xác nhận. Backend chỉ lưu hash vào dữ liệu lệnh; PIN rõ chỉ nằm trong bản tin gửi tới đúng chip, không ghi log. Chỉ ACK thiết bị mới áp dụng hash vào hồ sơ cửa. Mạng demo MQTT plaintext chỉ dành cho LAN tin cậy; triển khai thực dùng TLS như tài liệu triển khai.
-5. Chip tự chuyển sang TOUCH SETUP. App hướng dẫn giữ/nhấc ngón trên dấu cộng của **màn hình chip**, lần lượt 3 điểm và điểm giữa. Sau xác nhận, chip chuyển DOOR SETUP: xác nhận cửa đóng và cửa mở. Tiếp theo là SERVO LOCK và SERVO OPEN: chỉnh góc, bấm TEST, quan sát chốt thực tế rồi xác nhận từng vị trí. App cập nhật hướng dẫn, góc đã ra lệnh và chiều tăng/giảm theo heartbeat.
-6. Cửa mới chỉ sẵn sàng sau PIN, cảm ứng, cảm biến cửa và hai vị trí servo đã xác nhận. Đổi số/đi vào bước hiệu chỉnh không tự xoay; chỉ nút TEST mới phát lệnh thử. TEST LOCK yêu cầu cánh cửa đóng, phải chờ hết xung thử trước khi xác nhận. Sau xác nhận OPEN, hệ thống giữ trạng thái vừa nhả chốt và dùng quy tắc tự khóa thông thường (đợi đóng ổn định, hoặc 5 giây nếu chưa mở cánh cửa). Không tự xoay lúc khởi động. Mặc định khóa 100°, mở 30°; góc đang lưu được giữ khi nâng firmware.
+3. Bấm Hoàn tất trên portal, chờ thông báo **Đã lưu Wi-Fi**, rồi khởi động lại cửa một lần: nhấn rồi thả **RST/EN**, hoặc rút nguồn 5 giây rồi cấp lại. Không giữ BOOT, không khôi phục mặc định; Wi-Fi và danh tính đã lưu được giữ. Chờ cửa khởi động và tự nối lại mạng.
+4. Điện thoại trở về mạng có Internet/Tailscale. App dừng ở trang **Khởi động lại cửa sau khi lưu Wi-Fi**; người dùng xác nhận đã thực hiện rồi app kiểm tra lại kết nối dịch vụ trước khi sang đặt tên/nhận cửa. Wi-Fi kết nối mà chưa tới được broker/backend thì chưa đủ.
+5. Trong app chủ cửa đặt PIN mở cửa và PIN quản trị: 6 số, khác nhau, nhập lại để xác nhận. Backend chỉ lưu hash vào dữ liệu lệnh; PIN rõ chỉ nằm trong bản tin gửi tới đúng chip, không ghi log. Chỉ ACK thiết bị mới áp dụng hash vào hồ sơ cửa. Mạng demo MQTT plaintext chỉ dành cho LAN tin cậy; triển khai thực dùng TLS như tài liệu triển khai.
+6. Chip tự chuyển sang TOUCH SETUP. App hướng dẫn giữ/nhấc ngón trên dấu cộng của **màn hình chip**, lần lượt 3 điểm và điểm giữa. Sau xác nhận, chip chuyển DOOR SETUP: xác nhận cửa đóng và cửa mở. Tiếp theo là SERVO LOCK và SERVO OPEN: chỉnh góc, bấm TEST, quan sát chốt thực tế rồi xác nhận từng vị trí. App cập nhật hướng dẫn, góc đã ra lệnh và chiều tăng/giảm theo heartbeat.
+7. Cửa mới chỉ sẵn sàng sau PIN, cảm ứng, cảm biến cửa và hai vị trí servo đã xác nhận. Đổi số/đi vào bước hiệu chỉnh không tự xoay; chỉ nút TEST mới phát lệnh thử. TEST LOCK yêu cầu cánh cửa đóng, phải chờ hết xung thử trước khi xác nhận. Sau xác nhận OPEN, hệ thống giữ trạng thái vừa nhả chốt và dùng quy tắc tự khóa thông thường (đợi đóng ổn định, hoặc 5 giây nếu chưa mở cánh cửa). Không tự xoay lúc khởi động. Mặc định khóa 100°, mở 30°; góc đang lưu được giữ khi nâng firmware.
 
 Nếu đóng app, vào cửa → Cài đặt thiết bị để tiếp tục. Có nút đổi PIN mở cửa/PIN quản trị và bắt đầu lại hiệu chỉnh. Hiệu chỉnh không yêu cầu tạo PIN lại. PIN quản trị chỉ dùng xác thực ADMIN trên chip/khôi phục Wi-Fi, không có màn hình tạo PIN trên chip.
+
+Hướng dẫn khởi động lại là bước thủ công trước lần đặt PIN đầu, không phải yêu cầu reset xuất xưởng mỗi khi đổi Wi-Fi/PIN. Không ngắt nguồn khi thiết bị đang ghi PIN hoặc hiệu chỉnh. Nếu vẫn báo lỗi bộ nhớ sau reboot, giữ log lỗi để kiểm tra; không mặc nhiên coi khởi động lại là cách sửa mọi lỗi lưu trữ. Firmware cũng đã sửa trường hợp mạng Wi-Fi mở bị báo nhầm lỗi bộ nhớ: `putString` trả 0 khi chuỗi mật khẩu rỗng, nên hiện lưu mạng mở bằng cách bỏ khóa mật khẩu và xác nhận đọc lại trước thông báo hoàn tất.
 
 ## Đổi và khôi phục Wi-Fi
 

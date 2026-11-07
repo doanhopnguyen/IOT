@@ -54,6 +54,8 @@ Chạy từ đầu trên Windows, nhiều ESP32/mobile/Edge AI ở các mạng k
 
 ## Chức năng chính
 
+Firmware connected 1.11.0 đã tích hợp bàn phím HX-543 phía trong nhà dùng chung PIN cửa: nhập 6 số + `#`, `*` xóa. Giới hạn nhập sai, bật/tắt PIN từ app, trạng thái hạn chế và tự khóa đều dùng chung với TFT. Xem [hướng dẫn bàn phím trong nhà](docs/BAN_PHIM_TRONG_NHA.md).
+
 | Nhóm | Chức năng |
 |---|---|
 | Tài khoản & thiết bị | Đăng ký/đăng nhập, admin đăng ký chip + QR kích hoạt, nhận cửa, reset/chuyển giao có xác minh |

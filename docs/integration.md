@@ -29,7 +29,7 @@ Tham chiếu `D:\BTLIOT\README.md`, `So_do_noi_chan_RC522.md`, `So_do_noi_chan_C
 
 Không nối VA/TCH/D+/D− của cảm biến khi chưa xác minh module. Nguồn TFT/LED theo module thực tế. SG90 dùng nguồn 5 V ngoài phù hợp dòng tải, không lấy từ GPIO/3V3. Tất cả nguồn và module chung GND. Buzzer 5 V cần transistor/module driver và điện trở phù hợp; không đưa tải 5 V trực tiếp vào GPIO. Tắt nguồn trước khi thay dây.
 
-Đánh số HX-543 theo ảnh kiểm tra: nhìn từ mặt phím, cáp hướng xuống; chân 1 ở bên phải cạnh chấm trắng, chân 8 ở bên trái. Bàn phím ma trận thụ động, không nối VCC/3V3/5V/GND vào cáp. Sơ đồ chân này đã được xác nhận bằng sketch test riêng. Firmware `connected_door` hiện vẫn dùng bàn phím cảm ứng TFT; cần tích hợp phần đọc HX-543 vào firmware cửa trước khi keypad rời điều khiển khóa.
+Đánh số HX-543 theo ảnh kiểm tra: nhìn từ mặt phím, cáp hướng xuống; chân 1 ở bên phải cạnh chấm trắng, chân 8 ở bên trái. Bàn phím ma trận thụ động, không nối VCC/3V3/5V/GND vào cáp. Sơ đồ chân này đã được xác nhận bằng sketch test riêng. Firmware `connected_door` 1.11.0 và bản offline đã tích hợp HX-543 bên cạnh TFT: nhập PIN cửa 6 số, `*` xóa, `#` xác nhận, chỉ ở màn hình sử dụng HOME. Hai bàn phím dùng chung xác thực, khóa nhập sai và luồng mở/tự khóa servo; cờ bật/tắt PIN từ app và trạng thái tạm khóa/tạm ngưng/thu hồi áp dụng cho cả hai. Xem [hướng dẫn bàn phím trong nhà](BAN_PHIM_TRONG_NHA.md).
 
 ```mermaid
 flowchart LR

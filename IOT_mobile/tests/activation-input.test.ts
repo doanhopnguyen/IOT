@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { activationClaimInput, parseActivationCode, productSetup } from '../src/services/api/activationInput';
 import { createProductQr, deviceDisplayName, parseScannedProductQr, wifiQrFields } from '../src/services/api/productQr';
-import { inspectProduct } from '../src/services/api/activationService';
+import { activationPage, checkRestartConnection, inspectProduct } from '../src/services/api/activationService';
 
 const code = 'aBcd0123456789_ABCDEFGHIJ-klmnopqr';
 test('accept the issued code or activation QR and trim form fields', () => {
@@ -59,4 +59,24 @@ test('activation inspection rejects a valid code paired with another device iden
   const product = { activationCode: code, deviceUid: 'ESP32-80B54EC8149C' };
   await assert.rejects(inspectProduct(product, async () => ({ deviceUid: 'ESP32-AABBCCDDEEFF', name: 'Other', online: true })), /không khớp/);
   assert.equal((await inspectProduct(product, async () => ({ deviceUid: product.deviceUid, name: 'Door', online: false }))).online, false);
+});
+test('first online connection stops at the restart guide before claiming the door', () => {
+  const state = { hasDevice: false, hasProduct: true, online: false, restartConfirmed: false };
+  assert.equal(activationPage({ ...state, hasProduct: false }), 'SCAN');
+  assert.equal(activationPage(state), 'WIFI');
+  assert.equal(activationPage({ ...state, online: true }), 'RESTART');
+  assert.equal(activationPage({ ...state, online: true, restartConfirmed: true }), 'NAME');
+  assert.equal(activationPage({ ...state, hasDevice: true }), 'SETUP');
+});
+test('restart confirmation checks the connection again and stays pending on offline or errors', async () => {
+  const product = { activationCode: code, deviceUid: 'ESP32-80B54EC8149C' };
+  let checked = 0;
+  await assert.rejects(checkRestartConnection(product, async () => {
+    checked++; return { deviceUid: product.deviceUid, name: 'Door', online: false };
+  }), /chưa kết nối lại/);
+  await assert.rejects(checkRestartConnection(product, async () => { throw new Error('Không kết nối được'); }), /Không kết nối được/);
+  assert.equal((await checkRestartConnection(product, async () => {
+    checked++; return { deviceUid: product.deviceUid, name: 'Door', online: true };
+  })).online, true);
+  assert.equal(checked, 2);
 });

@@ -30,6 +30,7 @@ Nếu mất điện giữa thiết lập, lần sau tiếp tục từ phần cò
 
 ## Sử dụng
 
+- HX-543 phía trong nhà đã tích hợp cùng PIN mở cửa: `0–9` nhập, `*` xóa, `#` xác nhận, A/B/C/D bỏ qua; chỉ hoạt động ở HOME. Hàng dùng GPIO7/8/11/12; cột dùng GPIO13/14/15/38. Dùng chung giới hạn PIN sai với TFT; phần nhập tự xóa sau 15 giây hoặc khi chuyển sang nhập trên TFT. Thư viện Arduino IDE cần thêm **Keypad (Mark Stanley/Alexander Brevig)**; PlatformIO tự cài theo cấu hình.
 - Nhập PIN mở cửa rồi `E`, quẹt thẻ được cấp quyền hoặc chạm vân tay được đăng ký tại menu này.
 - Mở hợp lệ: servo nhả chốt. Không mở cửa trong 5 giây thì tự khóa; nếu đã mở cửa thì chờ đóng ổn định 1 giây mới khóa. Cửa mở quá 20 giây có nhắc trên màn hình, không đẩy chốt khi cảm biến báo mở.
 - Lúc bật nguồn lại hoặc hoàn tất thiết lập: không phát lệnh xoay servo. Đóng/mở cánh cửa khi chưa có lượt mở hợp lệ cũng không làm servo xoay. Dùng mở cửa hợp lệ hoặc `LOCK NOW` để điều khiển; trước lệnh đầu tiên màn hình báo `Latch:UNKNOWN`. SG90 nhận PWM khoảng 900 ms mỗi lệnh rồi nhả lực; cơ cấu phải tự giữ vị trí sau đó.

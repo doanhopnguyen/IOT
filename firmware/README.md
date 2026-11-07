@@ -2,7 +2,7 @@
 
 Firmware tích hợp mới, tham khảo dây/sketch trong `D:\BTLIOT`. TFT, touch và RC522 dùng chung hardware SPI với CS riêng; UART vân tay độc lập.
 
-**Bản chính là `connected_door`, cấu hình `platformio.connected.ini` (firmware 1.4.0).** Luồng hiện tại: Wi-Fi trước, nhận cửa và đặt hai PIN trong app, sau đó chip hướng dẫn hiệu chỉnh; xem [thiết lập app và Wi-Fi](../docs/THIET_LAP_APP_VA_WIFI.md). `pio run` không chọn cấu hình sẽ build bản legacy `src/main.cpp`, không có luồng mới.
+**Bản chính là `connected_door`, cấu hình `platformio.connected.ini` (firmware 1.11.0).** Luồng hiện tại: Wi-Fi trước, nhận cửa và đặt hai PIN trong app, sau đó chip hướng dẫn hiệu chỉnh; xem [thiết lập app và Wi-Fi](../docs/THIET_LAP_APP_VA_WIFI.md). `pio run` không chọn cấu hình sẽ build bản legacy `src/main.cpp`, không có luồng mới.
 
 ## Build và nạp
 
@@ -22,6 +22,16 @@ pio device monitor --port COM5 --baud 115200
 Thay COM5 bằng cổng thực tế. Chưa cấp phát danh tính vẫn build được nhưng không kết nối MQTT. Build N16R8 dùng flash 16 MB, QIO flash / OPI PSRAM, override board mặc định N8.
 
 ## Hành vi và giới hạn
+
+Thiết lập lần đầu: portal chỉ báo hoàn tất sau khi xác nhận đọc lại Wi-Fi đã lưu. Sau thông báo Đã lưu, nhấn/thả RST/EN hoặc ngắt nguồn 5 giây rồi cấp lại; chờ chip online và xác nhận bước này trong app trước khi nhận cửa/đặt PIN. Không giữ BOOT hay reset xuất xưởng. Đã sửa lỗi mạng mở bị gắn `storageFault` vì `Preferences::putString` trả 0 cho mật khẩu rỗng; lỗi NVS thật vẫn chặn báo lưu thành công.
+
+### HX-543 phía trong nhà (1.11.0)
+
+- Dùng cùng PIN mở cửa 6 số đã đặt trong app; `0–9` nhập, `*` xóa toàn bộ, `#` xác nhận. A/B/C/D được bỏ qua. Chỉ nhận ở màn hình HOME sau khi thiết lập xong; menu quản trị và hiệu chỉnh vẫn thao tác trên TFT.
+- Chữ số chỉ hiển thị bằng dấu `*`. Sau 15 giây không bấm phím, phần nhập trên HX-543 tự xóa. Chuyển giữa TFT và HX-543 sẽ xóa phần PIN đang nhập dở để không ghép hai lượt nhập.
+- Dùng chung `submitPin()` và bộ đếm sai của TFT: 5 lần sai chặn 30 giây; sai PIN gửi sự kiện `PIN/DENIED`, đúng và mở được gửi `PIN/GRANTED`. Giữ phím không tự lặp; bấm nhiều phím cùng lúc xóa lượt nhập và yêu cầu nhả hết.
+- Cả hai bàn phím tuân theo cờ bật/tắt PIN trong app, tạm khóa của chủ cửa, tạm ngưng/thu hồi thiết bị, reset và điều kiện sẵn sàng. Cờ bật/tắt PIN lưu NVS để vẫn có hiệu lực sau reboot/mất mạng; PIN quản trị không dùng để mở bằng HX-543.
+- Mở qua cùng bộ điều khiển servo và cấu hình tự khóa hiện có. Không cần backend/app mới hay reset NVS để nâng cấp firmware. Xem [hướng dẫn sử dụng và thử trên cửa](../docs/BAN_PHIM_TRONG_NHA.md).
 
 ### Wi-Fi của firmware connected 1.4.0
 

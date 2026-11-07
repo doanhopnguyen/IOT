@@ -5,7 +5,7 @@ import { AppModal, Badge, Button, Card, Input, Notice, styles as s } from './ui'
 import { ApiError } from '../services/api/client';
 import { productSetup } from '../services/api/activationInput';
 import { deviceDisplayName, parseScannedProductQr, type ProductSetup } from '../services/api/productQr';
-import { claimProduct, inspectProduct, type InventoryDevice } from '../services/api/activationService';
+import { activationPage, checkRestartConnection, claimProduct, inspectProduct, type InventoryDevice } from '../services/api/activationService';
 import { canJoinSetupWifi, connectSetupWifi, openSetupPortal, openWifiSettings } from '../services/setupWifi';
 import { DeviceSetup } from './DeviceSetup';
 import { SetupProgress } from './SetupProgress';
@@ -21,14 +21,16 @@ export function ActivationWizard({ open, close, onCreated }: { open: boolean; cl
   const [busy, setBusy] = useState(false), [wifiBusy, setWifiBusy] = useState(false);
   const [error, setError] = useState(''), [wifiMessage, setWifiMessage] = useState('');
   const [online, setOnline] = useState(false), [refreshKey, setRefreshKey] = useState(0);
+  const [restartConfirmed, setRestartConfirmed] = useState(false);
   const [setupStep, setSetupStep] = useState<SetupPage>('PINS');
   const scanLocked = useRef(false), autoJoinCode = useRef('');
   const wifiEpoch = useRef(0);
-  const page = device ? 'SETUP' : !product ? 'SCAN' : online ? 'NAME' : 'WIFI';
+  const page = activationPage({ hasDevice: Boolean(device), hasProduct: Boolean(product), online, restartConfirmed });
   useEffect(() => {
     if (!open) {
       setCode(''); setDraft(undefined); setProduct(undefined); setName(''); setDevice(undefined);
       setError(''); setWifiMessage(''); setScanner(false); setOnline(false); setBusy(false); setWifiBusy(false);
+      setRestartConfirmed(false);
       scanLocked.current = false; autoJoinCode.current = '';
       wifiEpoch.current++;
     }
@@ -71,6 +73,7 @@ export function ActivationWizard({ open, close, onCreated }: { open: boolean; cl
   const accept = (data: string, raw?: string) => {
     const parsed = parseScannedProductQr({ data, raw });
     setCode(parsed.activationCode); setDraft(parsed); setProduct(parsed); setOnline(false); setScanner(false); setError(''); setWifiMessage('');
+    setRestartConfirmed(false);
   };
   const join = async () => {
     if (!product) return;
@@ -86,7 +89,7 @@ export function ActivationWizard({ open, close, onCreated }: { open: boolean; cl
   return <AppModal visible={open} title="Thiết lập cửa mới" scrollKey={`${page}:${setupStep}`} onClose={() => { if (!busy && !wifiBusy) close(); }}>
     <View style={{ gap: 16 }}>
       {page === 'SCAN' ? <>
-        <SetupProgress step={1} total={9} title="Quét QR sản phẩm" detail="QR chứa mã nhận cửa và Wi-Fi thiết lập của khóa." />
+        <SetupProgress step={1} total={10} title="Quét QR sản phẩm" detail="QR chứa mã nhận cửa và Wi-Fi thiết lập của khóa." />
         {scanner && permission?.granted ? <CameraView style={{ height: 260, borderRadius: 14 }} barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={event => {
           if (scanLocked.current) return; scanLocked.current = true;
           try { accept(event.data, event.raw); } catch (e) { setScanner(false); setError(e instanceof Error ? e.message : 'QR không hợp lệ.'); }
@@ -103,12 +106,12 @@ export function ActivationWizard({ open, close, onCreated }: { open: boolean; cl
         }} />
         <Button title="Tiếp tục" variant="ghost" disabled={!code.trim()} onPress={() => {
           try {
-            if (draft && draft.activationCode === code.trim()) { setProduct(draft); setOnline(false); setError(''); }
+            if (draft && draft.activationCode === code.trim()) { setProduct(draft); setOnline(false); setRestartConfirmed(false); setError(''); }
             else accept(code);
           } catch (e) { setError(e instanceof Error ? e.message : 'Mã nhận cửa không hợp lệ.'); }
         }} />
       </> : page === 'WIFI' && product ? <>
-        <SetupProgress step={2} total={9} title="Kết nối Wi-Fi cho cửa" detail="Kết nối điện thoại với khóa, rồi chọn Wi-Fi 2.4 GHz để khóa sử dụng." />
+        <SetupProgress step={2} total={10} title="Kết nối Wi-Fi cho cửa" detail="Kết nối điện thoại với khóa, rồi chọn Wi-Fi 2.4 GHz để khóa sử dụng." />
         <Card><Text style={s.heading}>{deviceDisplayName(product.deviceUid, product.name)}</Text><Badge label="Đã quét sản phẩm" tone="success" />
           <Text selectable style={s.caption}>Mã nhận cửa: {product.activationCode}</Text>
         </Card>
@@ -118,12 +121,21 @@ export function ActivationWizard({ open, close, onCreated }: { open: boolean; cl
         {!canJoinSetupWifi ? <Text style={s.caption}>Camera hệ thống có thể quét cùng QR sản phẩm để lấy sẵn Wi-Fi. Nếu điện thoại không nhận, chọn mạng và mật khẩu ở trên.</Text> : null}
         {canJoinSetupWifi ? <Button title="Chọn Wi-Fi trong Cài đặt điện thoại" variant="ghost" disabled={wifiBusy} onPress={() => { void run(openWifiSettings); }} /> : null}
         <Button title="Mở trang chọn Wi-Fi cho khóa" variant="ghost" disabled={wifiBusy} onPress={() => { void run(openSetupPortal); }} />
-        <Text style={s.caption}>Sau khi chọn mạng và bấm Hoàn tất trên trang của khóa, trở lại app bằng mạng có Internet. Khi khóa online, app tự chuyển sang đặt tên.</Text>
+        <Text style={s.caption}>Bấm Hoàn tất trên trang của khóa và chờ báo Đã lưu Wi-Fi. Nhấn rồi thả RST/EN hoặc rút nguồn khóa 5 giây rồi cấp lại; chờ khóa kết nối lại và đưa điện thoại về mạng có Internet. Bước tiếp theo sẽ nhắc bạn xác nhận đã khởi động lại trước khi nhận cửa và đặt PIN.</Text>
         {wifiMessage ? <Notice tone="info">{wifiMessage}</Notice> : null}
         <Button title="Kiểm tra lại kết nối" variant="ghost" disabled={busy || wifiBusy} onPress={() => { setError(''); setRefreshKey(key => key + 1); }} />
-        <Button title="Quét lại sản phẩm" variant="ghost" disabled={wifiBusy} onPress={() => { setProduct(undefined); setOnline(false); setError(''); autoJoinCode.current = ''; }} />
+        <Button title="Quét lại sản phẩm" variant="ghost" disabled={wifiBusy} onPress={() => { setProduct(undefined); setOnline(false); setRestartConfirmed(false); setError(''); autoJoinCode.current = ''; }} />
+      </> : page === 'RESTART' && product ? <>
+        <SetupProgress step={3} total={10} title="Khởi động lại cửa sau khi lưu Wi-Fi" detail="Thực hiện một lần trước khi nhận cửa và lưu hai mã PIN." />
+        <Notice tone="info">Chỉ thực hiện sau khi trang thiết lập báo Đã lưu Wi-Fi. Nhấn rồi thả nút RST/EN trên bo, hoặc rút nguồn cửa 5 giây rồi cấp lại.</Notice>
+        <Text style={s.description}>Chờ cửa khởi động và tự kết nối Wi-Fi đã lưu. Đưa điện thoại về mạng có Internet, sau đó bấm nút bên dưới để kiểm tra kết nối dịch vụ.</Text>
+        <Text style={s.caption}>Đây là khởi động lại, không phải khôi phục mặc định. Không giữ BOOT và không chọn xóa dữ liệu cửa.</Text>
+        <Button title={busy ? 'Đang kiểm tra kết nối…' : 'Tôi đã khởi động lại · kiểm tra kết nối'} disabled={busy || wifiBusy} onPress={() => { void run(async () => {
+          const info = await checkRestartConnection(product);
+          setName(value => value || deviceDisplayName(info.deviceUid, info.name)); setRestartConfirmed(true);
+        }); }} />
       </> : page === 'NAME' && product ? <>
-        <SetupProgress step={3} total={9} title="Đặt tên cửa" detail="Đặt một tên dễ nhớ để phân biệt các cửa của bạn." />
+        <SetupProgress step={4} total={10} title="Đặt tên cửa" detail="Đặt một tên dễ nhớ để phân biệt các cửa của bạn." />
         <Badge label="Cửa đã kết nối" tone="success" />
         <Text style={s.description}>{deviceDisplayName(product.deviceUid, product.name)}</Text>
         <Text selectable style={s.caption}>Mã nhận cửa: {product.activationCode}</Text>
@@ -132,10 +144,10 @@ export function ActivationWizard({ open, close, onCreated }: { open: boolean; cl
           const claimed = await claimProduct(product, name); setDevice(claimed); setCode(''); setDraft(undefined); setProduct(undefined);
           await onCreated().catch(() => {});
         }); }} />
-        <Button title="Quét sản phẩm khác" variant="ghost" disabled={busy} onPress={() => { setProduct(undefined); setOnline(false); setName(''); setError(''); }} />
+        <Button title="Quét sản phẩm khác" variant="ghost" disabled={busy} onPress={() => { setProduct(undefined); setOnline(false); setRestartConfirmed(false); setName(''); setError(''); }} />
       </> : device?.unitId ? <>
         <Text style={s.caption}>{name.trim() || deviceDisplayName(device.deviceUid, device.name)}</Text>
-        <DeviceSetup unitId={device.unitId} stepOffset={3} onStepChange={setSetupStep} onComplete={finish} />
+        <DeviceSetup unitId={device.unitId} stepOffset={4} onStepChange={setSetupStep} onComplete={finish} />
       </> : null}
       {error ? <Notice tone="warning">{error}</Notice> : null}
     </View>

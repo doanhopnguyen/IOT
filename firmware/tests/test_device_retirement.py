@@ -81,7 +81,7 @@ def actuator_blocked_when_suspended_or_retired():
 
 
 def firmware_version():
-    assert 'FIRMWARE_VERSION "1.10.0"' in MAIN
+    assert 'FIRMWARE_VERSION "1.11.0"' in MAIN
 
 
 for check in (retire_flag_written_before_wipe, retired_boot_checked_first, retired_boot_resumes_wipe,
