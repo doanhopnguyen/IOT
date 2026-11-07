@@ -689,7 +689,14 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
   if(type=="PIN_SET") {
     String pin=doc["data"]["pin"]|"";if(pin.length()!=6){sendAck(uuid,false,"INVALID_PIN");return;}
     for(char c:pin)if(!isdigit(c)){sendAck(uuid,false,"INVALID_PIN");return;}
+    if(cfg.admin.valid && pinMatches(cfg.admin,pin)){sendAck(uuid,false,"INVALID_PIN");return;}
     Config next=cfg;next.user=makePin(pin);sendAck(uuid,saveConfig(next),"PIN_UPDATED");return;
+  }
+  if(type=="ADMIN_PIN_SET") {
+    String pin=doc["data"]["adminPin"]|"";if(pin.length()!=6){sendAck(uuid,false,"INVALID_PIN");return;}
+    for(char c:pin)if(!isdigit(c)){sendAck(uuid,false,"INVALID_PIN");return;}
+    if(cfg.user.valid && pinMatches(cfg.user,pin)){sendAck(uuid,false,"INVALID_PIN");return;}
+    Config next=cfg;next.admin=makePin(pin);sendAck(uuid,saveConfig(next),"ADMIN_PIN_UPDATED");return;
   }
   if(type=="FP_DELETE") {int slot=doc["data"]["templateId"]|0;bool ok=fingerReady&&slot>0&&slot<256&&finger.deleteModel(slot)==FINGERPRINT_OK;sendAck(uuid,ok,"FINGER_DELETE");return;}
   if(type=="FP_ENROLL") {

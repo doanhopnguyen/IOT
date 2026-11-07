@@ -44,6 +44,13 @@ public class ManagerCommandController {
         return pinService.changePin(principal.accountId(), unitId, request);
     }
 
+    @PutMapping("/units/{unitId}/admin-pin")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public CommandResponse changeAdminPin(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable Long unitId,
+            @RequestBody ChangePinRequest request) {
+        return pinService.changeAdminPin(principal.accountId(), unitId, request);
+    }
+
     @PostMapping("/units/{unitId}/users/{userId}/fingerprints")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public CommandResponse addFingerprint(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable Long unitId,

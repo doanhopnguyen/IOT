@@ -80,7 +80,7 @@ public class CommandAckService {
         String entityType = "CREDENTIAL";
         Long entityId = null;
         switch (command.getCommandType()) {
-            case PinService.PIN_SET, OnboardingService.SETUP_CREDENTIALS -> {
+            case PinService.PIN_SET, PinService.ADMIN_PIN_SET, OnboardingService.SETUP_CREDENTIALS -> {
                 entityType = "ACCESS_UNIT";
                 entityId = applyPin(command);
             }
@@ -112,8 +112,10 @@ public class CommandAckService {
     private Long applyPin(Command command) {
         Long unitId = ((Number) command.getPayload().get("unitId")).longValue();
         AccessUnit unit = units.findById(unitId).orElseThrow();
-        unit.setAccessPinHash((String) command.getPayload().get("pinHash"));
-        unit.setPinEnabled(true);
+        if (command.getPayload().get("pinHash") instanceof String pinHash) {
+            unit.setAccessPinHash(pinHash);
+            unit.setPinEnabled(true);
+        }
         if (command.getPayload().get("adminPinHash") instanceof String hash) {
             command.getDevice().setLocalAdminPinHash(hash); command.getDevice().setLocalAdminPinEnabled(true);
         }

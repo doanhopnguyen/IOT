@@ -6,6 +6,7 @@ import {
   setupPage,
   setupService,
   validateSetupPins,
+  validateSinglePin,
   type SetupPage,
   type SetupStatus,
 } from '../services/api/setupService';
@@ -40,7 +41,7 @@ const pages: Record<SetupPage, { title: string; position: number }> = {
   COMPLETE: { title: 'Cửa đã sẵn sàng', position: 6 },
 };
 
-export type SetupSubView = 'home' | 'pins' | 'servo' | 'wifi';
+export type SetupSubView = 'home' | 'door-pin' | 'admin-pin' | 'calibrate' | 'pins' | 'servo' | 'wifi';
 
 interface Props {
   unitId: number;
@@ -343,6 +344,272 @@ function DeviceSetupFlow({
       </>
     );
 
+  if (view === 'door-pin')
+    return (
+      <Card>
+        <View style={s.row}>
+          <View
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 15,
+              backgroundColor: colors.warningSoft,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="keypad-outline" size={21} color={colors.warning} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.heading}>Mã PIN mở cửa</Text>
+            <Text style={s.caption}>Mã 6 chữ số mở cửa hằng ngày</Text>
+          </View>
+          <Badge
+            label={effective.doorPinSet ? 'Đã đặt' : 'Chưa đặt'}
+            tone={effective.doorPinSet ? 'success' : 'warning'}
+          />
+        </View>
+        <Text style={s.description}>
+          Dùng để mở cửa trực tiếp trên bàn phím cảm ứng của khóa. Mã phải gồm đúng 6 chữ số và khác
+          PIN Admin.
+        </Text>
+        <Input
+          label="PIN mở cửa mới · 6 số"
+          value={pin}
+          onChangeText={setPin}
+          secureTextEntry
+          keyboardType="numeric"
+          maxLength={6}
+          editable={!busy}
+          placeholder="••••••"
+        />
+        <Input
+          label="Nhập lại PIN mở cửa"
+          value={confirmPin}
+          onChangeText={setConfirmPin}
+          secureTextEntry
+          keyboardType="numeric"
+          maxLength={6}
+          editable={!busy}
+          placeholder="••••••"
+        />
+        <Button
+          title={busy ? 'Đang chờ cửa xác nhận…' : 'Lưu mã PIN mở cửa'}
+          icon="checkmark-circle-outline"
+          disabled={busy || !effective.online || Boolean(validateSinglePin(pin, confirmPin))}
+          onPress={() => {
+            void act(async () => {
+              await acknowledged(await setupService.doorPin(unitId, { pin, confirmPin }));
+              clearPins();
+              if (!standaloneSubView) setView('home');
+              setMessage('Đã cập nhật mã PIN mở cửa thành công.');
+              await reload();
+            });
+          }}
+        />
+        {!standaloneSubView ? (
+          <Button
+            title="Quay lại"
+            variant="ghost"
+            disabled={busy}
+            onPress={() => {
+              clearPins();
+              setView('home');
+            }}
+          />
+        ) : null}
+        {feedback}
+      </Card>
+    );
+
+  if (view === 'admin-pin')
+    return (
+      <Card>
+        <View style={s.row}>
+          <View
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 15,
+              backgroundColor: colors.roseSoft,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="key-outline" size={21} color={colors.rose} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.heading}>Mã PIN Admin</Text>
+            <Text style={s.caption}>Mã 6 chữ số quản trị trực tiếp trên khóa</Text>
+          </View>
+          <Badge
+            label={effective.adminPinSet ? 'Đã đặt' : 'Chưa đặt'}
+            tone={effective.adminPinSet ? 'success' : 'warning'}
+          />
+        </View>
+        <Text style={s.description}>
+          Dùng để mở menu quản trị trên màn hình khóa, xác nhận đổi Wi-Fi hoặc khôi phục cài đặt
+          gốc. Phải gồm 6 chữ số và khác PIN mở cửa.
+        </Text>
+        <Input
+          label="PIN Admin mới · 6 số"
+          value={adminPin}
+          onChangeText={setAdminPin}
+          secureTextEntry
+          keyboardType="numeric"
+          maxLength={6}
+          editable={!busy}
+          placeholder="••••••"
+        />
+        <Input
+          label="Nhập lại PIN Admin"
+          value={confirmAdminPin}
+          onChangeText={setConfirmAdminPin}
+          secureTextEntry
+          keyboardType="numeric"
+          maxLength={6}
+          editable={!busy}
+          placeholder="••••••"
+        />
+        <Button
+          title={busy ? 'Đang chờ cửa xác nhận…' : 'Lưu mã PIN Admin'}
+          icon="shield-checkmark-outline"
+          disabled={
+            busy || !effective.online || Boolean(validateSinglePin(adminPin, confirmAdminPin))
+          }
+          onPress={() => {
+            void act(async () => {
+              await acknowledged(
+                await setupService.adminPin(unitId, {
+                  pin: adminPin,
+                  confirmPin: confirmAdminPin,
+                }),
+              );
+              clearPins();
+              if (!standaloneSubView) setView('home');
+              setMessage('Đã cập nhật mã PIN Admin thành công.');
+              await reload();
+            });
+          }}
+        />
+        {!standaloneSubView ? (
+          <Button
+            title="Quay lại"
+            variant="ghost"
+            disabled={busy}
+            onPress={() => {
+              clearPins();
+              setView('home');
+            }}
+          />
+        ) : null}
+        {feedback}
+      </Card>
+    );
+
+  if (view === 'calibrate')
+    return (
+      <Card>
+        <View style={s.row}>
+          <View
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 15,
+              backgroundColor: colors.indigoSoft,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="locate-outline" size={21} color={colors.indigo} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.heading}>Hiệu chỉnh phần cứng</Text>
+            <Text style={s.caption}>Cảm ứng màn hình, cảm biến từ & chốt khóa</Text>
+          </View>
+          <Badge
+            label={effective.touchCalibrated && effective.doorCalibrated ? 'Đã chuẩn' : 'Cần căn'}
+            tone={effective.touchCalibrated && effective.doorCalibrated ? 'success' : 'warning'}
+          />
+        </View>
+        <View
+          style={{
+            backgroundColor: colors.surfaceAlt,
+            borderRadius: 16,
+            padding: 14,
+            gap: 10,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}
+        >
+          <View style={s.row}>
+            <Ionicons
+              name={effective.touchCalibrated ? 'checkmark-circle' : 'ellipse-outline'}
+              size={18}
+              color={effective.touchCalibrated ? colors.success : colors.muted}
+            />
+            <Text style={[s.caption, { flex: 1, color: colors.text }]}>
+              Cảm ứng màn hình 4 góc
+            </Text>
+            <Text style={s.caption}>
+              {effective.touchCalibrated ? 'Đã hiệu chỉnh' : 'Chưa hiệu chỉnh'}
+            </Text>
+          </View>
+          <View style={s.row}>
+            <Ionicons
+              name={effective.doorCalibrated ? 'checkmark-circle' : 'ellipse-outline'}
+              size={18}
+              color={effective.doorCalibrated ? colors.success : colors.muted}
+            />
+            <Text style={[s.caption, { flex: 1, color: colors.text }]}>
+              Cảm biến từ đóng / mở cửa
+            </Text>
+            <Text style={s.caption}>
+              {effective.doorCalibrated ? 'Đã hiệu chỉnh' : 'Chưa hiệu chỉnh'}
+            </Text>
+          </View>
+          <View style={s.row}>
+            <Ionicons
+              name={effective.servoCalibrated !== false ? 'checkmark-circle' : 'ellipse-outline'}
+              size={18}
+              color={effective.servoCalibrated !== false ? colors.success : colors.muted}
+            />
+            <Text style={[s.caption, { flex: 1, color: colors.text }]}>
+              Vị trí khóa / mở chốt Servo
+            </Text>
+            <Text style={s.caption}>
+              {effective.servoCalibrated !== false ? 'Đã hiệu chỉnh' : 'Chưa hiệu chỉnh'}
+            </Text>
+          </View>
+        </View>
+        <Text style={s.description}>
+          Sử dụng khi bạn di dời vị trí lắp đặt cảm biến từ hoặc cần căn lại màn hình cảm ứng và
+          hành trình chốt cơ khí trực tiếp trên cửa.
+        </Text>
+        <Button
+          title={busy ? 'Đang gửi lệnh…' : 'Bắt đầu hiệu chỉnh trên cửa'}
+          icon="construct-outline"
+          disabled={busy || !effective.online}
+          onPress={() => {
+            void act(async () => {
+              await acknowledged(await setupService.calibrate(unitId));
+              setRestarting(true);
+              await reload();
+            });
+          }}
+        />
+        {!standaloneSubView ? (
+          <Button
+            title="Quay lại"
+            variant="ghost"
+            disabled={busy}
+            onPress={() => setView('home')}
+          />
+        ) : null}
+        {feedback}
+      </Card>
+    );
+
   if (view === 'pins')
     return (
       <View style={{ gap: 16 }}>
@@ -377,43 +644,6 @@ function DeviceSetupFlow({
               }}
             />
           ) : null}
-        </Card>
-        <Card>
-          <View style={s.row}>
-            <View
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 15,
-                backgroundColor: colors.indigoSoft,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Ionicons name="locate-outline" size={21} color={colors.indigo} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.heading}>Hiệu chỉnh lại phần cứng</Text>
-              <Text style={s.caption}>Cân chỉnh lại cảm ứng màn hình, cảm biến cửa và servo</Text>
-            </View>
-          </View>
-          <Text style={s.description}>
-            Sử dụng khi bạn di dời vị trí lắp đặt cảm biến từ hoặc cần căn lại màn hình cảm ứng trên
-            khóa.
-          </Text>
-          <Button
-            title="Hiệu chỉnh lại cảm ứng, cảm biến và servo"
-            variant="ghost"
-            icon="construct-outline"
-            disabled={busy || !effective.online}
-            onPress={() => {
-              void act(async () => {
-                await acknowledged(await setupService.calibrate(unitId));
-                setRestarting(true);
-                await reload();
-              });
-            }}
-          />
         </Card>
         {feedback}
       </View>
@@ -509,12 +739,36 @@ function DeviceSetupFlow({
         compact
         icon="keypad-outline"
         tone="warning"
-        title="Đổi PIN mở cửa và PIN quản trị"
-        subtitle="Cập nhật hai mã PIN 6 số và hiệu chỉnh cảm biến"
+        title="Mã PIN mở cửa"
+        subtitle="Đổi mã 6 số mở cửa hằng ngày"
         onPress={() => {
           setError('');
           setMessage('');
-          setView('pins');
+          setView('door-pin');
+        }}
+      />
+      <FeatureTile
+        compact
+        icon="key-outline"
+        tone="rose"
+        title="Mã PIN Admin"
+        subtitle="Đổi mã 6 số quản trị trên khóa"
+        onPress={() => {
+          setError('');
+          setMessage('');
+          setView('admin-pin');
+        }}
+      />
+      <FeatureTile
+        compact
+        icon="locate-outline"
+        tone="indigo"
+        title="Hiệu chỉnh phần cứng"
+        subtitle="Cảm ứng màn hình & cảm biến cửa"
+        onPress={() => {
+          setError('');
+          setMessage('');
+          setView('calibrate');
         }}
       />
       <FeatureTile

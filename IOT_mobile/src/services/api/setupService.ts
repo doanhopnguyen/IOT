@@ -6,13 +6,22 @@ export interface SetupStatus {
   servoCalibrated?: boolean; servoCommandAngle?: number | null; servoDirection?: string;
 }
 export interface SetupPins { pin: string; confirmPin: string; adminPin: string; confirmAdminPin: string; }
+export interface SinglePinInput { pin: string; confirmPin: string; }
 const post = (body?: unknown): RequestInit => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+const put = (body: unknown): RequestInit => ({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 export const setupService = {
   status(unitId: number) { return request<SetupStatus>(`/api/manager/units/${unitId}/setup`); },
   credentials(unitId: number, pins: SetupPins) { return request<CommandDto>(`/api/manager/units/${unitId}/setup/credentials`, post(pins)); },
+  doorPin(unitId: number, input: SinglePinInput) { return request<CommandDto>(`/api/manager/units/${unitId}/pin`, put(input)); },
+  adminPin(unitId: number, input: SinglePinInput) { return request<CommandDto>(`/api/manager/units/${unitId}/admin-pin`, put(input)); },
   calibrate(unitId: number) { return request<CommandDto>(`/api/manager/units/${unitId}/setup/calibrate`, post()); },
   wifi(unitId: number) { return request<CommandDto>(`/api/manager/units/${unitId}/wifi-setup`, post()); },
 };
+export function validateSinglePin(pin: string, confirmPin: string): string | null {
+  if (!/^\d{6}$/.test(pin)) return 'Mã PIN cần đủ 6 chữ số.';
+  if (pin !== confirmPin) return 'PIN xác nhận chưa trùng khớp.';
+  return null;
+}
 export function validateSetupPins(pins: SetupPins): string | null {
   if (!/^\d{6}$/.test(pins.pin) || !/^\d{6}$/.test(pins.adminPin)) return 'Mỗi PIN cần đủ 6 chữ số.';
   if (pins.pin !== pins.confirmPin || pins.adminPin !== pins.confirmAdminPin) return 'PIN xác nhận chưa trùng khớp.';

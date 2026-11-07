@@ -20,8 +20,10 @@ export type SettingsSection =
   | 'remote-config'
   | 'lockdown'
   | 'owner-credentials'
+  | 'door-pin'
+  | 'admin-pin'
   | 'servo'
-  | 'pins-calibrate'
+  | 'calibrate'
   | 'wifi'
   | 'camera-ai'
   | 'factory-reset'
@@ -43,11 +45,17 @@ const sectionMeta: Record<
   'owner-credentials': {
     title: 'Thẻ & Vân tay chủ cửa',
   },
+  'door-pin': {
+    title: 'Mã PIN mở cửa',
+  },
+  'admin-pin': {
+    title: 'Mã PIN Admin',
+  },
   servo: {
     title: 'Góc khóa Servo',
   },
-  'pins-calibrate': {
-    title: 'Mã PIN & Cảm biến',
+  calibrate: {
+    title: 'Hiệu chỉnh thiết bị',
   },
   wifi: {
     title: 'Wi-Fi của cửa',
@@ -183,6 +191,22 @@ export function OwnerDeviceSettings({
         {section === 'owner-credentials' ? (
           <OwnerCredentials key={unitId} unitId={unitId} ready={Boolean(device?.setupReady)} />
         ) : null}
+        {section === 'door-pin' ? (
+          <DeviceSetup
+            unitId={unitId}
+            initialView="door-pin"
+            standaloneSubView
+            onStepChange={setupChanged}
+          />
+        ) : null}
+        {section === 'admin-pin' ? (
+          <DeviceSetup
+            unitId={unitId}
+            initialView="admin-pin"
+            standaloneSubView
+            onStepChange={setupChanged}
+          />
+        ) : null}
         {section === 'servo' ? (
           <DeviceSetup
             unitId={unitId}
@@ -191,10 +215,10 @@ export function OwnerDeviceSettings({
             onStepChange={setupChanged}
           />
         ) : null}
-        {section === 'pins-calibrate' ? (
+        {section === 'calibrate' ? (
           <DeviceSetup
             unitId={unitId}
-            initialView="pins"
+            initialView="calibrate"
             standaloneSubView
             onStepChange={setupChanged}
           />
@@ -411,6 +435,24 @@ export function OwnerDeviceSettings({
           <View style={oStyles.bentoGrid}>
             <View style={{ width: gridCellWidth }}>
               <FeatureTile
+                icon="keypad-outline"
+                tone="warning"
+                title="Mã PIN mở cửa"
+                subtitle="Mã 6 số mở cửa"
+                onPress={() => setSection('door-pin')}
+              />
+            </View>
+            <View style={{ width: gridCellWidth }}>
+              <FeatureTile
+                icon="key-outline"
+                tone="rose"
+                title="Mã PIN Admin"
+                subtitle="Mã quản trị trên khóa"
+                onPress={() => setSection('admin-pin')}
+              />
+            </View>
+            <View style={{ width: gridCellWidth }}>
+              <FeatureTile
                 icon="options-outline"
                 tone="purple"
                 title="Góc Servo"
@@ -420,11 +462,11 @@ export function OwnerDeviceSettings({
             </View>
             <View style={{ width: gridCellWidth }}>
               <FeatureTile
-                icon="keypad-outline"
-                tone="warning"
-                title="PIN & Cảm biến"
-                subtitle="Đổi PIN & hiệu chỉnh"
-                onPress={() => setSection('pins-calibrate')}
+                icon="locate-outline"
+                tone="indigo"
+                title="Hiệu chỉnh"
+                subtitle="Cảm ứng & cảm biến"
+                onPress={() => setSection('calibrate')}
               />
             </View>
             <View style={{ width: gridCellWidth }}>
