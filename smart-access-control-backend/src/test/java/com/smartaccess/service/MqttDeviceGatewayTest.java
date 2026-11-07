@@ -101,4 +101,33 @@ class MqttDeviceGatewayTest {
         gateway.handle("test/doors/door-1/status", message("{\"deviceSecret\":\"s\"}"));
         verify(notifications, times(1)).publishEvent(any(com.smartaccess.config.RealtimeConfig.DeviceUpdated.class));
     }
+    @Test void remoteLockAndUnlockExpireAfterTenSecondsAndAreNeverRetained() throws Exception {
+        var client=mock(org.eclipse.paho.client.mqttv3.MqttClient.class);
+        when(client.isConnected()).thenReturn(true);
+        var field=MqttDeviceGateway.class.getDeclaredField("client");field.setAccessible(true);field.set(gateway,client);
+        for(String type:java.util.List.of("DOOR_LOCK","DOOR_UNLOCK"))gateway.send("door-1",type,type,java.util.Map.of());
+        var capture=org.mockito.ArgumentCaptor.forClass(MqttMessage.class);
+        verify(client,times(2)).publish(eq("test/doors/door-1/cmd"),capture.capture());
+        for(MqttMessage message:capture.getAllValues()){
+            var json=new ObjectMapper().readTree(message.getPayload());
+            org.assertj.core.api.Assertions.assertThat(json.path("ttlSec").asInt()).isEqualTo(10);
+            org.assertj.core.api.Assertions.assertThat(message.isRetained()).isFalse();
+        }
+    }
+    @Test void servoMessagesExpireQuicklyAndAreNeverRetained() throws Exception {
+        var client=mock(org.eclipse.paho.client.mqttv3.MqttClient.class);
+        when(client.isConnected()).thenReturn(true);
+        var field=MqttDeviceGateway.class.getDeclaredField("client");field.setAccessible(true);field.set(gateway,client);
+        for(String type:java.util.List.of("SERVO_PREVIEW","SERVO_PREVIEW_STOP","SERVO_SET")){
+            gateway.send("door-1","servo-"+type,type,java.util.Map.of("servoSeq",123L,"angle",101));
+        }
+        var capture=org.mockito.ArgumentCaptor.forClass(MqttMessage.class);
+        verify(client,times(3)).publish(eq("test/doors/door-1/cmd"),capture.capture());
+        for(MqttMessage message:capture.getAllValues()){
+            var json=new ObjectMapper().readTree(message.getPayload());
+            org.assertj.core.api.Assertions.assertThat(json.path("ttlSec").asInt()).isEqualTo(3);
+            org.assertj.core.api.Assertions.assertThat(json.path("data").path("servoSeq").asInt()).isEqualTo(123);
+            org.assertj.core.api.Assertions.assertThat(message.isRetained()).isFalse();
+        }
+    }
 }

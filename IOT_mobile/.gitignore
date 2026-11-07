@@ -40,5 +40,9 @@ yarn-error.*
 /ios
 /android
 
+# Local Expo module build outputs
+modules/**/android/build/
+modules/**/android/.cxx/
+
 # Generated ONNX runtime assets and model weights
 /public/face-models/

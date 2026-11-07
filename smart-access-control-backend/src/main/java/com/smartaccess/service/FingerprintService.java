@@ -31,13 +31,17 @@ public class FingerprintService {
     private final DeviceCommandService commands;
     private final CommandRepository commandRepository;
     private final CredentialRepository credentials;
+    private final com.smartaccess.repository.DeviceRepository devices;
+    private final MemberRemovalService removals;
 
     public FingerprintService(ManagerAccessGuard guard, DeviceCommandService commands,
-            CommandRepository commandRepository, CredentialRepository credentials) {
+            CommandRepository commandRepository, CredentialRepository credentials,
+            com.smartaccess.repository.DeviceRepository devices, MemberRemovalService removals) {
         this.guard = guard;
         this.commands = commands;
         this.commandRepository = commandRepository;
         this.credentials = credentials;
+        this.devices = devices; this.removals = removals;
     }
 
     @Transactional
@@ -50,6 +54,8 @@ public class FingerprintService {
         guard.requireManagedUnit(managerId, unitId);
         guard.requireUserOfUnit(accountId, unitId);
         Device device = guard.requireOnlineController(unitId);
+        device=devices.findByDeviceUidForUpdate(device.getDeviceUid()).orElseThrow();
+        removals.requireNoCleanup(device);
 
         if (commandRepository.existsByDevice_DeviceIdAndCommandTypeAndStatusIn(
                 device.getDeviceId(), FP_ENROLL, IN_FLIGHT)) {
@@ -77,6 +83,8 @@ public class FingerprintService {
         Device device = guard.requireOnlineController(unitId);
 
         Map<String, Object> payload = Map.of("credentialId", credentialId);
+        device=devices.findByDeviceUidForUpdate(device.getDeviceUid()).orElseThrow();
+        removals.requireNoCleanup(device);
         Map<String, Object> wireData = Map.of("templateId", credential.getLocalTemplateId().intValue());
         return CommandResponse.from(commands.dispatch(device, managerId, FP_DELETE, payload, wireData));
     }

@@ -22,13 +22,15 @@ public class RfidService {
     private final AccountRepository accounts;
     private final DeviceRepository devices;
     private final CredentialRepository credentials;
+    private final MemberRemovalService removals;
 
     public RfidService(ManagerAccessGuard guard, AccountRepository accounts, DeviceRepository devices,
-            CredentialRepository credentials) {
+            CredentialRepository credentials, MemberRemovalService removals) {
         this.guard = guard;
         this.accounts = accounts;
         this.devices = devices;
         this.credentials = credentials;
+        this.removals = removals;
     }
 
     @Transactional
@@ -47,8 +49,11 @@ public class RfidService {
         credential.setCredentialType(CredentialType.RFID);
         credential.setRfidUid(uid);
         // Gắn với bộ điều khiển của cửa (nếu có) để biết thẻ thuộc cửa nào
-        devices.findFirstByAccessUnit_UnitIdAndDeviceType(unitId, DeviceType.DOOR_CONTROLLER)
-                .ifPresent(credential::setDevice);
+        var controller=devices.findFirstByAccessUnit_UnitIdAndDeviceType(unitId,DeviceType.DOOR_CONTROLLER)
+                .orElseThrow(()->new BusinessException(HttpStatus.CONFLICT,"Cửa chưa có bộ điều khiển"));
+        controller=devices.findByDeviceUidForUpdate(controller.getDeviceUid()).orElseThrow();
+        removals.requireNoCleanup(controller);
+        credential.setDevice(controller);
         credentials.save(credential);
         return new RfidCredentialResponse(credential.getCredentialId(), uid);
     }

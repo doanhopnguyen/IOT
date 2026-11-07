@@ -13,6 +13,7 @@ import java.util.Map;
 @Service
 public class RemoteUnlockService {
     public static final String DOOR_UNLOCK = "DOOR_UNLOCK";
+    public static final String DOOR_LOCK = "DOOR_LOCK";
     // Thiết bị bỏ qua lệnh mở cửa đã quá thời gian này
     public static final int UNLOCK_TTL_SEC = 10;
 
@@ -38,5 +39,13 @@ public class RemoteUnlockService {
                 "issuedAt", Instant.now().getEpochSecond(),
                 "ttlSec", UNLOCK_TTL_SEC);
         return CommandResponse.from(commands.dispatch(device, managerId, DOOR_UNLOCK, payload, wireData));
+    }
+
+    @Transactional
+    public CommandResponse lock(Long accountId, Long unitId) {
+        guard.requireRemoteUnit(accountId,unitId);
+        Device device=guard.requireReadyController(unitId);
+        // Disabling remote unlock must still allow an authorized owner/member to secure the door.
+        return CommandResponse.from(commands.dispatch(device,accountId,DOOR_LOCK,Map.of("unitId",unitId),Map.of()));
     }
 }

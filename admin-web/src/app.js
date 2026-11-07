@@ -1,6 +1,7 @@
 import { wireUsbReader } from './usb';
 import { icon } from './icons';
 import QRCode from 'qrcode';
+import { createProductQr, deviceDisplayName } from '../../IOT_mobile/src/services/api/productQr';
 
 const root = document.querySelector('#app');
 let csrf = '',
@@ -514,12 +515,9 @@ async function register(event) {
   }
 }
 function productActivationQr(value) {
-  const url = new URL('smartdoor://activate');
-  url.searchParams.set('code', value.activationCode);
-  url.searchParams.set('uid', value.device.deviceUid);
-  if (value.setupSsid) url.searchParams.set('ssid', value.setupSsid);
-  if (value.setupPassword) url.searchParams.set('key', value.setupPassword);
-  return url.toString();
+  return createProductQr({ activationCode: value.activationCode, deviceUid: value.device.deviceUid,
+    ssid: value.setupSsid || undefined, password: value.setupPassword || undefined,
+    name: deviceDisplayName(value.device.deviceUid, value.device.name) });
 }
 function showIssued() {
   const host = document.querySelector('#issued') || document.querySelector('#content');
@@ -527,6 +525,8 @@ function showIssued() {
   panel.className = 'panel panel-pad';
   panel.innerHTML = `<div class="success">${icon('check')} Đã cấp thông tin bàn giao. Hãy lưu trước khi rời màn hình này.</div><div class="result"><div class="qr-paper"><canvas aria-label="QR nhận cửa"></canvas><small>${esc(issued.device.name)}<br>${esc(issued.device.deviceUid)}</small></div><div class="stack"><div><h2>QR nhận cửa của sản phẩm</h2><p>Người mua quét mã này trong ứng dụng Smart Door.</p><label>Mã nhận cửa — không phải PIN mở khóa</label><div class="secret" tabindex="0">${esc(issued.activationCode)}</div></div><div class="notice">Nạp file cấp phát vào đúng chip trước khi giao. QR chứa mã nhận cửa và thông tin Wi-Fi thiết lập. Khóa xác thực thiết bị chỉ nằm trong file nạp.</div><div class="actions"><button class="download">${icon('download')} Tải file cấp phát</button><button class="print secondary">${icon('print')} In QR bàn giao</button></div></div></div>`;
   host.replaceChildren(panel);
+  panel.querySelector('.qr-paper small').textContent = deviceDisplayName(issued.device.deviceUid, issued.device.name);
+  if (issued.syncCommand) watchProductQrSync(panel, issued);
   QRCode.toCanvas(panel.querySelector('canvas'), productActivationQr(issued), {
     width: 220,
     margin: 2,
@@ -553,6 +553,32 @@ function showIssued() {
   };
   panel.querySelector('.print').onclick = () => window.print();
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function watchProductQrSync(panel, value) {
+  const status = document.createElement('p'); status.className = 'notice'; status.setAttribute('role', 'status');
+  const retry = document.createElement('form'); retry.className = 'stack'; retry.hidden = true;
+  retry.innerHTML = '<label>Mật khẩu tài khoản hiện tại<input name="password" type="password" autocomplete="current-password" required></label><button type="submit">Gửi lại QR mới xuống khóa</button>';
+  panel.querySelector('.stack').append(status, retry);
+  const poll = async command => {
+    status.textContent = 'Đang cập nhật mã nhận cửa trên khóa. Giữ cửa có Wi-Fi; khi hoàn tất, quét QR trên màn hình khóa để lấy cả Wi-Fi.';
+    for (let attempt = 0; attempt < 35 && panel.isConnected; attempt++) {
+      if (command.status === 'ACKNOWLEDGED') { status.textContent = 'Khóa đã xác nhận lưu QR mới. Quét QR trên màn hình khóa để nhận cửa và lấy sẵn Wi-Fi.'; retry.hidden = true; return; }
+      if (['FAILED', 'TIMEOUT'].includes(command.status)) break;
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      command = await api(`/api/manager/commands/${encodeURIComponent(command.commandUuid)}`);
+    }
+    if (panel.isConnected) { status.textContent = 'Chưa cập nhật được QR trên khóa. Cần firmware 1.7.1 trở lên và cửa online; kết nối Wi-Fi rồi gửi lại mã mới bên dưới.'; retry.hidden = false; }
+  };
+  retry.onsubmit = async event => {
+    event.preventDefault(); const button = retry.querySelector('button'); button.disabled = true;
+    try {
+      const password = retry.elements.password.value; retry.elements.password.value = '';
+      const command = await api(`/api/admin/inventory/${encodeURIComponent(value.device.deviceUid)}/sync-code`, 'POST', { password, activationCode: value.activationCode });
+      retry.hidden = true; await poll(command);
+    } catch (error) { status.textContent = error.message; retry.hidden = false; }
+    finally { button.disabled = false; }
+  };
+  void poll(value.syncCommand).catch(error => { status.textContent = error.message; retry.hidden = false; });
 }
 function createDialog(title, description, fields, submitLabel, submit, danger = false) {
   const dialog = document.createElement('dialog');

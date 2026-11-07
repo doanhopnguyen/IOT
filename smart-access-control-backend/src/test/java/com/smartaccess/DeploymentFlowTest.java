@@ -23,9 +23,15 @@ import static org.assertj.core.api.Assertions.*;
  "spring.datasource.username=sa","spring.datasource.password=","spring.datasource.driver-class-name=org.h2.Driver",
  "spring.flyway.enabled=false","spring.jpa.hibernate.ddl-auto=create-drop","app.mqtt.enabled=false"})
 class DeploymentFlowTest {
- @TestConfiguration static class Config {
-  @Bean @Primary DeviceGateway recordingGateway(){return (uid,uuid,type,data)->{};}
+ record Sent(String uid,String uuid,String type,Map<String,Object> data){}
+ static class RecordingGateway implements DeviceGateway {
+  final List<Sent> sent=new ArrayList<>();
+  public void send(String uid,String uuid,String type,Map<String,Object> data){sent.add(new Sent(uid,uuid,type,data));}
  }
+ @TestConfiguration static class Config {
+  @Bean @Primary RecordingGateway recordingGateway(){return new RecordingGateway();}
+ }
+ @Autowired RecordingGateway gateway;
  @Autowired DeploymentService deployment;@Autowired AccountRepository accounts;@Autowired DeviceRepository devices;
  @Autowired AccessUnitRepository units;@Autowired UserAccessRepository members;@Autowired DeviceInventoryRepository inventory;
  @Autowired PasswordEncoder passwords;@Autowired TransactionTemplate tx;@Autowired ObjectMapper json;
@@ -117,11 +123,22 @@ class DeploymentFlowTest {
   var after=deployment.status(mine.deviceUid());assertThat(after.state()).isEqualTo("INVENTORY");assertThat(after.generation()).isEqualTo(2);assertThat(after.unitId()).isNull();
   assertThat(units.findById(mine.unitId())).isEmpty();assertThat(accounts.findById(owner)).isPresent();
   var code=deployment.issueAfterReset(mine.deviceUid(),"StrongPass!123");assertThat(code.activationCode()).isNotBlank();
+  assertThat(code.syncCommand()).isNotNull();
+  var qrCommand=commandRows.findByCommandUuid(code.syncCommand().commandUuid()).orElseThrow();
+  assertThat(qrCommand.getCommandType()).isEqualTo(DeploymentService.SYNC_ACTIVATION);
+  assertThat(qrCommand.getPayload()).doesNotContainKeys("activationCode","password");
+  var qrSent=gateway.sent.get(gateway.sent.size()-1);
+  assertThat(qrSent.data()).containsEntry("activationCode",code.activationCode()).containsEntry("activationSequence",qrCommand.getCommandId());
+  var retried=deployment.syncActivationCode(mine.deviceUid(),"StrongPass!123",code.activationCode());
+  assertThat(retried.commandUuid()).isNotEqualTo(code.syncCommand().commandUuid());
+  assertThatThrownBy(()->deployment.syncActivationCode(mine.deviceUid(),"wrong",code.activationCode())).isInstanceOf(RuntimeException.class);
+  assertThatThrownBy(()->deployment.syncActivationCode(mine.deviceUid(),"StrongPass!123",issuedOldCode())).isInstanceOf(RuntimeException.class);
   Device d=devices.findById(mine.deviceId()).orElseThrow();assertThat(deployment.acceptGeneration(d,json.createObjectNode().put("generation",1))).isFalse();
   assertThat(d.isLocalAdminPinEnabled()).isFalse();assertThat(d.getLocalAdminPinHash()).isNull();
   assertThat(deployment.resetAck(mine.deviceUid(),json.createObjectNode().put("commandUuid",pending.operationUuid()).put("success",true).put("message","RESET_EMPTY_VERIFIED"))).isTrue();
   assertThat(deployment.status(mine.deviceUid()).generation()).isEqualTo(2);
  }
+ private String issuedOldCode(){return "obsolete_activation_01234567890123456789";}
  @Test void resetRequiresBothCredentialsAndNeverPersistsThem(){
   var mine=claimed(registered());online(mine);
   for(String pin:new String[]{"123456","000000","65432","6543210","", "abcdef"})

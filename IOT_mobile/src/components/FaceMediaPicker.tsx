@@ -2,6 +2,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
 import { Image, Text, View } from 'react-native';
 import { Badge, Button, Notice, styles as s } from './ui';
+import { MAX_SOURCE_MEDIA_BYTES } from '../services/api/faceMediaInput';
 
 export function FaceCapture({
   onSubmit,
@@ -35,9 +36,8 @@ export function FaceCapture({
         const chosen = result.assets[0];
         if (chosen.type === 'video' && chosen.duration != null && chosen.duration > 10000)
           throw new Error('Chọn video tối đa 10 giây.');
-        const limit = chosen.type === 'video' ? 20 : 5;
-        if (chosen.fileSize != null && chosen.fileSize > limit * 1024 * 1024)
-          throw new Error(`Tệp tối đa ${limit} MiB.`);
+        if (chosen.fileSize != null && chosen.fileSize > MAX_SOURCE_MEDIA_BYTES)
+          throw new Error('Chọn ảnh/video tối đa 20 MiB.');
         setAsset(chosen);
       }
     } catch (e) {
@@ -51,8 +51,8 @@ export function FaceCapture({
         giữ tệp gốc sau xử lý.
       </Notice>
       <Text style={s.description}>
-        Ảnh JPEG/PNG tối đa 5 MiB; video MP4/MOV/WebM tối đa 10 giây và 20 MiB. Cần đúng một người,
-        rõ mặt và đủ ánh sáng.
+        Chọn ảnh/video tối đa 20 MiB; video MP4/MOV/WebM tối đa 10 giây. Ảnh được tối ưu trước khi tải lên.
+        Cần đúng một người, rõ toàn bộ mặt và đủ ánh sáng.
       </Text>
       <Button
         title="Chọn ảnh hoặc video"

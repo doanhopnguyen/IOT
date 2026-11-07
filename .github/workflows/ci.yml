@@ -66,7 +66,9 @@ jobs:
           key: pio-${{ hashFiles('firmware/*.ini') }}
       - run: pip install platformio
       - name: Host firmware state tests
-        run: python firmware/tests/test_offline_door.py && python firmware/tests/test_setup_flow.py && python firmware/tests/test_factory_reset.py
+        run: python firmware/tests/test_offline_door.py && python firmware/tests/test_setup_flow.py && python firmware/tests/test_factory_reset.py && python firmware/tests/test_servo_preview.py && python firmware/tests/test_product_qr.py && python firmware/tests/test_unclaimed_wifi_reset.py && python firmware/tests/test_door_timing.py
       - name: Build connected door firmware
         working-directory: firmware
         run: pio run -c platformio.connected.ini
+      - name: Member credential removal on host
+        run: python firmware/tests/test_member_removal.py && python firmware/tests/test_activation_qr_sync.py

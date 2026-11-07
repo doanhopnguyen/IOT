@@ -28,10 +28,11 @@ public class ManagerService {
     private final AuditLogRepository audits;
     private final FaceRequestRepository faceRequests;
     private final MemberProfileService memberProfiles;
+    private final MemberRemovalService removals;
 
     public ManagerService(AccountRepository accounts, AccessUnitRepository units,
             UserAccessRepository memberships, DeviceRepository devices, AuditLogRepository audits,
-            FaceRequestRepository faceRequests, MemberProfileService memberProfiles) {
+            FaceRequestRepository faceRequests, MemberProfileService memberProfiles, MemberRemovalService removals) {
         this.accounts = accounts;
         this.units = units;
         this.memberships = memberships;
@@ -39,6 +40,7 @@ public class ManagerService {
         this.audits = audits;
         this.faceRequests = faceRequests;
         this.memberProfiles = memberProfiles;
+        this.removals = removals;
     }
 
     public List<UserSearchResponse> searchUsers(Long managerId, String keyword, String type) {
@@ -67,7 +69,21 @@ public class ManagerService {
         List<UserAccess> members = memberships.findMembersByUnitId(unitId).stream()
                 .filter(m -> !m.getAccount().getAccountId().equals(managerId)).toList();
         Map<Long, MemberProfileService.ProfileInfo> profiles = memberProfiles.describe(unitId, members);
-        return members.stream().map(member -> toResponse(member, profiles)).toList();
+        var removing=removals.pendingAccounts(unitId);
+        return members.stream().map(member -> toResponse(member, profiles)
+                .withRemovalPending(removing.contains(member.getAccount().getAccountId()))).toList();
+    }
+
+    @Transactional
+    public UnitUserResponse ownerAccess(Long managerId,Long unitId) {
+        AccessUnit unit=validateManagerAccess(managerId,unitId,true);
+        UserAccess owner=memberships.findById(new UserAccessId(managerId,unitId)).orElseGet(()->{
+            UserAccess created=new UserAccess(); created.setAccount(unit.getManager()); created.setAccessUnit(unit);
+            created.setAllowFingerprint(true); created.setAllowRfid(true); created.setAllowRemoteUnlock(true);
+            return memberships.saveAndFlush(created);
+        });
+        owner.setAllowFingerprint(true); owner.setAllowRfid(true);
+        return UnitUserResponse.from(owner);
     }
 
     /** Thêm người chưa có ứng dụng: tạo tài khoản tối thiểu (mật khẩu mặc định 123456) rồi thêm thẳng vào cửa. */
@@ -141,6 +157,7 @@ public class ManagerService {
     public UnitUserResponse updatePermissions(Long managerId, Long unitId, Long userId, PermissionRequest request) {
         AccessUnit unit = validateManagerAccess(managerId, unitId, true);
         UserAccess membership = requireManagedMember(unit, userId, HttpStatus.CONFLICT);
+        removals.requireNotRemoving(unitId,userId);
         if (request == null || request.isEmpty()) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "At least one permission is required");
         }
@@ -161,22 +178,10 @@ public class ManagerService {
     }
 
     @Transactional
-    public void removeUser(Long managerId, Long unitId, Long userId) {
+    public CommandResponse removeUser(Long managerId, Long unitId, Long userId) {
         AccessUnit unit = validateManagerAccess(managerId, unitId, true);
         UserAccess membership = requireManagedMember(unit, userId, HttpStatus.NOT_FOUND);
-        if (faceRequests.existsByAccount_AccountIdAndAccessUnit_UnitId(userId, unitId)) {
-            throw new BusinessException(HttpStatus.CONFLICT,
-                    "Cannot remove membership with face request history in current schema; revoke permissions instead");
-        }
-        // Tài khoản do chủ cửa này tạo mà người đó chưa từng đăng nhập thì xóa (hoặc ẩn) theo luôn.
-        boolean disposeAccount = memberProfiles.isDisposable(unit, userId);
-        Account user = membership.getAccount();
-        memberships.delete(membership);
-        memberships.flush(); // Detect restrictive FK conflicts before recording success.
-        MemberProfileService.Disposal disposal = disposeAccount
-                ? memberProfiles.dispose(user) : MemberProfileService.Disposal.KEPT;
-        audit(unit.getManager(), "REMOVE_USER_FROM_UNIT", "USER_ACCESS", userId,
-                Map.of("unitId", unitId, "accountId", userId, "account", disposal.name()));
+        return removals.start(unit,membership,managerId);
     }
 
     private UnitUserResponse toResponse(UserAccess member, Map<Long, MemberProfileService.ProfileInfo> profiles) {

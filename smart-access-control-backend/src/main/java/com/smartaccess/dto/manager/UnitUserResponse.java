@@ -9,7 +9,12 @@ import com.smartaccess.model.enumtype.AccountStatus;
  */
 public record UnitUserResponse(Long userId, String account, String email, String phone, String displayName,
         AccountStatus accountStatus, boolean allowFace, boolean allowFingerprint,
-        boolean allowRfid, boolean allowRemoteUnlock, String room, boolean hasLoggedIn, boolean deletableAccount) {
+        boolean allowRfid, boolean allowRemoteUnlock, String room, boolean hasLoggedIn, boolean deletableAccount,
+        boolean removalPending) {
+    public UnitUserResponse withRemovalPending(boolean pending) {
+        return new UnitUserResponse(userId,account,email,phone,displayName,accountStatus,allowFace,allowFingerprint,
+                allowRfid,allowRemoteUnlock,room,hasLoggedIn,deletableAccount,pending);
+    }
     public static UnitUserResponse from(UserAccess access) {
         return from(access, null, true, false);
     }
@@ -19,6 +24,6 @@ public record UnitUserResponse(Long userId, String account, String email, String
         return new UnitUserResponse(account.getAccountId(), account.getAccountId().toString(),
                 account.getEmail(), account.getPhone(), account.getFullName(), account.getStatus(), access.isAllowFace(),
                 access.isAllowFingerprint(), access.isAllowRfid(), access.isAllowRemoteUnlock(),
-                room, hasLoggedIn, deletableAccount);
+                room, hasLoggedIn, deletableAccount,false);
     }
 }

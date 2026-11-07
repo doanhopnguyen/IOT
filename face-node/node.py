@@ -62,6 +62,26 @@ class Publisher:
         self.client.loop_stop()
 
 
+class HttpPublisher(Publisher):
+    """Laptop setup uses device HTTPS auth; MQTT remains the existing default."""
+    def __init__(self, config):
+        self.config, self.api = config, Backend(config)
+        self.connected = threading.Event()
+        self.connected.set()  # Backend.sync validates connectivity before any match.
+
+    def publish(self, kind, payload):
+        if kind == "face":
+            self.api.call("POST", "/api/face-node/events", json=payload)
+        elif kind == "status":
+            self.api.call("POST", "/api/face-node/heartbeat")
+        else:
+            raise ValueError("Unsupported camera event")
+
+    def close(self):
+        self.connected.clear()
+        self.api.session.close()
+
+
 class LatestCamera:
     """Đọc liên tục camera/RTSP để xử lý khung hình mới nhất, không dồn hàng đợi."""
     def __init__(self, source):
@@ -142,7 +162,7 @@ def run(config, engine, camera=False, video=None, show=True):
     config.require_device()
     api, cache = Backend(config), TemplateCache()
     gate = RecognitionGate(config.stable_frames, config.cooldown)
-    publisher = Publisher(config)
+    publisher = HttpPublisher(config) if config.event_transport == "http" else Publisher(config)
     capture, recording = None, None
     window = "Smart Door - Face Check"
     try:
@@ -153,6 +173,8 @@ def run(config, engine, camera=False, video=None, show=True):
         if show:
             cv2.namedWindow(window, cv2.WINDOW_NORMAL)
             cv2.resizeWindow(window, 960, 600)
+        if camera:
+            LOG.info("AI_CAMERA_READY")
         next_sync, last_frame, last_unknown = 0.0, -1, -1e10
         if config.allow_unverified_liveness:
             LOG.warning("DEVELOPMENT MODE: liveness can be bypassed; do not use for production.")

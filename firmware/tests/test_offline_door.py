@@ -22,9 +22,10 @@ solver = "bool solveCalibration" + between("bool solveCalibration", "void accept
 lookup = "int cardIndex" + between("int cardIndex", "String cardName")
 types = "struct PinSecret {" + between("struct PinSecret {", "Config cfg{};")
 motor_types = "struct MotorState {" + between("struct MotorState {", "enum Screen")
-apply_motor = "void applyMotorConfig()" + between("void applyMotorConfig()", "bool requestOpen()")
+apply_motor = "void applyMotorConfig()" + between("void applyMotorConfig()", "bool requestOpen(")
+range_motor = "void setMotorServoRange" + between("void setMotorServoRange", "// Caller holds motorMutex")
 door_closed = "bool isClosed" + between("bool isClosed", "MotorState snapshot()")
-motor_requests = "bool requestOpen()" + between("bool requestOpen()", "void sha(")
+motor_requests = "bool requestOpen(" + between("bool requestOpen(", "void sha(")
 valid_config = "bool validConfig" + between("bool validConfig", "bool saveConfig")
 network = (ROOT / "connected_door/network.h").read_text(encoding="utf-8")
 local_access = "bool connectedAccessReady()" + network.split("bool connectedAccessReady()",1)[1].split("bool connectedCredentialsReady()",1)[0]
@@ -37,6 +38,7 @@ harness = r'''
 #include <stdio.h>
 #include <stddef.h>
 #include "setup_logic.h"
+#include "servo_setup_logic.h"
 #define CONNECTED_DOOR 1
 constexpr int MAX_CARDS=32, MAX_FINGERS=32;
 constexpr uint32_t CONFIG_MAGIC=0x4f444f52;
@@ -58,10 +60,10 @@ void xSemaphoreGive(int) {}
 void sha(const uint8_t *data,size_t size,uint8_t *out) {
   memset(out,0,32); for(size_t i=0;i<size;i++) out[i%32]^=data[i];
 }
-''' + local_access + motor_types + door_closed + apply_motor + motor_requests + calibration + valid_config + solver + lookup + r'''
+''' + local_access + motor_types + door_closed + range_motor + apply_motor + motor_requests + calibration + valid_config + solver + lookup + r'''
 int main() {
   using namespace DoorLogic;
-  Config equal{}; equal.magic=CONFIG_MAGIC; equal.version=2; equal.closedLevel=-1;
+  Config equal{}; equal.magic=CONFIG_MAGIC; equal.version=3; equal.servoRange=180; equal.closedLevel=-1;
   equal.lockAngle=equal.openAngle=100;
   sha((const uint8_t*)&equal,offsetof(Config,checksum),equal.checksum);
   assert(validConfig(equal)); // Equal angles must also load after a reboot.
@@ -70,15 +72,27 @@ int main() {
   assert(validServoAngles(105,100) && validServoAngles(100,100) && validServoAngles(95,100));
   assert(validServoAngles(5,5) && validServoAngles(175,175));
   assert(!validServoAngles(4,90) && !validServoAngles(90,176));
-  Config old{}; old.version=1; old.lockAngle=30; old.openAngle=100;
-  old.admin.valid=1; old.cards[0].size=4; old.touch.c=123; old.closedLevel=0;
-  Config upgraded=upgradeServoAngles(old);
-  assert(upgraded.version==2 && upgraded.lockAngle==100 && upgraded.openAngle==30);
+  static_assert(sizeof(Config)!=sizeof(LegacyConfig),"Legacy config must be distinguishable by size");
+  LegacyConfig old{}; old.magic=CONFIG_MAGIC;old.version=1; old.lockAngle=30; old.openAngle=100;
+  old.admin.valid=old.user.valid=1;old.admin.salt[0]=42;old.user.hash[31]=89;
+  old.cardCount=1;old.cards[0].size=4;old.cards[0].bytes[0]=55;
+  old.fingerCount=2;old.fingers[0]=7;old.fingers[1]=255;old.touch.c=123;old.closedLevel=0;
+  sha((const uint8_t*)&old,offsetof(LegacyConfig,checksum),old.checksum);
+  Config upgraded{};assert(upgradeLegacyConfig(old,upgraded));
+  assert(upgraded.version==3 && upgraded.servoRange==180 && upgraded.lockAngle==100 && upgraded.openAngle==30);
   assert(upgraded.admin.valid==1 && upgraded.cards[0].size==4 && upgraded.touch.c==123 && upgraded.closedLevel==0);
-  upgraded.lockAngle=110; upgraded.openAngle=25;
-  Config again=upgradeServoAngles(upgraded);
+  assert(upgraded.admin.salt[0]==42 && upgraded.user.hash[31]==89 && upgraded.cardCount==1 && upgraded.cards[0].bytes[0]==55);
+  assert(upgraded.fingerCount==2 && upgraded.fingers[0]==7 && upgraded.fingers[1]==255);
+  old.version=2;old.lockAngle=110;old.openAngle=25;
+  sha((const uint8_t*)&old,offsetof(LegacyConfig,checksum),old.checksum);
+  Config again{};assert(upgradeLegacyConfig(old,again));
   assert(again.lockAngle==110 && again.openAngle==25); // Preserve later user edits.
-  cfg.closedLevel=0; cfg.lockAngle=100; cfg.openAngle=30;
+  old.checksum[0]^=1;assert(!upgradeLegacyConfig(old,again)); // Corruption fails closed.
+  Config wide=upgraded;wide.servoRange=360;wide.lockAngle=201;wide.openAngle=179;
+  sha((const uint8_t*)&wide,offsetof(Config,checksum),wide.checksum);assert(validConfig(wide));
+  Config reloaded{};memcpy(&reloaded,&wide,sizeof(wide));assert(validConfig(reloaded) && reloaded.lockAngle==201);
+  wide.servoRange=180;sha((const uint8_t*)&wide,offsetof(Config,checksum),wide.checksum);assert(!validConfig(wide));
+  cfg.servoRange=180;cfg.closedLevel=0; cfg.lockAngle=100; cfg.openAngle=30;
   for (int raw=0;raw<=1;raw++) {
     motor=MotorState{}; motor.raw=motor.stable=raw;
     motor.pending=true; motor.door.released=true; // Stale work must be cleared.
@@ -99,7 +113,8 @@ int main() {
   assert(!motor.pending && !motor.commanded);
   assert(requestOpen() && motor.target==30 && motor.door.released);
   motor.raw=motor.stable=1;
-  assert(!requestLock() && motor.target==30); // Never extend latch into an open leaf.
+  motor.pending=false;
+  assert(requestLock() && motor.target==30 && !motor.pending && motor.door.lockPending); // Queue without extending latch.
   motor.raw=motor.stable=0;
   assert(requestLock() && motor.target==100 && !motor.door.released);
   motor=MotorState{}; motor.raw=motor.stable=0;
@@ -136,7 +151,8 @@ int main() {
   tick(s,100,false); tick(s,200,true); tick(s,800,false);
   assert(!tick(s,1000,true));
   assert(!tick(s,1999,true));
-  assert(tick(s,2000,true)); // Reopen resets close countdown.
+  assert(!tick(s,2000,true)); // Respect the configured release duration even after a quick entry.
+  assert(tick(s,5000,true));
 
   release(s,0,true);
   tick(s,4900,false);
@@ -156,7 +172,30 @@ int main() {
   release(s,0xfffffff0u,false);
   assert(!tick(s,50,true));
   assert(!tick(s,1049,true));
-  assert(tick(s,1050,true)); // millis rollover on close countdown.
+  assert(!tick(s,1050,true));
+  assert(tick(s,4984,true)); // millis rollover: both the close countdown and release duration.
+
+  release(s,100,true,7000);
+  assert(!tick(s,7099,true));assert(tick(s,7100,true));
+  release(s,100,true,1000);
+  assert(!tick(s,1099,true));assert(tick(s,1100,true));
+  release(s,0,true,30001);assert(s.durationMs==5000); // Reject unsafe timing input.
+  s=State{};s.lockPending=true;
+  assert(!tick(s,100,false));assert(!tick(s,200,true));
+  assert(!tick(s,1199,true));assert(tick(s,1200,true));
+  assert(!s.lockPending && !s.released);
+  assert(reportedLatch(false,100,100,30,s)==-1); // Moving/faulted is never locked.
+  assert(reportedLatch(true,30,100,30,s)==-1); // Wrong angle cannot claim lock completion.
+  assert(reportedLatch(true,100,100,30,s)==0);
+  s.lockPending=true;assert(reportedLatch(true,100,100,30,s)==-1);
+  release(s,100,false,7000,false);
+  assert(!tick(s,7099,false));assert(tick(s,7100,false)); // Owner-selected timed return with open sensor.
+  assert(!s.released && !s.lockPending);
+  assert(heldOpen(s,20200,false)); // Returning the latch never hides a still-open leaf.
+  release(s,0,false,5000,false);
+  assert(!tick(s,4900,true));assert(tick(s,5000,true)); // Timed mode does not add a sensor settle delay.
+  motor=MotorState{};motor.raw=motor.stable=1;applyMotorConfig();motor.waitForClose=false;
+  assert(requestLock() && motor.pending && motor.target==cfg.lockAngle && !motor.door.lockPending);
 
   uint32_t seed=123456789;
   for (uint32_t now=0;now<1000000;now+=13) {
@@ -233,5 +272,5 @@ with tempfile.TemporaryDirectory(prefix="offline-door-tests-") as folder:
     exe = folder / "test.exe"
     cpp.write_text(harness, encoding="utf-8")
     subprocess.run([compiler, "-std=c++11", "-Wall", "-Wextra", "-Werror", "-O2",
-                    "-static-libgcc", "-static-libstdc++", "-I", str(ROOT / "connected_door"), str(cpp), "-o", str(exe)], check=True)
+                    "-static-libgcc", "-static-libstdc++", "-I", str(ROOT / "connected_door"), "-I", str(ROOT / "include"), str(cpp), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)

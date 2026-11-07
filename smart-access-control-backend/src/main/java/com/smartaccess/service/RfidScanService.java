@@ -14,14 +14,17 @@ public class RfidScanService {
     private final DeviceRepository devices;
     private final DeviceCommandService commands;
     private final CommandRepository repository;
-    public RfidScanService(ManagerAccessGuard guard,DeviceRepository devices,DeviceCommandService commands,CommandRepository repository) {
+    private final MemberRemovalService removals;
+    public RfidScanService(ManagerAccessGuard guard,DeviceRepository devices,DeviceCommandService commands,CommandRepository repository,MemberRemovalService removals) {
         this.guard=guard; this.devices=devices; this.commands=commands; this.repository=repository;
+        this.removals=removals;
     }
     @Transactional
     public CommandResponse start(Long actor,Long unitId,Long userId) {
         guard.requireManagedUnit(actor,unitId); guard.requireUserOfUnit(userId,unitId);
         var online=guard.requireOnlineController(unitId);
         var device=devices.findByDeviceUidForUpdate(online.getDeviceUid()).orElseThrow();
+        removals.requireNoCleanup(device);
         for(String type:List.of("RFID_SCAN","FP_ENROLL")) {
             if(repository.existsByDevice_DeviceIdAndCommandTypeAndStatusIn(device.getDeviceId(),type,List.of(CommandStatus.PENDING,CommandStatus.SENT)))
                 throw new ResponseStatusException(CONFLICT,"Cửa đang có phiên đăng ký thẻ/vân tay. Chờ hoàn tất rồi thử lại.");

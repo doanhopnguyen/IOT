@@ -18,11 +18,15 @@ export function MemberPermissions({
   userId,
   methods,
   changed,
+  self = false,
+  disabled = false,
 }: {
   unitId: number;
   userId: number;
   methods: string[];
   changed: () => Promise<void>;
+  self?: boolean;
+  disabled?: boolean;
 }) {
   const confirm = useConfirm();
   const [credentials, setCredentials] = useState<Credential[]>([]);
@@ -71,8 +75,8 @@ export function MemberPermissions({
   );
   return (
     <Card>
-      <Text style={s.heading}>Quyền theo phương thức</Text>
-      {permissions.map(([label, key]) => (
+      <Text style={s.heading}>{self ? 'Thẻ và vân tay của bạn' : 'Quyền theo phương thức'}</Text>
+      {(self ? [] : permissions).map(([label, key]) => (
         <View key={key} style={[s.row, { paddingVertical: 6 }]}>
           <View style={{ flex: 1, gap: 3 }}>
             <Text style={[s.description, { color: colors.text }]}>{label}</Text>
@@ -83,7 +87,7 @@ export function MemberPermissions({
           <Switch
             accessibilityLabel={`Quyền ${label}`}
             value={methods.includes(label)}
-            disabled={busy}
+            disabled={busy || disabled}
             trackColor={{ true: colors.primary, false: colors.border }}
             thumbColor="#fff"
             onValueChange={(value) => {
@@ -128,11 +132,11 @@ export function MemberPermissions({
               <Button
                 title="Thu hồi phương thức"
                 variant="ghost"
-                disabled={busy}
+                disabled={busy || disabled}
                 onPress={() => {
                   void confirm({
                     title: 'Thu hồi phương thức?',
-                    message: 'Thành viên sẽ không thể dùng mẫu xác thực này tại cửa.',
+                    message: 'Phương thức này sẽ ngừng được phép mở cửa.',
                     confirmLabel: 'Thu hồi',
                     destructive: true,
                   }).then((ok) => {

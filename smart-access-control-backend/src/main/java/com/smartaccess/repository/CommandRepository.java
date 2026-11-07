@@ -12,6 +12,9 @@ public interface CommandRepository extends JpaRepository<Command, Long> {
 
     Optional<Command> findByCommandUuid(String commandUuid);
 
+    List<Command> findByDevice_AccessUnit_UnitIdAndCommandTypeAndStatusInOrderByCommandIdAsc(
+            Long unitId, String commandType, Collection<CommandStatus> statuses);
+
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @org.springframework.data.jpa.repository.Query("select c from Command c where c.commandUuid = :uuid")
     Optional<Command> findForUpdate(@org.springframework.data.repository.query.Param("uuid") String uuid);

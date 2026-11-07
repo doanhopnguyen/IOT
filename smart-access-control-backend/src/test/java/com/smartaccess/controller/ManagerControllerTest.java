@@ -123,9 +123,9 @@ class ManagerControllerTest {
         verifyNoInteractions(service);
     }
 
-    @Test void removeReturns204() throws Exception {
+    @Test void removeReturnsAcceptedUntilDeviceConfirms() throws Exception {
         mvc.perform(delete("/api/manager/units/10/users/2").session(session).with(csrf()))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isAccepted());
         verify(service).removeUser(1L, 10L, 2L);
     }
 

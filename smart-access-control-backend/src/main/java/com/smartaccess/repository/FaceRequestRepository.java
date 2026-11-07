@@ -12,6 +12,7 @@ import com.smartaccess.model.enumtype.FaceRequestStatus;
 
 public interface FaceRequestRepository extends JpaRepository<FaceRequest, Long> {
     boolean existsByAccount_AccountIdAndAccessUnit_UnitId(Long accountId, Long unitId);
+    void deleteByAccount_AccountIdAndAccessUnit_UnitId(Long accountId, Long unitId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from FaceRequest r where r.requestId = :id")

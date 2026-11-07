@@ -1,221 +1,143 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useEffect, useState } from 'react';
-import { Linking, Platform, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { AppState, Text, View } from 'react-native';
 import { AppModal, Badge, Button, Card, Input, Notice, styles as s } from './ui';
-import { ApiError, request } from '../services/api/client';
-import { activationClaimInput, productSetup } from '../services/api/activationInput';
+import { ApiError } from '../services/api/client';
+import { productSetup } from '../services/api/activationInput';
+import { deviceDisplayName, parseScannedProductQr, type ProductSetup } from '../services/api/productQr';
+import { claimProduct, inspectProduct, type InventoryDevice } from '../services/api/activationService';
+import { canJoinSetupWifi, connectSetupWifi, openSetupPortal, openWifiSettings } from '../services/setupWifi';
 import { DeviceSetup } from './DeviceSetup';
+import { SetupProgress } from './SetupProgress';
+import type { SetupPage } from '../services/api/setupService';
+export type { InventoryDevice } from '../services/api/activationService';
 
-export interface InventoryDevice {
-  deviceId: number;
-  deviceUid: string;
-  unitId: number | null;
-  name: string;
-  state: string;
-  generation: number;
-  setupReady: boolean;
-  doorClosed: boolean | null;
-  latchReleased: boolean | null;
-  lastSeenAt: string | null;
-  operationUuid: string | null;
-}
-export function ActivationWizard({
-  open,
-  close,
-  onCreated,
-}: {
-  open: boolean;
-  close: () => void;
-  onCreated: () => Promise<void>;
-}) {
-  const [code, setCode] = useState('');
-  const [name, setName] = useState('');
-  const [scanner, setScanner] = useState(false);
+export function ActivationWizard({ open, close, onCreated }: { open: boolean; close: () => void; onCreated: () => Promise<void> }) {
+  const [code, setCode] = useState(''), [draft, setDraft] = useState<ProductSetup>();
+  const [product, setProduct] = useState<ProductSetup>();
+  const [name, setName] = useState(''), [scanner, setScanner] = useState(false);
   const [permission, ask] = useCameraPermissions();
   const [device, setDevice] = useState<InventoryDevice>();
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
-  const [online, setOnline] = useState(false);
-  let setup: ReturnType<typeof productSetup> | undefined;
-  try {
-    if (code.trim()) setup = productSetup(code);
-  } catch {
-    /* Show validation when submitting or scanning. */
-  }
+  const [busy, setBusy] = useState(false), [wifiBusy, setWifiBusy] = useState(false);
+  const [error, setError] = useState(''), [wifiMessage, setWifiMessage] = useState('');
+  const [online, setOnline] = useState(false), [refreshKey, setRefreshKey] = useState(0);
+  const [setupStep, setSetupStep] = useState<SetupPage>('PINS');
+  const scanLocked = useRef(false), autoJoinCode = useRef('');
+  const wifiEpoch = useRef(0);
+  const page = device ? 'SETUP' : !product ? 'SCAN' : online ? 'NAME' : 'WIFI';
   useEffect(() => {
     if (!open) {
-      setCode('');
-      setName('');
-      setDevice(undefined);
-      setMessage('');
-      setScanner(false);
-      setOnline(false);
+      setCode(''); setDraft(undefined); setProduct(undefined); setName(''); setDevice(undefined);
+      setError(''); setWifiMessage(''); setScanner(false); setOnline(false); setBusy(false); setWifiBusy(false);
+      scanLocked.current = false; autoJoinCode.current = '';
+      wifiEpoch.current++;
     }
   }, [open]);
+  useEffect(() => {
+    if (!open || !product || device || online) return;
+    let active = true, running = false, blocked = false;
+    const refresh = async () => {
+      if (!active || running || blocked || AppState.currentState === 'background') return;
+      running = true;
+      try {
+        const info = await inspectProduct(product);
+        if (!active) return;
+        if (info.online === true) {
+          setOnline(true); setError(''); setName(value => value || deviceDisplayName(info.deviceUid, info.name));
+        } else if (product.ssid && product.password && canJoinSetupWifi && autoJoinCode.current !== product.activationCode) {
+          autoJoinCode.current = product.activationCode; setWifiBusy(true);
+          const epoch = ++wifiEpoch.current;
+          void connectSetupWifi(product).then(() => { if (active) setWifiMessage('Đã gửi Wi-Fi cho điện thoại. Chọn kết nối, giữ mạng của cửa dù không có Internet, rồi mở trang thiết lập.'); })
+            .catch(e => { if (active) setWifiMessage(e instanceof Error ? e.message : 'Chưa kết nối được Wi-Fi của cửa.'); })
+            .finally(() => { if (epoch === wifiEpoch.current) setWifiBusy(false); });
+        }
+      } catch (e) {
+        if (active) {
+          const fatal = e instanceof ApiError && [400, 401, 403, 404, 409].includes(e.status);
+          blocked = fatal;
+          setError(fatal ? e.message : 'Đang chờ cửa kết nối. Nếu vừa chọn Wi-Fi cho cửa, đưa điện thoại về mạng có Internet; app sẽ tự tiếp tục.');
+        }
+      } finally { running = false; }
+    };
+    void refresh(); const timer = setInterval(() => { void refresh(); }, 3000);
+    const subscription = AppState.addEventListener('change', state => { if (state === 'active') void refresh(); });
+    return () => { active = false; clearInterval(timer); subscription.remove(); };
+  }, [open, product, device, online, refreshKey]);
   const run = async (fn: () => Promise<void>) => {
-    setBusy(true);
-    setMessage('');
-    try {
-      await fn();
-    } catch (e) {
-      setMessage(
-        e instanceof Error
-          ? e.message
-          : 'Chưa thực hiện được. Kiểm tra kết nối Internet rồi thử lại.',
-      );
-    } finally {
-      setBusy(false);
-    }
+    setBusy(true); setError('');
+    try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : 'Chưa thực hiện được. Kiểm tra kết nối rồi thử lại.'); }
+    finally { setBusy(false); }
   };
-  const claim = async () => {
-    const input = activationClaimInput(code, name);
-    try {
-      const d = await request<InventoryDevice>('/api/activation/claim', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
-      });
-      setDevice(d);
-      await onCreated();
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 404)
-        throw new Error(
-          'Mã nhận cửa không hợp lệ hoặc đã được sử dụng. Kiểm tra QR trên sản phẩm hoặc liên hệ nơi bán.',
-        );
-      if (e instanceof ApiError && e.status === 400)
-        throw new Error(
-          'Kiểm tra mã nhận cửa trên sản phẩm và tên cửa. Không dùng mã MAC hoặc PIN thay cho mã nhận cửa.',
-        );
-      throw e;
-    }
+  const accept = (data: string, raw?: string) => {
+    const parsed = parseScannedProductQr({ data, raw });
+    setCode(parsed.activationCode); setDraft(parsed); setProduct(parsed); setOnline(false); setScanner(false); setError(''); setWifiMessage('');
   };
-  return (
-    <AppModal
-      visible={open}
-      onClose={() => {
-        if (!busy) close();
-      }}
-      title="Thiết lập cửa mới"
-    >
-      <View style={{ gap: 16 }}>
-        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-          <Badge label="1 · QR sản phẩm" tone="primary" />
-          <Badge label="2 · Wi-Fi" />
-          <Badge label="3 · Nhận cửa & PIN" />
-          <Badge label="4 · Hiệu chỉnh tại cửa" />
-        </View>
-        {!device ? (
-          <View style={{ gap: 14 }}>
-            <Text style={s.heading}>1. Quét QR trên sản phẩm</Text>
-            <Input
-              label="Mã nhận cửa trên sản phẩm"
-              autoCapitalize="none"
-              value={code}
-              onChangeText={(value) => { setCode(value); setOnline(false); }}
-              placeholder="Mã nhận cửa hoặc nội dung QR"
-            />
-            {scanner && permission?.granted ? (
-              <CameraView
-                style={{ height: 200 }}
-                barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-                onBarcodeScanned={(event) => {
-                  try {
-                    productSetup(event.data);
-                    setCode(event.data);
-                    setOnline(false);
-                    setScanner(false);
-                    setMessage('');
-                  } catch (e) {
-                    setMessage(e instanceof Error ? e.message : 'QR không hợp lệ.');
-                  }
-                }}
-              />
-            ) : null}
-            <Button
-              title="Quét QR sản phẩm"
-              icon="qr-code-outline"
-              variant="ghost"
-              onPress={() => {
-                void ask().then((p) => setScanner(p.granted));
-              }}
-            />
-            <Card>
-              <Text style={s.heading}>2. Kết nối Wi-Fi cho cửa</Text>
-              <Text style={s.caption}>Kết nối Wi-Fi của cửa. Trang thiết lập thường tự mở; nút bên dưới là đường vào dự phòng.</Text>
-              <Text selectable style={s.caption}>
-                Mạng thiết lập: {setup?.ssid ?? 'SmartDoor-… (xem trên sản phẩm)'}
-              </Text>
-              <Text selectable style={s.caption}>
-                Mật khẩu: {setup?.password ?? 'Xem trên tem hoặc màn hình cửa'}
-              </Text>
-              {setup?.deviceUid ? (
-                <Text style={s.description}>Mã sản phẩm: {setup.deviceUid}</Text>
-              ) : null}
-              {Platform.OS === 'android' ? (
-                <Button
-                  title="Mở cài đặt Wi-Fi"
-                  variant="ghost"
-                  onPress={() => {
-                    void Linking.sendIntent('android.settings.WIFI_SETTINGS').catch(() =>
-                      setMessage('Mở Cài đặt → Wi-Fi trên điện thoại để chọn mạng của cửa.'),
-                    );
-                  }}
-                />
-              ) : null}
-              <Button
-                title="Mở trang thiết lập của cửa"
-                icon="wifi-outline"
-                variant="ghost"
-                onPress={() => {
-                  void Linking.openURL('http://192.168.4.1').catch(() =>
-                    setMessage(
-                      'Chưa mở được trang thiết lập. Kết nối Wi-Fi riêng của cửa rồi thử lại.',
-                    ),
-                  );
-                }}
-              />
-              <Text style={s.caption}>Khi nhận cửa lần đầu, trang chỉ chọn mạng và không tạo PIN. Với cửa đã kích hoạt, nhập lại PIN admin để đổi mạng. Chọn “Hoàn tất”, đưa điện thoại về mạng có Internet rồi kiểm tra cửa online bên dưới.</Text>
-            </Card>
-            <Button title="Kiểm tra cửa đã kết nối dịch vụ" disabled={busy || !code.trim()} onPress={() => { void run(async () => {
-              const info = await request<{ online: boolean }>('/api/activation/inspect', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activationCode: productSetup(code).activationCode }),
-              });
-              setOnline(info.online); setMessage(info.online ? 'Cửa đã online. Bạn có thể đặt tên và nhận cửa.' : 'Cửa chưa kết nối dịch vụ. Kiểm tra Wi-Fi của cửa rồi thử lại; chưa thể nhận cửa hoặc đặt PIN.');
-            }); }} />
-            {online ? <>
-            <Text style={s.heading}>3. Nhận cửa vào tài khoản của bạn</Text>
-            <Input
-              label="Tên cửa của bạn"
-              value={name}
-              onChangeText={setName}
-              placeholder="Đặt tên cửa, ví dụ Cửa nhà"
-            />
-            <Button
-              title={busy ? 'Đang nhận cửa…' : 'Nhận cửa vào tài khoản'}
-              disabled={busy || !online || !code.trim() || !name.trim()}
-              onPress={() => {
-                void run(claim);
-              }}
-            />
-            </> : null}
-          </View>
-        ) : (
-          <View style={{ gap: 14 }}>
-            <Text style={s.heading}>Đã nhận {device.name}</Text>
-            <Text style={s.description}>Mã sản phẩm: {device.deviceUid}</Text>
-            {device.unitId ? <DeviceSetup unitId={device.unitId} /> : null}
-            <Button
-              title="Về danh sách cửa"
-              variant="ghost"
-              onPress={() => {
-                void onCreated();
-                close();
-              }}
-            />
-          </View>
-        )}
-        {message ? <Notice tone="warning">{message}</Notice> : null}
-      </View>
-    </AppModal>
-  );
+  const join = async () => {
+    if (!product) return;
+    const epoch = ++wifiEpoch.current;
+    setWifiBusy(true); setError('');
+    try {
+      const result = await connectSetupWifi(product);
+      setWifiMessage(result === 'saved' ? 'Điện thoại đã nhận thông tin Wi-Fi. Kết nối mạng của cửa rồi mở trang thiết lập bên dưới.' : 'Chọn mạng của cửa trong Cài đặt Wi-Fi, hoặc dùng camera điện thoại quét cùng QR sản phẩm để tham gia mạng.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Chưa mở được Wi-Fi của cửa.'); }
+    finally { if (epoch === wifiEpoch.current) setWifiBusy(false); }
+  };
+  const finish = () => { close(); void onCreated().catch(() => {}); };
+  return <AppModal visible={open} title="Thiết lập cửa mới" scrollKey={`${page}:${setupStep}`} onClose={() => { if (!busy && !wifiBusy) close(); }}>
+    <View style={{ gap: 16 }}>
+      {page === 'SCAN' ? <>
+        <SetupProgress step={1} total={9} title="Quét QR sản phẩm" detail="QR chứa mã nhận cửa và Wi-Fi thiết lập của khóa." />
+        {scanner && permission?.granted ? <CameraView style={{ height: 260, borderRadius: 14 }} barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={event => {
+          if (scanLocked.current) return; scanLocked.current = true;
+          try { accept(event.data, event.raw); } catch (e) { setScanner(false); setError(e instanceof Error ? e.message : 'QR không hợp lệ.'); }
+        }} /> : null}
+        <Button title={scanner ? 'Đang quét QR…' : 'Quét QR trên khóa'} icon="qr-code-outline" onPress={() => {
+          setError(''); scanLocked.current = false;
+          void ask().then(result => { setScanner(result.granted); if (!result.granted) setError('Cho phép camera để quét QR, hoặc nhập mã nhận cửa bên dưới.'); });
+        }} />
+        <Text style={s.caption}>Có thể nhập mã nếu chưa quét được.</Text>
+        <Input label="Mã nhận cửa" autoCapitalize="none" autoCorrect={false} value={code} placeholder="Nhập mã trên tem sản phẩm" onChangeText={value => {
+          setError('');
+          try { const parsed = productSetup(value); setDraft(parsed); setCode(parsed.activationCode); }
+          catch { setDraft(undefined); setCode(value); }
+        }} />
+        <Button title="Tiếp tục" variant="ghost" disabled={!code.trim()} onPress={() => {
+          try {
+            if (draft && draft.activationCode === code.trim()) { setProduct(draft); setOnline(false); setError(''); }
+            else accept(code);
+          } catch (e) { setError(e instanceof Error ? e.message : 'Mã nhận cửa không hợp lệ.'); }
+        }} />
+      </> : page === 'WIFI' && product ? <>
+        <SetupProgress step={2} total={9} title="Kết nối Wi-Fi cho cửa" detail="Kết nối điện thoại với khóa, rồi chọn Wi-Fi 2.4 GHz để khóa sử dụng." />
+        <Card><Text style={s.heading}>{deviceDisplayName(product.deviceUid, product.name)}</Text><Badge label="Đã quét sản phẩm" tone="success" />
+          <Text selectable style={s.caption}>Mã nhận cửa: {product.activationCode}</Text>
+        </Card>
+        <Text style={s.description}>Mạng của khóa: {product.ssid ?? 'SmartDoor-… (xem màn hình khóa)'}</Text>
+        <Button title={wifiBusy ? 'Đang chờ điện thoại xác nhận…' : canJoinSetupWifi && product.ssid ? 'Kết nối Wi-Fi của khóa' : 'Mở Wi-Fi để kết nối khóa'} icon="wifi-outline" disabled={wifiBusy} onPress={() => { void join(); }} />
+        {product.password ? <Text selectable style={s.caption}>Mật khẩu mạng của khóa: {product.password}</Text> : null}
+        {!canJoinSetupWifi ? <Text style={s.caption}>Camera hệ thống có thể quét cùng QR sản phẩm để lấy sẵn Wi-Fi. Nếu điện thoại không nhận, chọn mạng và mật khẩu ở trên.</Text> : null}
+        {canJoinSetupWifi ? <Button title="Chọn Wi-Fi trong Cài đặt điện thoại" variant="ghost" disabled={wifiBusy} onPress={() => { void run(openWifiSettings); }} /> : null}
+        <Button title="Mở trang chọn Wi-Fi cho khóa" variant="ghost" disabled={wifiBusy} onPress={() => { void run(openSetupPortal); }} />
+        <Text style={s.caption}>Sau khi chọn mạng và bấm Hoàn tất trên trang của khóa, trở lại app bằng mạng có Internet. Khi khóa online, app tự chuyển sang đặt tên.</Text>
+        {wifiMessage ? <Notice tone="info">{wifiMessage}</Notice> : null}
+        <Button title="Kiểm tra lại kết nối" variant="ghost" disabled={busy || wifiBusy} onPress={() => { setError(''); setRefreshKey(key => key + 1); }} />
+        <Button title="Quét lại sản phẩm" variant="ghost" disabled={wifiBusy} onPress={() => { setProduct(undefined); setOnline(false); setError(''); autoJoinCode.current = ''; }} />
+      </> : page === 'NAME' && product ? <>
+        <SetupProgress step={3} total={9} title="Đặt tên cửa" detail="Đặt một tên dễ nhớ để phân biệt các cửa của bạn." />
+        <Badge label="Cửa đã kết nối" tone="success" />
+        <Text style={s.description}>{deviceDisplayName(product.deviceUid, product.name)}</Text>
+        <Text selectable style={s.caption}>Mã nhận cửa: {product.activationCode}</Text>
+        <Input label="Tên cửa" value={name} onChangeText={setName} maxLength={100} placeholder="Ví dụ: Cửa nhà, Cửa văn phòng" editable={!busy} />
+        <Button title={busy ? 'Đang nhận cửa…' : 'Nhận cửa và tiếp tục'} disabled={busy || !name.trim()} onPress={() => { void run(async () => {
+          const claimed = await claimProduct(product, name); setDevice(claimed); setCode(''); setDraft(undefined); setProduct(undefined);
+          await onCreated().catch(() => {});
+        }); }} />
+        <Button title="Quét sản phẩm khác" variant="ghost" disabled={busy} onPress={() => { setProduct(undefined); setOnline(false); setName(''); setError(''); }} />
+      </> : device?.unitId ? <>
+        <Text style={s.caption}>{name.trim() || deviceDisplayName(device.deviceUid, device.name)}</Text>
+        <DeviceSetup unitId={device.unitId} stepOffset={3} onStepChange={setSetupStep} onComplete={finish} />
+      </> : null}
+      {error ? <Notice tone="warning">{error}</Notice> : null}
+    </View>
+  </AppModal>;
 }

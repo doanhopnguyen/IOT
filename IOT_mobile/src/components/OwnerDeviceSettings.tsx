@@ -1,5 +1,5 @@
 import { DoorDashboard } from './DoorDashboard';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { request } from '../services/api/client';
 import { Badge, Button, Card, Input, Notice, PageHeader, styles as s } from './ui';
@@ -8,6 +8,9 @@ import { FactoryReset } from './FactoryReset';
 import { colors } from '../theme/tokens';
 import { CameraNodeSettings } from './CameraNodeSettings';
 import { DeviceSetup } from './DeviceSetup';
+import { OwnerCredentials } from './OwnerCredentials';
+import { deviceDisplayName } from '../services/api/productQr';
+import type { SetupPage } from '../services/api/setupService';
 
 export function OwnerDeviceSettings({ unitId, back }: { unitId: number; back: () => void }) {
   const [loading, setLoading] = useState(true);
@@ -16,13 +19,17 @@ export function OwnerDeviceSettings({ unitId, back }: { unitId: number; back: ()
   const [pin, setPin] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
-  const reload = async () => {
-    if (device) setDevice(await request(`/api/activation/devices/${device.deviceUid}`));
+  const deviceUid = device?.deviceUid;
+  const reload = useCallback(async () => {
+    if (deviceUid) setDevice(await request(`/api/activation/devices/${deviceUid}`));
     else {
       const rows = await request<InventoryDevice[]>('/api/activation/mine');
       setDevice(rows.find((d) => d.unitId === unitId));
     }
-  };
+  }, [unitId, deviceUid]);
+  const setupChanged = useCallback((page: SetupPage) => {
+    if (page === 'COMPLETE') void reload().catch(e => { setMessage(e.message); setFailed(true); });
+  }, [reload]);
   useEffect(() => {
     void reload()
       .catch((e) => {
@@ -30,7 +37,7 @@ export function OwnerDeviceSettings({ unitId, back }: { unitId: number; back: ()
         setFailed(true);
       })
       .finally(() => setLoading(false));
-  }, [unitId]);
+  }, [reload]);
   const act = async (fn: () => Promise<void>) => {
     setBusy(true);
     setMessage('');
@@ -71,7 +78,7 @@ export function OwnerDeviceSettings({ unitId, back }: { unitId: number; back: ()
           ) : null}
         </View>
         <Text selectable style={s.caption}>
-          {device?.deviceUid ??
+          {(device ? deviceDisplayName(device.deviceUid, device.name) : undefined) ??
             (loading ? 'Đang tải thiết bị…' : 'Chưa tìm thấy thiết bị của cửa.')}
         </Text>
         <View style={{ backgroundColor: colors.background, padding: 14, borderRadius: 11, gap: 8 }}>
@@ -100,7 +107,7 @@ export function OwnerDeviceSettings({ unitId, back }: { unitId: number; back: ()
       </Card>
       {device?.unitId && device.state !== 'RESETTING' ? <>
         <DoorDashboard unitId={unitId} />
-        <DeviceSetup unitId={unitId} />
+        <DeviceSetup unitId={unitId} onStepChange={setupChanged} />
       </> : null}
       {device?.setupReady && device.state !== 'RESETTING' ? <Card>
         <Text style={s.heading}>Mã PIN mở cửa</Text>
@@ -131,6 +138,7 @@ export function OwnerDeviceSettings({ unitId, back }: { unitId: number; back: ()
           }}
         />
       </Card> : null}
+      {device?.unitId && device.state !== 'RESETTING' ? <OwnerCredentials key={unitId} unitId={unitId} ready={device.setupReady} /> : null}
       {device ? <FactoryReset key={device.deviceUid} device={device} onUpdated={setDevice} /> : null}
       {device?.unitId && device.state !== 'RESETTING' ? <CameraNodeSettings unitId={unitId} /> : null}
     </ScrollView>

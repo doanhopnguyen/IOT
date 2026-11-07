@@ -3,6 +3,7 @@ import { request } from './client';
 export interface UnitDto {
   unitId: number; unitName: string; role: 'OWNER' | 'USER'; online: boolean;
   memberCount: number; canRemoteUnlock: boolean; lastSeenAt: string | null;
+  canRemoteLock?: boolean;
   doorClosed?: boolean | null; latchReleased?: boolean | null; activationState?: string; deviceUid?: string;
 }
 export const unitService = {
@@ -14,13 +15,15 @@ export const unitService = {
   },
   leave(unitId: number) { return request<void>(`/api/units/${unitId}/membership`, { method: 'DELETE' }); },
 };
-// Backend chưa lưu trạng thái khóa, nên mặc định LOCKED.
+// A closed leaf and a completed lock command are both required for LOCKED.
 export function toDoor(unit: UnitDto): Door {
   return {
     id: String(unit.unitId), name: unit.unitName, role: unit.role,
-    connectivity: unit.online ? 'ONLINE' : 'OFFLINE', lockState: unit.latchReleased == null ? 'UNKNOWN' : unit.latchReleased ? 'UNLOCKED' : 'LOCKED',
+    connectivity: unit.online ? 'ONLINE' : 'OFFLINE', lockState: !unit.online ? 'UNKNOWN' : unit.doorClosed === true && unit.latchReleased === false ? 'LOCKED' : unit.doorClosed === false || unit.latchReleased === true ? 'UNLOCKED' : 'UNKNOWN',
     doorClosed: unit.doorClosed ?? null, activationState: unit.activationState, deviceUid: unit.deviceUid,
+    latchReleased: unit.latchReleased ?? null,
     members: unit.memberCount, canRemoteUnlock: unit.canRemoteUnlock,
+    canRemoteLock: unit.canRemoteLock ?? unit.canRemoteUnlock,
     lastUpdate: unit.lastSeenAt ? new Date(unit.lastSeenAt).toLocaleString('vi-VN') : 'Chưa kết nối',
   };
 }

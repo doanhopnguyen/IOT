@@ -10,6 +10,20 @@ switch ($Component) {
         Get-Content -LiteralPath (Join-Path $projectRoot 'smart-access-control-backend\.env') | ForEach-Object {
             if ($_ -match '^([^#=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
         }
+        $backendPort = if ($env:SERVER_PORT) { [int]$env:SERVER_PORT } else { 8080 }
+        $backendListener = Get-NetTCPConnection -LocalPort $backendPort -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($backendListener) {
+            $backendHealth = $null
+            try {
+                $backendHealth = Invoke-RestMethod -Uri "http://127.0.0.1:$backendPort/api/health" -TimeoutSec 5
+            } catch { }
+            if ($backendHealth.application -eq 'smart-door' -and $backendHealth.status -eq 'READY') {
+                Write-Host "Smart Door backend is already running on port $backendPort (PID $($backendListener.OwningProcess)), status READY."
+                Write-Host 'Use the current backend; no additional instance was started.'
+                return
+            }
+            throw "Port $backendPort is occupied by PID $($backendListener.OwningProcess). Check that process before starting the backend."
+        }
         if (-not $env:USB_ENABLED) {
             $platformioRoot = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.platformio'
             $usbPython = Join-Path $platformioRoot 'penv\Scripts\python.exe'

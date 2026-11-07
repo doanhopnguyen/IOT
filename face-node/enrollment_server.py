@@ -10,6 +10,7 @@ import hmac
 import json
 import os
 import threading
+from media_validation import MediaValidationError
 
 MAX_BYTES = 20 * 1024 * 1024
 TYPES = {'image/jpeg', 'image/png', 'video/mp4', 'video/quicktime', 'video/webm'}
@@ -21,13 +22,15 @@ def extract_media(engine, data, media_type):
     from matching import normalized
     if media_type.startswith('image/'):
         if len(data) > 5 * 1024 * 1024:
-            raise ValueError('Ảnh tối đa 5 MiB.')
+            raise MediaValidationError('IMAGE_TOO_LARGE')
         # Inspect dimensions before OpenCV allocates the decoded frame.
         from PIL import Image
         from io import BytesIO
         with Image.open(BytesIO(data)) as image:
-            if image.format not in ('JPEG', 'PNG') or image.width * image.height > 20_000_000:
-                raise ValueError('Cần ảnh JPEG/PNG tối đa 20 megapixel.')
+            if image.format not in ('JPEG', 'PNG'):
+                raise MediaValidationError('IMAGE_FORMAT')
+            if image.width * image.height > 20_000_000:
+                raise MediaValidationError('IMAGE_DIMENSIONS')
         return engine.embed_image(data)
 
     suffix = {'video/mp4': '.mp4', 'video/quicktime': '.mov', 'video/webm': '.webm'}[media_type]
@@ -44,19 +47,19 @@ def extract_media(engine, data, media_type):
         height = capture.get(cv2.CAP_PROP_FRAME_HEIGHT)
         if (not capture.isOpened() or not np.isfinite([fps, count, width, height]).all()
                 or fps <= 0 or count < 3 or count / fps > 10 or width * height > 8_300_000):
-            raise ValueError('Video cần dài tối đa 10 giây, độ phân giải tối đa 4K và có ít nhất 3 khung hình.')
+            raise MediaValidationError('VIDEO_INVALID')
         vectors = []
         for position in np.linspace(0, count - 1, min(12, int(count))).astype(int):
             capture.set(cv2.CAP_PROP_POS_FRAMES, int(position))
             ok, frame = capture.read()
             if not ok:
-                raise ValueError('Không đọc được video. Hãy chọn MP4 hoặc tải ảnh rõ mặt.')
+                raise MediaValidationError('VIDEO_READ_FAILED')
             ok, encoded = cv2.imencode('.jpg', frame)
             if not ok:
-                raise ValueError('Không đọc được khung hình video.')
+                raise MediaValidationError('VIDEO_READ_FAILED')
             vector = engine.embed_image(encoded.tobytes())
             if vectors and float(np.dot(vectors[0], vector)) < .5:
-                raise ValueError('Video phải chỉ có cùng một người xuyên suốt.')
+                raise MediaValidationError('VIDEO_DIFFERENT_PEOPLE')
             vectors.append(vector)
         return normalized(np.mean(vectors, axis=0))
     finally:
@@ -107,8 +110,13 @@ def handler_for(engine, token):
                     return self.reply(400, {'message': 'Tệp chưa tải lên đầy đủ.'})
                 vector = extract_media(engine, data, media_type)
                 self.reply(200, {'model': 'buffalo_l/w600k_r50:v1', 'embedding': vector.tolist()})
+            except MediaValidationError as error:
+                print(f'FACE_MEDIA_REJECTED code={error.code} type={media_type} bytes={length}', flush=True)
+                self.reply(422, {'code': error.code, 'message': str(error)})
             except (ValueError, OSError):
-                self.reply(422, {'message': 'Không xử lý được. Dùng ảnh rõ nét có đúng một khuôn mặt, hoặc video tối đa 10 giây chỉ có một người.'})
+                error = MediaValidationError('MEDIA_INVALID')
+                print(f'FACE_MEDIA_REJECTED code={error.code} type={media_type} bytes={length}', flush=True)
+                self.reply(422, {'code': error.code, 'message': str(error)})
             except Exception:
                 self.reply(503, {'message': 'Dịch vụ xử lý khuôn mặt tạm thời chưa sẵn sàng.'})
             finally:

@@ -53,6 +53,7 @@ public class UnitSettingsService {
         if (request.remoteUnlockEnabled() != null) unit.setRemoteUnlockEnabled(request.remoteUnlockEnabled());
         if (request.rfidEnabled() != null) unit.setRfidEnabled(request.rfidEnabled());
         if (request.fingerprintEnabled() != null) unit.setFingerprintEnabled(request.fingerprintEnabled());
+        if (request.autoLockWaitForClose() != null) unit.setAutoLockWaitForClose(request.autoLockWaitForClose());
         UnitSettings.Response after = UnitSettings.Response.from(unit);
         if (!after.equals(before)) {
             AuditLog audit = new AuditLog();
@@ -70,7 +71,7 @@ public class UnitSettingsService {
     static Map<String, Object> asMap(UnitSettings.Response s) {
         return Map.of("unlockDurationSec", s.unlockDurationSec(), "doorOpenTimeoutSec", s.doorOpenTimeoutSec(),
                 "remoteUnlockEnabled", s.remoteUnlockEnabled(), "rfidEnabled", s.rfidEnabled(),
-                "fingerprintEnabled", s.fingerprintEnabled());
+                "fingerprintEnabled", s.fingerprintEnabled(),"autoLockWaitForClose",s.autoLockWaitForClose());
     }
 
     private static void check(Integer value, int min, int max, String label) {

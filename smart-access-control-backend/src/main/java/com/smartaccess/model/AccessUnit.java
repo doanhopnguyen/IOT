@@ -46,6 +46,9 @@ public class AccessUnit {
     @Column(name = "unlock_duration_sec", nullable = false)
     private Short unlockDurationSec = (short) 5;
 
+    @Column(name = "auto_lock_wait_for_close", nullable = false)
+    private boolean autoLockWaitForClose = true;
+
     @Column(name = "door_open_timeout_sec", nullable = false)
     private Short doorOpenTimeoutSec = (short) 60;
 

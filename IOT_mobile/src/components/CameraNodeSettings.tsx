@@ -3,8 +3,17 @@ import { Text } from 'react-native';
 import { request, getApiBaseUrl } from '../services/api/client';
 import { Badge, Button, Card, Input, Notice, styles as s } from './ui';
 import { useConfirm } from './ConfirmationProvider';
+import { LaptopAiSetup } from './LaptopAiSetup';
 
 export function CameraNodeSettings({ unitId }: { unitId: number }) {
+  const [manual, setManual] = useState(false);
+  return <>
+    <LaptopAiSetup unitId={unitId} />
+    <Button title={manual ? 'Ẩn cấp phát camera thủ công' : 'Cấp phát camera thủ công'} variant="ghost" onPress={() => setManual(value => !value)} />
+    {manual ? <ManualCameraNodeSettings unitId={unitId} /> : null}
+  </>;
+}
+function ManualCameraNodeSettings({ unitId }: { unitId: number }) {
   const confirm = useConfirm();
   const [nodes, setNodes] = useState<{ deviceCode: string; lifecycleStatus: string }[]>([]);
   const [password, setPassword] = useState('');

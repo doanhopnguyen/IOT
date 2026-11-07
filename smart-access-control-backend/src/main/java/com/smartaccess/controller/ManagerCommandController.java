@@ -79,4 +79,10 @@ public class ManagerCommandController {
             @PathVariable String commandUuid) {
         return commandService.getOwnCommand(principal.accountId(), commandUuid);
     }
+
+    @PostMapping("/units/{unitId}/lock")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public CommandResponse lock(@AuthenticationPrincipal AccountPrincipal principal,@PathVariable Long unitId) {
+        return remoteUnlockService.lock(principal.accountId(),unitId);
+    }
 }

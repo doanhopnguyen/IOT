@@ -16,6 +16,7 @@ public class DeploymentController {
     public record Reset(@NotBlank @Size(max=200) String password,@NotBlank @Pattern(regexp="[0-9]{6}") String adminPin,
                         @NotBlank String confirmation,String recipientEmail){}
     public record Password(@NotBlank String password){}
+    public record SyncCode(@NotBlank String password,@NotBlank String activationCode){}
     private final DeploymentService service;
     private final AccountRepository accounts;
     public DeploymentController(DeploymentService service,AccountRepository accounts){this.service=service;this.accounts=accounts;}
@@ -30,4 +31,6 @@ public class DeploymentController {
     public Object reset(@PathVariable String uid,@Valid @RequestBody Reset r){return service.startReset(uid,r.password(),r.adminPin(),r.confirmation(),r.recipientEmail());}
     @PostMapping({"/api/activation/devices/{uid}/issue-code","/api/admin/inventory/{uid}/issue-code"})
     public Object code(@PathVariable String uid,@Valid @RequestBody Password r){return service.issueAfterReset(uid,r.password());}
+    @PostMapping({"/api/activation/devices/{uid}/sync-code","/api/admin/inventory/{uid}/sync-code"})
+    public Object syncCode(@PathVariable String uid,@Valid @RequestBody SyncCode r){return service.syncActivationCode(uid,r.password(),r.activationCode());}
 }

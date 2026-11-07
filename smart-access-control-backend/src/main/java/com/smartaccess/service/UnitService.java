@@ -44,13 +44,13 @@ public class UnitService {
     public List<UnitResponse> listMine(Long accountId) {
         List<UnitResponse> result = new ArrayList<>();
         for (AccessUnit unit : units.findByManager_AccountIdOrderByUnitId(accountId)) {
-            result.add(toResponse(unit, "OWNER", unit.isRemoteUnlockEnabled()));
+            result.add(toResponse(unit, "OWNER", true));
         }
         for (UserAccess membership : memberships.findByAccountWithUnit(accountId)) {
             if (membership.getAccessUnit().getManager() != null
                     && accountId.equals(membership.getAccessUnit().getManager().getAccountId())) continue;
             result.add(toResponse(membership.getAccessUnit(), "USER",
-                    membership.isAllowRemoteUnlock() && membership.getAccessUnit().isRemoteUnlockEnabled()));
+                    membership.isAllowRemoteUnlock()));
         }
         return result;
     }
@@ -63,7 +63,7 @@ public class UnitService {
         units.saveAndFlush(unit);
         // Lỗi thiết bị (không tồn tại, đã thuộc cửa khác) sẽ rollback luôn cửa vừa tạo
         managerService.registerDevice(accountId, unit.getUnitId(), new RegisterDeviceRequest(request.deviceCode()));
-        return toResponse(unit, "OWNER", unit.isRemoteUnlockEnabled());
+        return toResponse(unit, "OWNER", true);
     }
 
     @Transactional
@@ -90,8 +90,9 @@ public class UnitService {
             memberCount = Math.max(0, memberCount - 1);
         var state=inventory==null||device==null?null:inventory.findById(device.getDeviceId()).orElse(null);
         return new UnitResponse(unit.getUnitId(), unit.getUnitName(), role, online,
-                memberCount, canRemoteUnlock && (state==null||state.isSetupReady()) && (state==null||!state.getState().equals("RESETTING")), lastSeen,
+                memberCount, canRemoteUnlock && unit.isRemoteUnlockEnabled() && (state==null||state.isSetupReady()) && (state==null||!state.getState().equals("RESETTING")), lastSeen,
                 online&&state!=null?state.getDoorClosed():null,online&&state!=null?state.getLatchReleased():null,
-                state==null?null:state.getState(),device==null?null:device.getDeviceUid());
+                state==null?null:state.getState(),device==null?null:device.getDeviceUid(),
+                canRemoteUnlock && (state==null||state.isSetupReady()) && (state==null||!state.getState().equals("RESETTING")));
     }
 }

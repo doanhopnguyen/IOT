@@ -5,6 +5,7 @@ export interface TelemetryPointDto { at: string; value: string; unit: string; }
 export interface UnitSettingsDto {
   unlockDurationSec: number; doorOpenTimeoutSec: number; remoteUnlockEnabled: boolean;
   rfidEnabled: boolean; fingerprintEnabled: boolean;
+  autoLockWaitForClose?: boolean;
 }
 /** Khoảng hợp lệ giống backend (UnitSettingsService). */
 export const SETTINGS_LIMITS = { unlockDurationSec: [1, 30], doorOpenTimeoutSec: [10, 600] } as const;

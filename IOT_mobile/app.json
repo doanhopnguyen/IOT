@@ -8,9 +8,16 @@
     "userInterfaceStyle": "light",
     "scheme": "smartdoor",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.smartdoor.mobile",
+      "entitlements": { "com.apple.developer.networking.HotspotConfiguration": true },
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "Kết nối và thiết lập Wi-Fi cho khóa Smart Door của bạn.",
+        "NSAppTransportSecurity": { "NSAllowsLocalNetworking": true }
+      }
     },
     "android": {
+      "package": "com.smartdoor.mobile",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -27,12 +34,13 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Cho phép Smart Door dùng camera để đăng ký khuôn mặt.",
+          "cameraPermission": "Cho phép Smart Door quét QR sản phẩm và đăng ký khuôn mặt.",
           "recordAudioAndroid": false
         }
       ],
       "expo-router",
-      "expo-font"
+      "expo-font",
+      "./plugins/withSetupWifi"
     ]
   }
 }

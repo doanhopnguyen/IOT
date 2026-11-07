@@ -53,6 +53,14 @@ public class DeviceCommandService {
         command.setCommandType(type);
         command.setPayload(payload);
         commands.save(command);
+        if (type.startsWith("SERVO_")) {
+            wireData = new java.util.LinkedHashMap<>(wireData);
+            wireData.put("servoSeq", command.getCommandId());
+        }
+        if (DeploymentService.SYNC_ACTIVATION.equals(type)) {
+            wireData = new java.util.LinkedHashMap<>(wireData);
+            wireData.put("activationSequence", command.getCommandId());
+        }
         events.publishEvent(new CommandCreatedEvent(
                 command.getCommandUuid(), device.getDeviceUid(), type, wireData));
         return command;

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { setupInstruction, validateSetupPins, type SetupStatus } from '../src/services/api/setupService';
+import { setupInstruction, setupPage, validateSetupPins, type SetupStatus } from '../src/services/api/setupService';
 const status: SetupStatus = { online: true, ready: false, stage: 'PINS', doorPinSet: false, adminPinSet: false, touchCalibrated: false, doorCalibrated: false, wifiSsid: '', deviceUid: 'ESP32-AABBCCDDEEFF' };
 test('setup requires distinct confirmed six digit pins', () => {
   const pins = { pin: '123456', confirmPin: '123456', adminPin: '654321', confirmAdminPin: '654321' };
@@ -26,4 +26,18 @@ test('offline instructions retain local authentication and allow on-chip calibra
   const text = setupInstruction({ ...status, online: false });
   assert.match(text,/PIN\/thẻ\/vân tay đã lưu vẫn mở được/);
   assert.match(text,/tiếp tục theo màn hình chip/);
+});
+test('wizard advances only after each confirmed stage and resumes at the current hardware step', () => {
+  assert.equal(setupPage(status), 'PINS');
+  assert.equal(setupPage(status, true), 'TOUCH'); // PIN ACK arrives before heartbeat.
+  let next = { ...status, doorPinSet: true, adminPinSet: true, touchCalibrated: true, stage: 'DOOR_CLOSED' };
+  assert.equal(setupPage(next), 'DOOR_CLOSED');
+  assert.equal(setupPage({ ...next, stage: 'DOOR_OPEN' }), 'DOOR_OPEN');
+  next = { ...next, doorCalibrated: true, stage: 'SERVO_LOCK' };
+  assert.equal(setupPage(next), 'SERVO_LOCK');
+  assert.equal(setupPage({ ...next, stage: 'SERVO_OPEN' }), 'SERVO_OPEN');
+  const calibrated = { ...next, servoCalibrated: true, stage: 'READY' };
+  assert.equal(setupPage(calibrated), 'VERIFY'); // Calibrated is not backend-ready yet.
+  assert.equal(setupPage({ ...calibrated, ready: true }), 'COMPLETE');
+  assert.equal(setupPage({ ...next, online: false }), 'SERVO_LOCK');
 });

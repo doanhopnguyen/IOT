@@ -7,6 +7,10 @@
 #include <DNSServer.h>
 #include <atomic>
 #include <qrcode.h>
+#include "../include/credential_cleanup.h"
+#include "../include/product_qr.h"
+#include "../include/product_activation.h"
+#include "../include/door_timing.h"
 #include "setup_page.h"
 #include "setup_logic.h"
 #include <time.h>
@@ -147,8 +151,9 @@ void enableSetupAp() {
   setupDns.start(53,"*",WiFi.softAPIP());setupApActive=true;
 }
 String productQr() {
-  if(activationCode.isEmpty() || claimed)return "";
-  return "smartdoor://activate?code="+activationCode+"&uid="+deviceUid+"&ssid="+setupSsid+"&key="+setupPassword;
+  if(setupPassword.isEmpty())return "";
+  String ssid=setupSsid.isEmpty()?"SmartDoor-"+factoryMac().substring(6):setupSsid;
+  return ProductQr::build<String>(claimed?String(""):activationCode,deviceUid,ssid,setupPassword,"Smart Door "+factoryMac().substring(6));
 }
 void drawSetupQrAndWifi() {
   title("SMART DOOR SETUP");
@@ -339,6 +344,49 @@ void pollRemoteEnroll() {
   if(finger.storeModel(remoteSlot)!=FINGERPRINT_OK){finishRemoteEnroll(false,"SENSOR_STORE_FAILED");return;}
   finishRemoteEnroll(true,"ENROLLED");
 }
+void executeMemberRemoval(const String &uuid,JsonObjectConst data) {
+  uint64_t sequence=data["removalSequence"]|uint64_t(0);
+  if(uuid.length()!=36 || !sequence || !data["fingerprints"].is<JsonArrayConst>() || !data["rfid"].is<JsonArrayConst>() || !data["preserveFingerprints"].is<JsonArrayConst>()) {
+    sendAck(uuid,false,"INVALID_MEMBER_REMOVAL",false);return;
+  }
+  // Commands are serialized per controller. Keep a durable watermark even after ACK confirmation,
+  // so an old configuration cannot erase a slot later reused by another member.
+  if(sequence<=eventPrefs.getULong64("memberSeq",0)) {sendAck(uuid,true,"MEMBER_CREDENTIALS_REMOVED",false);return;}
+  if(resetPending || remoteStage || rfidScanUuid.length()){sendAck(uuid,false,"DEVICE_BUSY",false);return;}
+  JsonArrayConst slots=data["fingerprints"].as<JsonArrayConst>(),cards=data["rfid"].as<JsonArrayConst>();
+  uint16_t requested[255];size_t count=0;
+  for(JsonVariantConst v:slots){int slot=v|0;if(slot<1||slot>255||count>=255){sendAck(uuid,false,"INVALID_MEMBER_REMOVAL",false);return;}requested[count++]=slot;}
+  bool preserve[256]={};
+  for(JsonVariantConst v:data["preserveFingerprints"].as<JsonArrayConst>()){
+    int slot=v|0;if(slot<1||slot>255){sendAck(uuid,false,"INVALID_MEMBER_REMOVAL",false);return;}preserve[slot]=true;
+  }
+  bool purge=data["purgeFingerprints"]|(count>0);
+  Config next=cfg;next.cardCount=0;next.fingerCount=0;
+  for(int i=0;i<cfg.cardCount;i++){
+    String uid=cardName(cfg.cards[i]);bool removed=false;
+    for(JsonVariantConst v:cards)if(v.as<String>()==uid){removed=true;break;}
+    if(!removed)next.cards[next.cardCount++]=cfg.cards[i];
+  }
+  for(int i=0;i<cfg.fingerCount;i++){
+    if(cfg.fingers[i]<256 && preserve[cfg.fingers[i]])next.fingers[next.fingerCount++]=cfg.fingers[i];
+  }
+  memset(next.cards+next.cardCount,0,sizeof(next.cards)-next.cardCount*sizeof(Card));
+  memset(next.fingers+next.fingerCount,0,sizeof(next.fingers)-next.fingerCount*sizeof(uint16_t));
+  if(!saveConfig(next)){sendAck(uuid,false,"CREDENTIAL_STORAGE_FAILED",false);return;}
+  if(purge && !fingerReady)probeSensors();
+  if(purge){
+    uint8_t bitmap[32];
+    if(!fingerReady || !readFingerBitmapRetry(bitmap)){sendAck(uuid,false,"FINGERPRINT_ERASE_NOT_VERIFIED",false);return;}
+    count=0;for(int slot=1;slot<256;slot++)if(!preserve[slot] && (bitmap[slot/8]&(1u<<(slot%8))))requested[count++]=slot;
+  }else count=0;
+  if(!CredentialCleanup::eraseFingerprints(requested,count,
+      [](uint8_t *bitmap){return readFingerBitmapRetry(bitmap);},
+      [](uint16_t slot){return finger.deleteModel(slot)==FINGERPRINT_OK;})) {
+    sendAck(uuid,false,"FINGERPRINT_ERASE_NOT_VERIFIED",false);return;
+  }
+  if(!eventPrefs.putULong64("memberSeq",sequence)){sendAck(uuid,false,"CREDENTIAL_STORAGE_FAILED",false);return;}
+  sendAck(uuid,true,"MEMBER_CREDENTIALS_REMOVED",false);
+}
 void executeReset(const String &uuid,uint32_t nextGeneration) {
   if(uuid.length()!=36 || nextGeneration!=generation+1){sendAck(uuid,false,"RESET_INVALID_GENERATION",false);return;}
   if(resetIntent.length() && resetIntent!=uuid){sendAck(uuid,false,"RESET_ALREADY_RUNNING",false);return;}
@@ -358,7 +406,7 @@ void executeReset(const String &uuid,uint32_t nextGeneration) {
   // reconnect and resend the erase receipt. Commit then wipes Wi-Fi as well.
   if(!nvs.clear() || !eventPrefs.clear()) {sendAck(uuid,false,"RESET_STORAGE_FAILED",false);return;}
   queueHead=queueTail=0;droppedEvents=0;
-  cfg={};cfg.magic=CONFIG_MAGIC;cfg.version=2;cfg.closedLevel=-1;cfg.lockAngle=100;cfg.openAngle=30;
+  cfg={};cfg.magic=CONFIG_MAGIC;cfg.version=3;cfg.servoRange=180;cfg.closedLevel=-1;cfg.lockAngle=100;cfg.openAngle=30;
   appPinsReady=false;sensorCycleVerified=false;servoCycleVerified=false;
   digits="";firstPin="";notice="";enrollStage=0;enrollSlot=0;
   selectedCard=Card{};selectedFinger=0;pendingCal=Calibration{};
@@ -404,6 +452,13 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
     if(doc.containsKey("resetCommand")){executeReset(doc["resetCommand"].as<String>(),generation+1);return;}
     claimed=doc["claimed"]|false;factoryPrefs.putBool("claimed",claimed);
     if(!claimed)return;
+    if(doc["unlockDurationSec"].is<int>() && doc["doorOpenTimeoutSec"].is<int>()) {
+      int seconds=doc["unlockDurationSec"].as<int>(),openSeconds=doc["doorOpenTimeoutSec"].as<int>();
+      bool wait=doc["autoLockWaitForClose"]|true;
+      if(DoorTiming::save(nvs,seconds,openSeconds,wait) && actuatorReady) {
+        xSemaphoreTake(motorMutex,portMAX_DELAY);motor.unlockMs=uint32_t(seconds)*1000;motor.heldOpenMs=uint32_t(openSeconds)*1000;motor.waitForClose=wait;xSemaphoreGive(motorMutex);
+      }
+    }
     Config next=cfg;next.cardCount=0;next.fingerCount=0;
     for(JsonVariant v:doc["rfid"].as<JsonArray>()){
       String uid=v.as<String>();uid.replace(":","");uid.toUpperCase();
@@ -414,26 +469,41 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
     }
     for(JsonVariant v:doc["fingerprints"].as<JsonArray>()){int id=v.as<int>();if(id>0&&id<256&&next.fingerCount<MAX_FINGERS)next.fingers[next.fingerCount++]=id;}
     if(memcmp(next.cards,cfg.cards,sizeof(cfg.cards)) || memcmp(next.fingers,cfg.fingers,sizeof(cfg.fingers)) ||next.cardCount!=cfg.cardCount||next.fingerCount!=cfg.fingerCount)saveConfig(next);
+    for(JsonObjectConst removal:doc["memberRemovals"].as<JsonArrayConst>())
+      executeMemberRemoval(removal["commandUuid"]|"",removal);
     if(!appPinsReady && !networkPage)connectedContinueSetup();
     return;
   }
   if(incomingTopic!=topic("cmd"))return;
   String uuid=doc["commandUuid"]|"",type=doc["commandType"]|"";
   if(uuid.length()!=36||doc["data"]["generation"].as<uint32_t>()!=generation){sendAck(uuid,false,"GENERATION_MISMATCH",false);return;}
+  if(type=="MEMBER_REMOVE") {
+    time_t now=time(nullptr);long long issued=doc["issuedAt"]|0LL;int ttl=doc["ttlSec"]|0;
+    if(now<1700000000 || issued>now+5 || ttl<1 || ttl>60 || now-issued>ttl){sendAck(uuid,false,"EXPIRED_OR_CLOCK_INVALID",false);return;}
+    executeMemberRemoval(uuid,doc["data"].as<JsonObjectConst>());return;
+  }
   for(int i=0;i<16;i++){DynamicJsonDocument saved(512);if(!deserializeJson(saved,eventPrefs.getString(("ack"+String(i)).c_str(),""))&&saved["commandUuid"].as<String>()==uuid){publishDocument("ack",saved);return;}}
   if(eventPrefs.getString("started","")==uuid){if(remoteEnrollUuid!=uuid && rfidScanUuid!=uuid)sendAck(uuid,false,"INTERRUPTED_COMMAND");return;}
   time_t now=time(nullptr);long long issued=doc["issuedAt"]|0LL;int ttl=doc["ttlSec"]|0;
   if(now<1700000000 || issued>now+5 || ttl<1 || ttl>60 || now-issued>ttl){sendAck(uuid,false,"EXPIRED_OR_CLOCK_INVALID");return;}
   if(!eventPrefs.putString("started",uuid)){sendAck(uuid,false,"STORAGE_ERROR",false);return;}
   if(type=="DEVICE_RESET"){executeReset(uuid,doc["data"]["nextGeneration"]|generation+1);return;}
+  if(type=="ACTIVATION_CODE_SET") {
+    if(claimed || resetPending){sendAck(uuid,false,"NOT_IN_INVENTORY");return;}
+    String code=doc["data"]["activationCode"]|"";
+    auto result=ProductActivation::save(factoryPrefs,code,doc["data"]["activationSequence"]|uint64_t(0),generation);
+    bool saved=result==ProductActivation::SAVED;
+    if(saved){activationCode=code;if(screen==APP_SETUP || networkPage)drawSetupQrAndWifi();}
+    sendAck(uuid,saved,saved?"ACTIVATION_QR_SAVED":result==ProductActivation::STALE?"STALE_ACTIVATION_CODE":result==ProductActivation::INVALID?"INVALID_ACTIVATION_CODE":"ACTIVATION_QR_STORAGE_FAILED");return;
+  }
   if(!claimed || resetPending){sendAck(uuid,false,"NOT_READY");return;}
   if(type=="WIFI_SETUP") {
-    if(screen==SERVO_CAL){sendAck(uuid,false,"DEVICE_BUSY");return;}
+    if(screen==SERVO_CAL || snapshot().calibrating){sendAck(uuid,false,"DEVICE_BUSY");return;}
     wifiPermitUntil=0;connectedNetworkPage();sendAck(uuid,true,"WIFI_SETUP_ENABLED");return;
   }
   if(type=="SETUP_CREDENTIALS") {
     MotorState active=snapshot();
-    if(remoteStage || !rfidScanUuid.isEmpty() || active.door.released || active.pending || active.pulsing || screen==SERVO_CAL){sendAck(uuid,false,"DEVICE_BUSY");return;}
+    if(remoteStage || !rfidScanUuid.isEmpty() || active.door.released || active.pending || active.pulsing || active.calibrating || screen==SERVO_CAL){sendAck(uuid,false,"DEVICE_BUSY");return;}
     String pin=doc["data"]["pin"]|"",admin=doc["data"]["adminPin"]|"";
     bool valid=pin.length()==6 && admin.length()==6 && pin!=admin;
     for(char c:pin)valid=valid&&isdigit(c);for(char c:admin)valid=valid&&isdigit(c);
@@ -447,26 +517,52 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
   }
   if(type=="SETUP_CALIBRATE") {
     MotorState active=snapshot();
-    if(!appPinsReady || remoteStage || !rfidScanUuid.isEmpty() || active.door.released || active.pending || active.pulsing || screen==SERVO_CAL){sendAck(uuid,false,"DEVICE_BUSY_OR_PINS_REQUIRED");return;}
+    if(!appPinsReady || remoteStage || !rfidScanUuid.isEmpty() || active.door.released || active.pending || active.pulsing || active.calibrating || screen==SERVO_CAL){sendAck(uuid,false,"DEVICE_BUSY_OR_PINS_REQUIRED");return;}
     Config next=cfg;next.touch.valid=0;next.closedLevel=-1;sensorCycleVerified=false;servoCycleVerified=false;
     if(!nvs.putBool("reedVerified",false) || !nvs.putBool("servoVerified",false) || !saveConfig(next)){sendAck(uuid,false,"STORAGE_ERROR");return;}
     sendAck(uuid,true,"CALIBRATION_STARTED");connectedContinueSetup();return;
   }
+  if(type.startsWith("SERVO_")) {
+    static uint64_t lastServoSeq=0;
+    uint64_t sequence=doc["data"]["servoSeq"]|0ULL;
+    if(!sequence || sequence<=lastServoSeq){sendAck(uuid,false,"STALE_SERVO_COMMAND");return;}
+    lastServoSeq=sequence;
+  }
+  if(type=="SERVO_PREVIEW_STOP") {stopServoPreview();sendAck(uuid,true,"SERVO_PREVIEW_STOPPED");return;}
+  if(type=="SERVO_PREVIEW") {
+    if((screen!=HOME && screen!=MOTOR) || remoteStage || !rfidScanUuid.isEmpty()){sendAck(uuid,false,"DEVICE_BUSY");return;}
+    String target=doc["data"]["target"]|"";
+    if((doc["data"]["servoRange"]|180)!=cfg.servoRange){sendAck(uuid,false,"SERVO_RANGE_MISMATCH");return;}
+    if((target!="LOCK" && target!="OPEN") || !doc["data"]["angle"].is<int>()) {sendAck(uuid,false,"INVALID_SERVO_ANGLES");return;}
+    bool ok=requestServoPreview(doc["data"]["angle"].as<int>(),target=="LOCK");
+    sendAck(uuid,ok,ok?"SERVO_PREVIEW_ACCEPTED":"SERVO_BUSY_OR_DOOR_OPEN");return;
+  }
   if(type=="SERVO_SET") {
     MotorState state=snapshot();
-    if(state.door.released || state.pending || state.pulsing || state.calibrating || screen==SERVO_CAL || remoteStage || !rfidScanUuid.isEmpty()){sendAck(uuid,false,"DEVICE_BUSY");return;}
+    if(state.door.released || (!state.previewing && (state.pending || state.pulsing || state.calibrating)) || screen==SERVO_CAL || remoteStage || !rfidScanUuid.isEmpty()){sendAck(uuid,false,"DEVICE_BUSY");return;}
     if(!doc["data"]["lockAngle"].is<int>() || !doc["data"]["openAngle"].is<int>()) {sendAck(uuid,false,"INVALID_SERVO_ANGLES");return;}
     int lockAngle=doc["data"]["lockAngle"].as<int>(),openAngle=doc["data"]["openAngle"].as<int>();
-    if(!validServoAngles(lockAngle,openAngle)){sendAck(uuid,false,"INVALID_SERVO_ANGLES");return;}
-    Config next=cfg;next.lockAngle=lockAngle;next.openAngle=openAngle;
+    int range=doc["data"]["servoRange"]|cfg.servoRange;
+    if(!validServoAngles(lockAngle,openAngle,range)){sendAck(uuid,false,"INVALID_SERVO_ANGLES");return;}
+    Config next=cfg;next.lockAngle=lockAngle;next.openAngle=openAngle;next.servoRange=range;
+    stopServoPreview();
     // Saving changes the next command's angles; it never requests a servo move.
-    bool saved=saveConfig(next);sendAck(uuid,saved,saved?"SERVO_ANGLES_SAVED":"SERVO_STORAGE_FAILED");return;
+    bool saved=saveConfig(next);lastStatusAt=millis()-5001;sendAck(uuid,saved,saved?"SERVO_ANGLES_SAVED":"SERVO_STORAGE_FAILED");return;
   }
   if(type=="RFID_SCAN") {
-    if(remoteStage || !rfidScanUuid.isEmpty() || !rfidReady || !configured() || screen!=HOME){sendAck(uuid,false,"RFID_BUSY_OR_NOT_READY");return;}
+    if(remoteStage || !rfidScanUuid.isEmpty() || snapshot().calibrating || !rfidReady || !configured() || screen!=HOME){sendAck(uuid,false,"RFID_BUSY_OR_NOT_READY");return;}
     rfidScanUuid=uuid;rfidScanStarted=millis();tell("Tap card for mobile registration");return;
   }
-  if(type=="DOOR_UNLOCK"){sendAck(uuid,requestOpen(),"UNLOCK_COMMAND");return;}
+  if(type=="DOOR_UNLOCK"){
+    int seconds=doc["data"]["durationSec"]|int(snapshot().unlockMs/1000);
+    if(!DoorTiming::valid(seconds)){sendAck(uuid,false,"INVALID_UNLOCK_DURATION");return;}
+    bool accepted=requestOpen(uint32_t(seconds)*1000);
+    lastStatusAt=millis()-5001;sendAck(uuid,accepted,accepted?"UNLOCK_COMMAND":"DEVICE_BUSY_OR_NOT_READY");return;
+  }
+  if(type=="DOOR_LOCK"){
+    bool accepted=requestLock();lastStatusAt=millis()-5001;
+    sendAck(uuid,accepted,!accepted?"DEVICE_BUSY_OR_NOT_READY":snapshot().door.lockPending?"LOCK_WAITING_FOR_DOOR":"LOCK_COMMAND");return;
+  }
   if(type=="PIN_SET") {
     String pin=doc["data"]["pin"]|"";if(pin.length()!=6){sendAck(uuid,false,"INVALID_PIN");return;}
     for(char c:pin)if(!isdigit(c)){sendAck(uuid,false,"INVALID_PIN");return;}
@@ -476,7 +572,7 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
   if(type=="FP_ENROLL") {
     int requested=doc["data"]["templateId"]|0;
     // Mã lỗi tách riêng để app hiển thị đúng nguyên nhân.
-    if(remoteStage||!rfidScanUuid.isEmpty()){sendAck(uuid,false,"DEVICE_BUSY");return;}
+    if(remoteStage||!rfidScanUuid.isEmpty()||snapshot().calibrating){sendAck(uuid,false,"DEVICE_BUSY");return;}
     if(!fingerReady)probeSensors();
     if(!fingerReady){sendAck(uuid,false,"SENSOR_NOT_READY");return;}
     if(requested<1||requested>=256){sendAck(uuid,false,"INVALID_SLOT");return;}
@@ -493,6 +589,8 @@ void connectedSetup() {
   if(!json.isEmpty() && !deserializeJson(doc,json))loadFactoryJson(doc);
   generation=factoryPrefs.getUInt("gen",1);claimed=factoryPrefs.getBool("claimed",false);
   appPinsReady=nvs.getBool("appPins",false);applyMotorConfig();
+  uint32_t timing=DoorTiming::load(nvs);
+  if(actuatorReady){xSemaphoreTake(motorMutex,portMAX_DELAY);motor.unlockMs=(timing&255)*1000;motor.heldOpenMs=DoorTiming::openSeconds(timing)*1000;motor.waitForClose=DoorTiming::waitForClose(timing);xSemaphoreGive(motorMutex);}
   resetReceipt=factoryPrefs.getString("resetAck","");resetIntent=factoryPrefs.getString("resetIntent","");
   resetPending=resetReceipt.length() || resetIntent.length() || factoryPrefs.getBool("resetCommit",false);
   if(factoryPrefs.getBool("resetCommit",false) && finishResetCommit()){ESP.restart();return;}
@@ -509,6 +607,19 @@ void connectedSetup() {
   else if(!connectedContinueSetup())go(HOME);
   Serial.println("CONNECTED_READY factoryMac="+factoryMac());
 }
+const char *forgetUnclaimedWifi(const String &confirmation) {
+  // USB preparation only: an owned or partially configured door must use the authenticated reset flow.
+  if(!deviceUid.length() || confirmation!=deviceUid || activationCode.length()<24 || setupPassword.length()<8 ||
+     claimed || resetPending || storageFault || appPinsReady || cfg.admin.valid || cfg.user.valid ||
+     cfg.cardCount || cfg.fingerCount || cfg.touch.valid || sensorCycleVerified || servoCycleVerified ||
+     nvs.getBytesLength("config"))return "WIFI_RESET_REJECTED";
+  broker.disconnect();
+  // Clear both the Arduino/ESP-IDF station credentials and our saved-network namespace.
+  if(!WiFi.disconnect(false,true) || !networkPrefs.clear())return "WIFI_RESET_FAILED";
+  loadSavedWifiNetworks();
+  if(savedWifiCount || wifiSsid.length() || wifiPassword.length())return "WIFI_RESET_FAILED";
+  return "WIFI_RESET_COMPLETE";
+}
 void handleFactorySerial() {
   while(Serial.available()){
     char c=Serial.read();if(c!='\n'){if(serialLine.length()<8000)serialLine+=c;continue;}
@@ -521,6 +632,10 @@ void handleFactorySerial() {
         if(!factoryPrefs.putString("config",value)){Serial.println("FACTORY_STORAGE_FAILED");serialLine="";return;}
         Serial.println("FACTORY_PROVISIONED "+factoryMac());Serial.flush();delay(200);ESP.restart();
       } else Serial.println("FACTORY_REJECTED");
+    } else if(serialLine.startsWith("FORGET_WIFI ")) {
+      const char *result=forgetUnclaimedWifi(serialLine.substring(12));
+      Serial.println(result);
+      if(strcmp(result,"WIFI_RESET_COMPLETE")==0){Serial.flush();delay(200);ESP.restart();}
     } else if(serialLine=="SCAN_WIFI") {setupScanCache="";serialScanPending=true;startSetupScan(true);
     } else if(serialLine=="INFO") {
       while(fpSerial.available())fpSerial.read();
@@ -529,10 +644,10 @@ void handleFactorySerial() {
       fingerReady=authenticated&&parameterStatus==FINGERPRINT_OK;
       uint8_t bitmap[32];bool bitmapOk=readFingerBitmap(bitmap);MotorState state=snapshot();
       bool countOk=finger.getTemplateCount()==FINGERPRINT_OK;
-      Serial.println("FACTORY_INFO mac="+factoryMac()+" uid="+deviceUid+" gen="+String(generation)+" wifi="+String(WiFi.status())+" mqtt="+String(broker.connected())+
+      Serial.println("FACTORY_INFO mac="+factoryMac()+" uid="+deviceUid+" firmware="+String(FIRMWARE_VERSION)+" gen="+String(generation)+" wifi="+String(WiFi.status())+" mqtt="+String(broker.connected())+
         " fingerReady="+String(fingerReady)+" authenticated="+String(authenticated)+" parameters="+String(parameterStatus)+" capacity="+String(finger.capacity)+" bitmapOK="+String(bitmapOk)+" slot1empty="+String(bitmapOk&&!(bitmap[0]&2))+" templates="+String(countOk?int(finger.templateCount):-1)+
-        " storageFault="+String(storageFault)+" configBytes="+String(nvs.getBytesLength("config"))+" freeEntries="+String(nvs.freeEntries())+
-        " motorEnabled="+String(state.enabled)+" motorFault="+String(state.fault)+" motorCommanded="+String(state.commanded)+" lockAngle="+String(cfg.lockAngle)+" openAngle="+String(cfg.openAngle)+" lastServoAngle="+String(state.lastAngle)+" servoReady="+String(servoCycleVerified)+" released="+String(state.door.released)+" reedVerified="+String(sensorCycleVerified)+" appPins="+String(appPinsReady)+" offlineReady="+String(connectedAccessReady())+" ui="+String(screen==HOME?"KEYPAD":screen==SERVO_CAL?"SERVO_GUIDE":networkPage?"WIFI_SETUP":"SETUP")+" wifiBars="+String(WiFi.status()==WL_CONNECTED?SetupLogic::signalBars(WiFi.RSSI()):0)+" setupStage="+setupStage()+" productPrepared="+String(!deviceUid.isEmpty()&&activationCode.length()>=24&&setupPassword.length()>=8));
+        " storageFault="+String(storageFault)+" configBytes="+String(nvs.getBytesLength("config"))+" freeEntries="+String(nvs.freeEntries())+" savedWifi="+String(savedWifiCount)+" claimed="+String(claimed)+" cards="+String(cfg.cardCount)+" fingers="+String(cfg.fingerCount)+
+        " motorEnabled="+String(state.enabled)+" motorFault="+String(state.fault)+" motorCommanded="+String(state.commanded)+" lockAngle="+String(cfg.lockAngle)+" openAngle="+String(cfg.openAngle)+" lastServoAngle="+String(state.lastAngle)+" servoReady="+String(servoCycleVerified)+" released="+String(state.door.released)+" lockPending="+String(state.door.lockPending)+" unlockSec="+String(state.unlockMs/1000)+" reedVerified="+String(sensorCycleVerified)+" appPins="+String(appPinsReady)+" offlineReady="+String(connectedAccessReady())+" ui="+String(screen==HOME?"KEYPAD":screen==SERVO_CAL?"SERVO_GUIDE":networkPage?"WIFI_SETUP":"SETUP")+" wifiBars="+String(WiFi.status()==WL_CONNECTED?SetupLogic::signalBars(WiFi.RSSI()):0)+" setupStage="+setupStage()+" productPrepared="+String(!deviceUid.isEmpty()&&activationCode.length()>=24&&setupPassword.length()>=8));
     }
     serialLine="";
   }
@@ -581,22 +696,42 @@ void connectedPoll() {
   if(screen==APP_SETUP && millis()-lastSetupDraw>1000){lastSetupDraw=millis();if(!connectedContinueSetup())go(HOME);}
   if(wifiPermitUntil && int32_t(wifiPermitUntil-millis())<=0)wifiPermitUntil=0;
   if(!resetReceipt.isEmpty()&&millis()-lastStatusAt>3000){lastStatusAt=millis();sendAck(resetReceipt,true,"RESET_EMPTY_VERIFIED",false);return;}
-  if(millis()-lastStatusAt>5000){
-    lastStatusAt=millis();requestNonce=randomId();MotorState state=snapshot();DynamicJsonDocument status(2048);
+  // Publish state transitions promptly so a short unlock is visible between heartbeats.
+  static int previousLeaf=-2,previousLatch=-2,previousLock=-1,previousOpen=-1,previousRange=0;
+  static bool previousLockPending=false,previousWaitForClose=true;
+  static uint32_t previousTiming=0,previousSequence=0;
+  MotorState current=snapshot();
+  int leaf=sensorCycleVerified?int(isClosed(current,millis())):-1;
+  int currentLatch=DoorLogic::reportedLatch(current.commanded&&!current.pending&&!current.pulsing&&!current.calibrating&&!current.fault,
+      current.lastAngle,current.lockAngle,current.openAngle,current.door);
+  bool changed=leaf!=previousLeaf || currentLatch!=previousLatch || current.door.lockPending!=previousLockPending ||
+    cfg.lockAngle!=previousLock || cfg.openAngle!=previousOpen || cfg.servoRange!=previousRange ||
+    current.unlockMs!=previousTiming || current.commandSequence!=previousSequence || current.waitForClose!=previousWaitForClose;
+  if(millis()-lastStatusAt>5000 || (changed && millis()-lastStatusAt>=100)){
+    lastStatusAt=millis();requestNonce=randomId();MotorState state=current;DynamicJsonDocument status(2048);
     status["requestId"]=requestNonce;status["localReady"]=configured();status["hasDoorPin"]=appPinsReady && cfg.user.valid;status["fingerReady"]=fingerReady;
     status["adminPinSet"]=appPinsReady && cfg.admin.valid;status["touchCalibrated"]=bool(cfg.touch.valid);
     status["doorCalibrated"]=sensorCycleVerified;status["setupStage"]=setupStage();status["wifiSsid"]=wifiSsid;
-    status["lockAngle"]=cfg.lockAngle;status["openAngle"]=cfg.openAngle;
+    status["lockAngle"]=cfg.lockAngle;status["openAngle"]=cfg.openAngle;status["servoRange"]=cfg.servoRange;
+    status["lockPending"]=state.door.lockPending;status["unlockDurationSec"]=state.unlockMs/1000;
+    status["doorOpenTimeoutSec"]=state.heldOpenMs/1000;
+    status["autoLockWaitForClose"]=state.waitForClose;
     status["servoCalibrated"]=servoCycleVerified;
     if(state.lastAngle>=0)status["servoCommandAngle"]=state.lastAngle;else status["servoCommandAngle"]=nullptr;
     status["servoDirection"]=ServoSetup::direction(state.previousAngle,state.lastAngle);
     if(sensorCycleVerified)status["doorClosed"]=isClosed(state,millis());else status["doorClosed"]=nullptr;
-    if(state.commanded && !state.calibrating)status["unlocked"]=state.door.released;else status["unlocked"]=nullptr;
+    int latch=DoorLogic::reportedLatch(state.commanded&&!state.pending&&!state.pulsing&&!state.calibrating&&!state.fault,
+      state.lastAngle,state.lockAngle,state.openAngle,state.door);
+    if(latch>=0)status["unlocked"]=bool(latch);else status["unlocked"]=nullptr;
     status["droppedEvents"]=droppedEvents;
     // Telemetry chẩn đoán: cường độ Wi-Fi (dBm), RAM trống (bytes), thời gian chạy (s), phiên bản.
     status["rssi"]=WiFi.RSSI();status["freeHeap"]=ESP.getFreeHeap();status["uptime"]=millis()/1000;
     status["fw"]=FIRMWARE_VERSION;status["hw"]=HARDWARE_VERSION;
-    publishDocument("status",status);
+    if(publishDocument("status",status)) {
+      previousLeaf=leaf;previousLatch=currentLatch;previousLockPending=state.door.lockPending;
+      previousLock=cfg.lockAngle;previousOpen=cfg.openAngle;previousRange=cfg.servoRange;
+      previousTiming=state.unlockMs;previousSequence=state.commandSequence;previousWaitForClose=state.waitForClose;
+    }
     for(int i=0;i<16;i++){DynamicJsonDocument saved(512);if(!deserializeJson(saved,eventPrefs.getString(("ack"+String(i)).c_str(),"")))publishDocument("ack",saved);}
   }
   if(queueHead!=queueTail&&millis()-lastEventAt>1500){lastEventAt=millis();DynamicJsonDocument event(768);if(!deserializeJson(event,eventPrefs.getString(("ev"+String(queueHead)).c_str(),"")))publishDocument("access",event);}

@@ -10,11 +10,30 @@ import java.net.URI;
 import java.net.http.*;
 import java.time.Duration;
 import java.util.Set;
+import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import static org.springframework.http.HttpStatus.*;
 
 /** Media stays on the server. Only a validated processor vector reaches enrollment storage. */
 @Service
 public class FaceMediaService {
+    private static final Logger log = LoggerFactory.getLogger(FaceMediaService.class);
+    private static final String INVALID_MEDIA = "Ảnh/video chưa hợp lệ. Chọn ảnh rõ mặt chỉ có một người hoặc video tối đa 10 giây.";
+    private static final Map<String,String> REJECTIONS = Map.ofEntries(
+        Map.entry("MEDIA_INVALID", "Không đọc được ảnh/video. Chọn lại ảnh JPEG/PNG rõ mặt hoặc video tối đa 10 giây."),
+        Map.entry("IMAGE_TOO_LARGE", "Ảnh sau xử lý vượt quá 5 MiB. Chọn ảnh nhỏ hơn hoặc chụp ảnh mới."),
+        Map.entry("IMAGE_DIMENSIONS", "Ảnh vượt quá 20 megapixel. Giảm kích thước ảnh rồi thử lại."),
+        Map.entry("IMAGE_FORMAT", "Không đọc được ảnh. Chọn JPEG/PNG hoặc chụp ảnh mới."),
+        Map.entry("NO_FACE", "Không tìm thấy khuôn mặt trong ảnh. Chọn ảnh chính diện, đủ sáng và thấy rõ toàn bộ mặt."),
+        Map.entry("MULTIPLE_FACES", "Ảnh có nhiều khuôn mặt. Chọn ảnh chỉ có một người."),
+        Map.entry("FACE_OUT_OF_FRAME", "Khuôn mặt bị cắt sát mép ảnh. Chọn ảnh thấy toàn bộ khuôn mặt."),
+        Map.entry("FACE_TOO_SMALL", "Khuôn mặt quá nhỏ trong ảnh. Chụp gần hơn để thấy rõ mặt."),
+        Map.entry("FACE_BLURRY", "Ảnh khuôn mặt bị mờ. Chọn ảnh rõ nét hơn hoặc chụp lại đủ sáng."),
+        Map.entry("VIDEO_INVALID", "Video cần dài tối đa 10 giây, độ phân giải tối đa 4K và có ít nhất 3 khung hình."),
+        Map.entry("VIDEO_READ_FAILED", "Không đọc được video. Chọn MP4 hoặc tải ảnh rõ mặt."),
+        Map.entry("VIDEO_DIFFERENT_PEOPLE", "Video phải chỉ có cùng một người xuyên suốt.")
+    );
     private final CurrentAccountService current;
     private final FaceEnrollmentService enrollment;
     private final ObjectMapper json;
@@ -41,10 +60,13 @@ public class FaceMediaService {
                 .POST(HttpRequest.BodyPublishers.ofByteArray(file.getBytes())).build();
             var response=http.send(request,HttpResponse.BodyHandlers.ofString());
             if (response.statusCode()!=200) {
-                var status = response.statusCode()==422 ? UNPROCESSABLE_ENTITY : SERVICE_UNAVAILABLE;
-                throw new ResponseStatusException(status,response.statusCode()==422
-                    ? "Ảnh/video chưa hợp lệ. Cần đúng một khuôn mặt rõ nét; video tối đa 10 giây và cùng một người."
-                    : "Dịch vụ khuôn mặt đang bận hoặc chưa sẵn sàng. Thử lại sau.");
+                if(response.statusCode()==422) {
+                    String code="";
+                    try { code=json.readTree(response.body()).path("code").asText(""); } catch(Exception ignored) { }
+                    log.warn("Face enrollment rejected: {}", REJECTIONS.containsKey(code)?code:"MEDIA_INVALID");
+                    throw new ResponseStatusException(UNPROCESSABLE_ENTITY, REJECTIONS.getOrDefault(code,INVALID_MEDIA));
+                }
+                throw new ResponseStatusException(SERVICE_UNAVAILABLE,"Dịch vụ khuôn mặt đang bận hoặc chưa sẵn sàng. Thử lại sau.");
             }
             ProfileInput input=json.readValue(response.body(),ProfileInput.class);
             // Consent is established by this authenticated upload, not by the processor response.

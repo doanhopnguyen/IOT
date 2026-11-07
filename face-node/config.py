@@ -47,6 +47,7 @@ class Config:
     min_face_size: int = 80
     min_blur: float = 40.0
     camera_source: str = "0"
+    event_transport: str = "mqtt"
     ort_threads: int = 2
 
     @classmethod
@@ -76,10 +77,13 @@ class Config:
             min_face_size=int(os.getenv("FACE_MIN_FACE_SIZE", "80")),
             min_blur=float(os.getenv("FACE_MIN_BLUR", "40")),
             camera_source=os.getenv("FACE_CAMERA_SOURCE", "0"),
+            event_transport=os.getenv("FACE_EVENT_TRANSPORT", "mqtt").lower(),
             ort_threads=int(os.getenv("FACE_ORT_THREADS", "2")),
         )
         if not 0 < cfg.threshold <= 1 or not 0 <= cfg.margin <= 1:
             raise ValueError("Ngưỡng nhận diện không hợp lệ.")
+        if cfg.event_transport not in {"mqtt", "http"}:
+            raise ValueError("FACE_EVENT_TRANSPORT cần là mqtt hoặc http.")
         if not 0 < cfg.liveness_threshold <= 1:
             raise ValueError("Ngưỡng xác minh người thật không hợp lệ.")
         if (cfg.stable_frames < 1 or cfg.sync_seconds <= 0 or cfg.cooldown <= 0

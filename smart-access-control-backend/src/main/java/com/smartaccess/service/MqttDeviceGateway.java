@@ -24,6 +24,9 @@ public class MqttDeviceGateway implements DeviceGateway {
     @org.springframework.beans.factory.annotation.Autowired(required=false)
     @org.springframework.context.annotation.Lazy
     private DeploymentService deployment;
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private MemberRemovalService removals;
     private static final Logger log = LoggerFactory.getLogger(MqttDeviceGateway.class);
     private static final long RETRY_MS = 10_000;
     // Thiết bị bỏ qua lệnh đã quá thời gian này; lệnh mở cửa dùng UNLOCK_TTL_SEC ngắn hơn.
@@ -121,10 +124,11 @@ public class MqttDeviceGateway implements DeviceGateway {
         body.put("commandUuid", commandUuid);
         body.put("commandType", commandType);
         Map<String,Object> wire=new LinkedHashMap<>(data==null?Map.of():data);
+        if(MemberRemovalService.COMMAND.equals(commandType) && removals!=null)wire.putAll(removals.wireData(commandUuid));
         if(deployment!=null) {long generation=deployment.generation(deviceUid);if(generation>0)wire.put("generation",generation);}
         body.put("data", wire);
         body.put("issuedAt", java.time.Instant.now().getEpochSecond());
-        body.put("ttlSec", RemoteUnlockService.DOOR_UNLOCK.equals(commandType)
+        body.put("ttlSec", commandType.startsWith("SERVO_") ? 3 : (RemoteUnlockService.DOOR_UNLOCK.equals(commandType) || RemoteUnlockService.DOOR_LOCK.equals(commandType))
                 ? RemoteUnlockService.UNLOCK_TTL_SEC : COMMAND_TTL_SEC);
         try {
             MqttMessage message = new MqttMessage(json.writeValueAsBytes(body));
@@ -169,6 +173,11 @@ public class MqttDeviceGateway implements DeviceGateway {
                     // Log correlation and fixed result codes; never arbitrary device text or PIN payloads.
                     log.info("ACK {} từ thiết bị {}: success={}, result={}", body.path("commandUuid").asText(),
                             deviceUid, body.path("success").asBoolean(false), result.matches("[A-Z_]{1,64}") ? result : "DEVICE_RESPONSE");
+                    if(removals!=null && removals.acknowledge(deviceUid,body.path("commandUuid").asText(),
+                            body.path("success").asBoolean(false),text(body,"message"))) {
+                        reply(deviceUid,"ack-confirm",Map.of("commandUuid",body.path("commandUuid").asText()));
+                        break;
+                    }
                     if (deployment != null && deployment.resetAck(deviceUid, body)) {
                         reply(deviceUid, "ack-confirm", Map.of("commandUuid", body.path("commandUuid").asText()));
                         break;
@@ -199,6 +208,8 @@ public class MqttDeviceGateway implements DeviceGateway {
                     boolean stale = Boolean.TRUE.equals(config.get("generationMismatch"));
                     if (device.getAccessUnit() != null && !stale && !"RESETTING".equals(config.get("activationState")))
                         config.putAll(policies.snapshot(deviceUid));
+                    if(removals!=null && device.getAccessUnit()!=null && !stale && !"RESETTING".equals(config.get("activationState")))
+                        config.put("memberRemovals",removals.configuration(deviceUid,body.path("generation").asLong()));
                     config.put("serverTime", java.time.Instant.now().getEpochSecond());
                     config.put("requestId", requestId);
                     reply(deviceUid, "config", config);

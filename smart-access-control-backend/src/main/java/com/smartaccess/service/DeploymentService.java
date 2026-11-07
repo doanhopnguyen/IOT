@@ -23,7 +23,10 @@ public class DeploymentService {
     public record InventoryView(Long deviceId,String deviceUid,String factoryMac,String name,Long unitId,
         String owner,String state,long generation,boolean setupReady,Boolean doorClosed,Boolean latchReleased,
         LocalDateTime lastSeenAt,String operationUuid) {}
-    public record Issued(InventoryView device,String activationCode,String deviceSecret,String setupSsid,String setupPassword) {}
+    public record Issued(InventoryView device,String activationCode,String deviceSecret,String setupSsid,String setupPassword,
+                         com.smartaccess.dto.manager.CommandResponse syncCommand) {
+        public Issued(InventoryView device,String activationCode,String deviceSecret,String setupSsid,String setupPassword){this(device,activationCode,deviceSecret,setupSsid,setupPassword,null);}
+    }
     public record ClaimPreview(String deviceUid,String name,boolean online) {}
     private final DeviceInventoryRepository inventory;
     private final DeviceRepository devices;
@@ -37,6 +40,7 @@ public class DeploymentService {
     private final ApplicationEventPublisher events;
     private final EntityManager em;
     public static final String RESET_COMMAND="DEVICE_RESET";
+    public static final String SYNC_ACTIVATION="ACTIVATION_CODE_SET";
     private static final String RESET_VERIFIED="RESET_EMPTY_VERIFIED";
     private static final int AUDIT_PAGE=500;
     public DeploymentService(DeviceInventoryRepository inventory,DeviceRepository devices,AccessUnitRepository units,
@@ -269,7 +273,21 @@ public class DeploymentService {
         if(!i.getState().equals("INVENTORY") || i.getOperationUuid()==null || d.getAccessUnit()!=null)throw error(CONFLICT,"Reset chưa hoàn tất");
         // Only admin or the account recorded on the reset receipt may release the new code.
         if(!actor.isAdmin() && !Objects.equals(i.getRecipientId(),actor.getAccountId()) && !Objects.equals(i.getOperationActorId(),actor.getAccountId()))throw error(FORBIDDEN,"Chỉ người thực hiện reset, người nhận hoặc admin được cấp mã mới");
-        String code=token();i.setClaimHash(digest(code));return new Issued(view(i),code,null,null,null);
+        String code=token();i.setClaimHash(digest(code));
+        return new Issued(view(i),code,null,null,null,syncActivation(d,actor,code));
+    }
+    public com.smartaccess.dto.manager.CommandResponse syncActivationCode(String uid,String password,String code) {
+        Device d=devices.findByDeviceUidForUpdate(uid).orElseThrow();Account actor=current.requireAccount();reauthenticate(actor,password);
+        DeviceInventory i=inventory.lock(d.getDeviceId()).orElseThrow();
+        if(!"INVENTORY".equals(i.getState()) || i.getOperationUuid()==null || d.getAccessUnit()!=null)throw error(CONFLICT,"Cửa cần ở trạng thái chờ nhận sau reset");
+        if(!actor.isAdmin() && !Objects.equals(i.getRecipientId(),actor.getAccountId()) && !Objects.equals(i.getOperationActorId(),actor.getAccountId()))throw error(FORBIDDEN,"Không có quyền cấp mã cho cửa này");
+        if(code==null || !code.matches("[A-Za-z0-9_-]{24,128}") || !Objects.equals(i.getClaimHash(),digest(code)))throw error(CONFLICT,"Mã nhận cửa đã cũ. Dùng mã mới nhất vừa cấp");
+        return syncActivation(d,actor,code);
+    }
+    private com.smartaccess.dto.manager.CommandResponse syncActivation(Device d,Account actor,String code) {
+        // The activation code goes only on the authenticated wire, never into command payload/audit.
+        return com.smartaccess.dto.manager.CommandResponse.from(commands.dispatch(d,actor.getAccountId(),SYNC_ACTIVATION,
+                Map.of("deviceId",d.getDeviceId()),Map.of("activationCode",code)));
     }
     public InventoryView view(DeviceInventory i) {
         Device d=i.getDevice();AccessUnit u=d.getAccessUnit();

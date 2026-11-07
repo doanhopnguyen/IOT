@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { ReactNode, useState } from 'react';
+import { ReactNode, type ComponentRef, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -259,13 +259,17 @@ export function AppModal({
   title,
   children,
   onClose,
+  scrollKey,
 }: {
   visible: boolean;
   title: string;
   children: ReactNode;
   onClose: () => void;
+  scrollKey?: string;
 }) {
   const insets = useSafeAreaInsets();
+  const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
+  useEffect(() => { scroll.current?.scrollTo({ y: 0, animated: false }); }, [scrollKey]);
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
@@ -288,6 +292,7 @@ export function AppModal({
             </Pressable>
           </View>
           <ScrollView
+              ref={scroll}
             keyboardDismissMode="on-drag"
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={styles.modalBody}

@@ -1,5 +1,9 @@
 # Chạy từ đầu với Tailscale: nhiều ESP32, mobile và Edge AI khác mạng
 
+**Khởi động demo hằng ngày bằng Expo Go:** dùng [hướng dẫn theo từng cửa sổ PowerShell](CHAY_DEMO_EXPO_GO_TU_DAU.md). Hướng dẫn đó dùng dữ liệu hiện có và luồng ghép laptop bằng tài khoản chủ cửa. Các phần cấp phát, build và reset dưới đây dành cho lúc cần chuẩn bị hoặc bảo trì thiết bị.
+
+Quản lý thẻ/vân tay của chủ cửa và xóa thành viên trên chip: xem [hướng dẫn firmware 1.5.0](CHU_CUA_VA_XOA_THANH_VIEN.md).
+
 Cập nhật 07/11/2026. Lệnh Windows dùng PowerShell tại `D:\DEV\IOT`. Firmware dành cho **ESP32-S3 N16R8 và sơ đồ chân của dự án**; chọn đúng COM cho từng chip.
 
 ## 1. Máy chủ, các điểm đặt cửa và đường kết nối
@@ -201,8 +205,8 @@ Lặp lại tại mỗi điểm bằng LAN IP của gateway đó. Nếu chip cù
 4. Chọn Wi-Fi 2.4 GHz tại nơi đặt cửa, nhập mật khẩu, chờ nối thành công rồi hoàn tất. ESP32 phải truy cập được gateway LAN.
 5. Đưa điện thoại trở về Wi-Fi/4G có Internet, bật lại Tailscale nếu cần, trở lại app. Chờ chip online rồi nhận cửa/đặt tên.
 6. Đặt PIN mở cửa và PIN admin, mỗi PIN 6 số, hai PIN khác nhau. Chờ `ACKNOWLEDGED / PINS_CONFIGURED`.
-7. Trên chip: chạm các dấu cộng; xác nhận cửa đóng rồi mở; thử và xác nhận vị trí LOCK/OPEN servo. App theo dõi tiến độ. Đổi số góc chưa làm servo quay; nút TEST mới thử chuyển động.
-8. Khi báo `READY`, thử mở từ xa, PIN, RFID, vân tay và xem lịch sử. Quan sát chốt thật khi thử.
+7. App hiển thị từng bước và tự chuyển khi cửa xác nhận. Trên chip: chạm các dấu cộng; xác nhận cửa đóng rồi mở; chọn hành trình servo bằng nút `RANGE 180/360`. Nhích `±1°`/`±5°` sẽ quay ngay; quan sát chốt rồi xác nhận LOCK và OPEN. Xem [luồng quét QR mới](QUET_QR_VA_THIET_LAP.md) và [hướng dẫn căn góc servo](CAN_GOC_SERVO.md).
+8. Khi báo `READY`, thử mở từ xa, PIN, RFID, vân tay và xem lịch sử. Quan sát chốt thật khi thử. Để ghép laptop tự chạy nhận diện, mở **Smart Door AI.cmd**, đăng nhập chủ cửa và chọn mã `SD-…` theo [hướng dẫn demo AI](DEMO_AI_TREN_LAPTOP.md).
 
 Lặp lại mỗi chip, không cố định `unitId=1`. Dùng hai chủ sở hữu khác nhau để kiểm tra tài khoản A không đọc cài đặt/mở cửa B. Thử lời mời thành viên, từng quyền và thu hồi quyền. Sau khi hoàn tất thiết lập, ngắt Wi-Fi chip để thử mở offline và đồng bộ lịch sử khi nối lại.
 

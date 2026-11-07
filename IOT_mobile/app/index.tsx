@@ -1,6 +1,7 @@
 import { ItemList } from '../src/components/ItemList';
 import { Brand } from '../src/components/Brand';
 import { MemberPermissions } from '../src/components/MemberPermissions';
+import { CredentialEnrollment } from '../src/components/CredentialEnrollment';
 import { Ionicons } from '@expo/vector-icons';
 import { ActivationWizard as AddDevice } from '../src/components/ActivationWizard';
 import { OwnerDeviceSettings } from '../src/components/OwnerDeviceSettings';
@@ -55,7 +56,7 @@ import { AccessHistory } from '../src/components/AccessHistory';
 import { Alerts } from '../src/components/Alerts';
 import { useConfirm } from '../src/components/ConfirmationProvider';
 import { colors } from '../src/theme/tokens';
-import { canManageDoor, canRemoteUnlock } from '../src/utils/permissions';
+import { canManageDoor, canRemoteUnlock, canRemoteLock } from '../src/utils/permissions';
 
 type ViewName =
   | TabKey
@@ -108,6 +109,7 @@ const toPerson = (u: UnitUserDto): Person => ({
   room: u.room,
   contact: u.phone ?? u.email,
   deletableAccount: u.deletableAccount,
+  removalPending: u.removalPending,
   methods: [
     u.allowFace && 'Khuôn mặt',
     u.allowFingerprint && 'Vân tay',
@@ -119,7 +121,7 @@ const toPerson = (u: UnitUserDto): Person => ({
     (u.allowFace || u.allowFingerprint || u.allowRfid || u.allowRemoteUnlock)
       ? 'ACTIVE'
       : 'SUSPENDED',
-  sync: 'SYNCED',
+  sync: u.removalPending ? 'PENDING' : 'SYNCED',
 });
 
 export default function App() {
@@ -635,11 +637,11 @@ function Home({
   );
 }
 const latchLabel = (door: Door) =>
-  door.lockState === 'UNKNOWN'
-    ? 'Chưa có dữ liệu lệnh chốt'
-    : door.lockState === 'LOCKED'
-      ? 'Thiết bị báo: lệnh khóa chốt'
-      : 'Thiết bị báo: lệnh nhả chốt';
+  door.latchReleased == null
+    ? 'Chưa xác nhận trạng thái chốt'
+    : door.latchReleased
+      ? 'Thiết bị báo: chốt đang mở'
+      : door.doorClosed === true ? 'Đã khóa: cửa đóng và servo hoàn tất lệnh khóa' : 'Chốt ở góc khóa; cánh cửa chưa đóng';
 const physicalLabel = (door: Door) =>
   door.doorClosed == null
     ? 'Chưa có dữ liệu cảm biến'
@@ -655,7 +657,7 @@ function DoorCard({
   onPress: () => void;
   onUnlock: () => void;
 }) {
-  const usable = canRemoteUnlock(door);
+  const usable = canRemoteUnlock(door) || canRemoteLock(door);
   return (
     <Card style={x.door}>
       <Pressable
@@ -684,7 +686,7 @@ function DoorCard({
         </View>
       </Pressable>
       {usable ? (
-        <Button title="Mở cửa từ xa" icon="lock-open-outline" onPress={onUnlock} />
+        <Button title="Mở / khóa từ xa" icon="lock-closed-outline" onPress={onUnlock} />
       ) : (
         <View style={x.disabledMessage}>
           {icon(
@@ -860,8 +862,8 @@ function Detail({
           <Text style={x.caption}>Tín hiệu gần nhất: {door.lastUpdate}</Text>
         </View>
       </Card>
-      {canRemoteUnlock(door) ? (
-        <Button title="Mở cửa từ xa" icon="lock-open-outline" onPress={unlock} />
+      {canRemoteUnlock(door) || canRemoteLock(door) ? (
+        <Button title="Mở / khóa từ xa" icon="lock-closed-outline" onPress={unlock} />
       ) : (
         <Notice>
           {door.connectivity === 'OFFLINE'
@@ -1236,58 +1238,9 @@ function MemberDetail({
   refresh: () => Promise<void>;
   back: () => void;
 }) {
-  const [feedback, setFeedback] = useState<{ text: string; success: boolean }>();
+  const [feedback, setFeedback] = useState<{ text: string; success: boolean; pending?: boolean }>();
   const userId = /^[1-9]\d*$/.test(person.id) ? Number(person.id) : null;
-  // Hộp thoại thêm vân tay: chờ thiết bị → thành công / thất bại
-  const [fp, setFp] = useState<{
-    state: 'IDLE' | 'WAITING' | 'SUCCESS' | 'FAILED';
-    message: string;
-  }>({ state: 'IDLE', message: '' });
-  const enrollFingerprint = async () => {
-    if (!unitId || !userId || fp.state === 'WAITING') return;
-    setFp({
-      state: 'WAITING',
-      message: `Trong 45 giây, ${person.name}: (1) đặt ngón tay lên cảm biến ~1 giây, (2) nhấc hẳn ra, (3) đặt lại đúng ngón đó ~1 giây.`,
-    });
-    try {
-      const label = `Vân tay ${new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;
-      const result = await managerService.waitForCommand(
-        await managerService.enrollFingerprint(unitId, userId, label),
-      );
-      if (result.status === 'ACKNOWLEDGED') {
-        setFp({ state: 'SUCCESS', message: `Thêm vân tay thành công cho ${person.name}.` });
-        await refresh();
-      } else setFp({ state: 'FAILED', message: commandMessage(result, '') });
-    } catch (e) {
-      setFp({ state: 'FAILED', message: errorText(e, 'Không gửi được lệnh tới thiết bị.') });
-    }
-  };
-  // Gán thẻ RFID có sẵn: chỉ cần nhập mã thẻ
-  const [rfidOpen, setRfidOpen] = useState(false);
-  const [rfidUid, setRfidUid] = useState('');
-  const [rfidSaving, setRfidSaving] = useState(false);
-  const assignRfid = async () => {
-    if (!unitId || !userId) return;
-    if (rfidUid.trim().length < 4) {
-      setFeedback({
-        text: 'Mã thẻ chưa hợp lệ. Nhập UID in trên thẻ, ví dụ A1B2C3D4.',
-        success: false,
-      });
-      return;
-    }
-    setRfidSaving(true);
-    try {
-      const card = await managerService.assignRfid(unitId, userId, rfidUid);
-      setRfidOpen(false);
-      setRfidUid('');
-      setFeedback({ text: `Thẻ ${card.rfidUid} đã được gán cho ${person.name}.`, success: true });
-      await refresh();
-    } catch (e) {
-      setFeedback({ text: errorText(e, 'Không gán được thẻ.'), success: false });
-    } finally {
-      setRfidSaving(false);
-    }
-  };
+  const [removing, setRemoving] = useState(false);
   const confirmAction = useConfirm();
   const accessActive = person.access === 'ACTIVE';
   const toggleAccess = async () => {
@@ -1310,7 +1263,7 @@ function MemberDetail({
   };
   const removeMessage = person.deletableAccount
     ? `Xóa ${person.name} khỏi cửa này? Người này chưa từng đăng nhập nên tài khoản cũng sẽ bị xóa (nếu không thuộc cửa nào khác). Thao tác này không thể hoàn tác.`
-    : `Xóa ${person.name} khỏi cửa này? Thao tác này không thể hoàn tác.`;
+    : `Xóa ${person.name} cùng thẻ và vân tay tại cửa này? Quyền bị thu hồi ngay; chỉ hoàn tất sau khi chip xác nhận xóa dữ liệu. Thao tác này không thể hoàn tác.`;
   const remove = async () => {
     if (
       !unitId ||
@@ -1324,12 +1277,16 @@ function MemberDetail({
     )
       return;
     try {
-      await managerService.removeUser(unitId, userId);
+      setRemoving(true);
+      const command = await managerService.removeUser(unitId, userId);
       await refresh();
-      back();
+      const result = await managerService.waitForCommand(command);
+      await refresh();
+      if (result.status === 'ACKNOWLEDGED') back();
+      else setFeedback({ text: 'Đã thu hồi quyền. Đang chờ ESP32 xóa thẻ và mẫu vân tay; giữ cửa online để hệ thống tự gửi lại lệnh.', success: false, pending: true });
     } catch (e) {
       setFeedback({ text: errorText(e, 'Không xóa được thành viên.'), success: false });
-    }
+    } finally { setRemoving(false); }
   };
   return (
     <ScrollView
@@ -1339,7 +1296,7 @@ function MemberDetail({
     >
       <PageHeader back={back} title="Chi tiết thành viên" />
       {feedback ? (
-        <Notice tone={feedback.success ? 'success' : 'error'}>{feedback.text}</Notice>
+        <Notice tone={feedback.pending ? 'info' : feedback.success ? 'success' : 'error'}>{feedback.text}</Notice>
       ) : null}
       <Card style={x.profile}>
         <View style={x.profileAvatar}>
@@ -1365,6 +1322,7 @@ function MemberDetail({
             onValueChange={() => {
               void toggleAccess();
             }}
+            disabled={removing || person.removalPending}
             accessibilityLabel="Cho phép ra vào cửa"
             trackColor={{ true: colors.primary, false: colors.border }}
             thumbColor="#fff"
@@ -1381,9 +1339,10 @@ function MemberDetail({
           userId={userId}
           methods={person.methods}
           changed={refresh}
+          disabled={removing || person.removalPending}
         />
       ) : null}
-      {unitId && userId ? (
+      {unitId && userId && !person.removalPending ? (
         <MemberFacePanel
           key={`${unitId}-${userId}`}
           unitId={unitId}
@@ -1393,69 +1352,11 @@ function MemberDetail({
           onChanged={refresh}
         />
       ) : null}
-      <Menu icon="card-outline" label="Gán thẻ RFID" onPress={() => setRfidOpen(true)} />
-      <Menu
-        icon="finger-print-outline"
-        label="Thêm vân tay"
-        onPress={() => {
-          void enrollFingerprint();
-        }}
-      />
-      <AppModal
-        visible={fp.state !== 'IDLE'}
-        title="Thêm vân tay"
-        onClose={() => {
-          if (fp.state !== 'WAITING') setFp({ state: 'IDLE', message: '' });
-        }}
-      >
-        <View style={{ alignItems: 'center', gap: 12, paddingVertical: 8 }}>
-          {fp.state === 'WAITING' ? (
-            <ActivityIndicator size="large" color={colors.primary} />
-          ) : (
-            icon(
-              fp.state === 'SUCCESS' ? 'checkmark-circle' : 'close-circle',
-              fp.state === 'SUCCESS' ? colors.success : colors.error,
-            )
-          )}
-          <Text style={[x.cardTitle, { textAlign: 'center' }]}>
-            {fp.state === 'WAITING'
-              ? 'Đang chờ đặt ngón tay...'
-              : fp.state === 'SUCCESS'
-                ? 'Thêm vân tay thành công'
-                : 'Thêm vân tay thất bại'}
-          </Text>
-          <Text style={[x.sub, { textAlign: 'center' }]}>{fp.message}</Text>
-        </View>
-        {fp.state !== 'WAITING' && (
-          <Button title="Đóng" onPress={() => setFp({ state: 'IDLE', message: '' })} />
-        )}
-      </AppModal>
-      <AppModal
-        visible={rfidOpen}
-        title="Gán thẻ RFID"
-        onClose={() => {
-          if (!rfidSaving) setRfidOpen(false);
-        }}
-      >
-        <Text style={x.sub}>
-          Nhập mã thẻ (UID) của thẻ đã dùng được với cửa này để gán cho {person.name}.
-        </Text>
-        <Input
-          label="Mã UID thẻ RFID"
-          value={rfidUid}
-          onChangeText={(v) => setRfidUid(v.toUpperCase())}
-          placeholder="Ví dụ: A1B2C3D4"
-        />
-        <Button
-          title={rfidSaving ? 'Đang gán thẻ...' : 'Gán thẻ'}
-          disabled={rfidSaving}
-          onPress={() => {
-            void assignRfid();
-          }}
-        />
-      </AppModal>
+      {unitId && userId && !person.removalPending ? <CredentialEnrollment unitId={unitId} userId={userId} changed={refresh} disabled={removing} /> : null}
+      {person.removalPending ? <Notice tone="info">Đã thu hồi quyền. Chờ cửa online và xác nhận xóa thẻ/vân tay để hoàn tất xóa thành viên.</Notice> : null}
       <Button
-        title="Xóa thành viên"
+        title={removing ? "Đang chờ cửa xác nhận xóa…" : person.removalPending ? "Kiểm tra hoàn tất xóa" : "Xóa thành viên"}
+        disabled={removing}
         variant="danger"
         onPress={() => {
           void remove();
@@ -1515,24 +1416,28 @@ function Profile({
 function PinModal({ door, close }: { door: Door | null; close: () => void }) {
   const [state, setState] = useState<'IDLE' | 'VERIFYING' | 'SUCCESS' | 'FAILED'>('IDLE');
   const [error, setError] = useState('');
+  const [action, setAction] = useState<'OPEN' | 'LOCK'>('OPEN');
+  const [waitingForDoor, setWaitingForDoor] = useState(false);
   useEffect(() => {
     if (!door) {
       setState('IDLE');
       setError('');
+      setWaitingForDoor(false);
     }
   }, [door]);
   const unitId = backendUnitId(door);
-  const send = async () => {
-    if (!unitId || !door || !canRemoteUnlock(door)) {
+  const send = async (nextAction: 'OPEN' | 'LOCK') => {
+    if (!unitId || !door || !(nextAction === 'LOCK' ? canRemoteLock(door) : canRemoteUnlock(door))) {
       setError('Bạn chưa có quyền hoặc thiết bị không sẵn sàng.');
       setState('FAILED');
       return;
     }
     setState('VERIFYING');
+    setAction(nextAction); setWaitingForDoor(false);
     setError('');
     try {
-      const result = await managerService.waitForCommand(await managerService.remoteUnlock(unitId));
-      if (result.status === 'ACKNOWLEDGED') setState('SUCCESS');
+      const result = await managerService.waitForCommand(await (nextAction === 'LOCK' ? managerService.remoteLock(unitId) : managerService.remoteUnlock(unitId)));
+      if (result.status === 'ACKNOWLEDGED') { setWaitingForDoor(result.resultMessage === 'LOCK_WAITING_FOR_DOOR'); setState('SUCCESS'); }
       else {
         setError(commandMessage(result, ''));
         setState('FAILED');
@@ -1544,16 +1449,16 @@ function PinModal({ door, close }: { door: Door | null; close: () => void }) {
   };
   const message =
     state === 'SUCCESS'
-      ? 'Thiết bị đã xác nhận lệnh nhả chốt. Kiểm tra trạng thái cánh cửa.'
+      ? action === 'LOCK' ? waitingForDoor ? 'Đã nhận yêu cầu khóa. Đóng cánh cửa; thiết bị sẽ tự khóa khi cảm biến xác nhận cửa đóng ổn định.' : 'Thiết bị đã nhận lệnh khóa. Theo dõi trạng thái chốt và cánh cửa để xác nhận đã khóa.' : 'Thiết bị đã xác nhận lệnh nhả chốt. Servo sẽ tự trở về góc khóa theo thời gian và chế độ đã cài đặt.'
       : state === 'VERIFYING'
         ? 'Đang chờ thiết bị xác nhận...'
         : state === 'FAILED'
           ? error
-          : 'Xác nhận để gửi lệnh mở cửa đến thiết bị.';
+          : 'Chọn mở hoặc khóa từ xa theo chế độ chủ cửa đã cài. Chỉ báo đã khóa khi cảm biến xác nhận đóng và servo hoàn tất lệnh.';
   return (
     <AppModal
       visible={!!door}
-      title="Xác nhận mở cửa"
+      title="Điều khiển cửa từ xa"
       onClose={() => {
         if (state !== 'VERIFYING') close();
       }}
@@ -1581,14 +1486,15 @@ function PinModal({ door, close }: { door: Door | null; close: () => void }) {
       {state === 'SUCCESS' ? (
         <Button title="Đóng" onPress={close} />
       ) : (
-        <Button
+        <View style={{ gap: 12 }}><Button
           title={state === 'VERIFYING' ? 'Đang xác nhận...' : 'Mở cửa'}
           onPress={() => {
-            void send();
+            void send('OPEN');
           }}
           loading={state === 'VERIFYING'}
-          disabled={!door || !canRemoteUnlock(door)}
-        />
+          disabled={state === 'VERIFYING' || !door || !canRemoteUnlock(door)}
+        /><Button title={state === 'VERIFYING' && action === 'LOCK' ? 'Đang gửi lệnh khóa…' : 'Khóa cửa'} icon="lock-closed-outline" variant="ghost"
+          disabled={state === 'VERIFYING' || !door || !canRemoteLock(door)} onPress={() => { void send('LOCK'); }} /></View>
       )}
     </AppModal>
   );

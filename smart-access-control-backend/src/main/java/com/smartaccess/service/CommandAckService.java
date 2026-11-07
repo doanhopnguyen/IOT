@@ -31,16 +31,18 @@ public class CommandAckService {
     private final CredentialRepository credentials;
     private final AccessLogRepository accessLogs;
     private final AuditLogRepository audits;
+    private final com.smartaccess.repository.DeviceRepository devices;
 
     public CommandAckService(CommandRepository commands, AccessUnitRepository units,
             AccountRepository accounts, CredentialRepository credentials,
-            AccessLogRepository accessLogs, AuditLogRepository audits) {
+            AccessLogRepository accessLogs, AuditLogRepository audits, com.smartaccess.repository.DeviceRepository devices) {
         this.commands = commands;
         this.units = units;
         this.accounts = accounts;
         this.credentials = credentials;
         this.accessLogs = accessLogs;
         this.audits = audits;
+        this.devices = devices;
     }
 
     @Transactional
@@ -55,6 +57,7 @@ public class CommandAckService {
     @Transactional
     public void handleAck(String deviceUid, String commandUuid, boolean success, String message,
             Integer reportedTemplateId) {
+        devices.findByDeviceUidForUpdate(deviceUid); // Serialize enrollment ACKs with member cleanup and slot allocation.
         Command command = commands.findForUpdate(commandUuid).orElse(null);
         if (command == null
                 || !command.getDevice().getDeviceUid().equals(deviceUid)
@@ -85,6 +88,10 @@ public class CommandAckService {
                 entityType = "ACCESS_UNIT";
                 entityId = applyUnlock(command);
             }
+            case RemoteUnlockService.DOOR_LOCK -> {
+                entityType="ACCESS_UNIT";
+                entityId=((Number)command.getPayload().get("unitId")).longValue();
+            }
             case FingerprintService.FP_ENROLL -> {
                 entityId = applyEnroll(command, reportedTemplateId);
                 if (entityId == null) {
@@ -94,7 +101,8 @@ public class CommandAckService {
                 }
             }
             case FingerprintService.FP_DELETE -> entityId = applyDelete(command);
-            case OnboardingService.SERVO_SET -> { entityType="DEVICE"; entityId=command.getDevice().getDeviceId(); }
+            case OnboardingService.SERVO_SET, OnboardingService.SERVO_PREVIEW, OnboardingService.SERVO_PREVIEW_STOP -> { entityType="DEVICE"; entityId=command.getDevice().getDeviceId(); }
+            case DeploymentService.SYNC_ACTIVATION -> { entityType="DEVICE"; entityId=command.getDevice().getDeviceId(); }
             default -> { }
         }
         command.setStatus(CommandStatus.ACKNOWLEDGED);
@@ -140,9 +148,10 @@ public class CommandAckService {
 
     private Long applyDelete(Command command) {
         Long credentialId = ((Number) command.getPayload().get("credentialId")).longValue();
-        Credential credential = credentials.findById(credentialId).orElseThrow();
-        credential.setStatus(CredentialStatus.REVOKED);
-        credential.setRevokedAt(LocalDateTime.now());
+        credentials.findById(credentialId).ifPresent(credential -> {
+            credential.setStatus(CredentialStatus.REVOKED);
+            credential.setRevokedAt(LocalDateTime.now());
+        }); // A member cleanup may already have deleted this credential before a late FP_DELETE ACK.
         return credentialId;
     }
 

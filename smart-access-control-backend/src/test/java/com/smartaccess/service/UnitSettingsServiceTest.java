@@ -69,4 +69,13 @@ class UnitSettingsServiceTest {
         assertThatThrownBy(() -> service.update(1L, 3L, new UnitSettings.Request(null, null, null, null, null)))
                 .isInstanceOf(BusinessException.class);
     }
+    @Test void ownerCanChooseTimedServoReturnAndDurationIndependently() {
+        var timed=service.update(1L,3L,new UnitSettings.Request(7,null,null,null,null,false));
+        assertThat(timed.unlockDurationSec()).isEqualTo(7);
+        assertThat(timed.autoLockWaitForClose()).isFalse();
+        assertThat(unit.isAutoLockWaitForClose()).isFalse();
+        var waiting=service.update(1L,3L,new UnitSettings.Request(null,null,null,null,null,true));
+        assertThat(waiting.unlockDurationSec()).isEqualTo(7);
+        assertThat(waiting.autoLockWaitForClose()).isTrue();
+    }
 }

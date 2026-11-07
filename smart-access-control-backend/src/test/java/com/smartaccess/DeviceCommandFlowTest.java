@@ -59,6 +59,7 @@ class DeviceCommandFlowTest {
 
     @Autowired RecordingGateway gateway;
     @Autowired PinService pinService;
+    @Autowired OnboardingService onboardingService;
     @Autowired FingerprintService fingerprintService;
     @Autowired RemoteUnlockService unlockService;
     @Autowired CommandAckService ackService;
@@ -123,6 +124,24 @@ class DeviceCommandFlowTest {
     }
 
     CommandStatus status(String uuid) { return commands.findByCommandUuid(uuid).orElseThrow().getStatus(); }
+
+    @Test void servoPreviewSaveAndStopHaveOrderedSequencesAndWaitForAuthenticatedAcks() {
+        var preview=onboardingService.previewServo(managerId,unitId,"LOCK",101);
+        var save=onboardingService.setServoAngles(managerId,unitId,101,89);
+        var stop=onboardingService.stopServoPreview(managerId,unitId);
+        long previous=0;
+        for(Sent sent:gateway.sent){
+            var command=commands.findByCommandUuid(sent.commandUuid()).orElseThrow();
+            assertThat(sent.data().get("servoSeq")).isEqualTo(command.getCommandId());
+            assertThat(command.getCommandId()).isGreaterThan(previous);previous=command.getCommandId();
+            assertThat(command.getStatus()).isEqualTo(CommandStatus.SENT);
+            ackService.handleAck(uid,sent.commandUuid(),true,"SERVO_OK");
+            assertThat(status(sent.commandUuid())).isEqualTo(CommandStatus.ACKNOWLEDGED);
+        }
+        assertThat(gateway.sent).extracting(Sent::commandUuid).containsExactly(preview.commandUuid(),save.commandUuid(),stop.commandUuid());
+        assertThat(gateway.sent.get(0).data()).containsEntry("angle",101).doesNotContainKeys("lockAngle","openAngle");
+        assertThat(gateway.sent.get(2).data()).doesNotContainKeys("angle","target");
+    }
 
     @Test
     void offlineLocalEventsAreIdempotentAndPreserveDeviceTime() throws Exception {
@@ -276,6 +295,23 @@ class DeviceCommandFlowTest {
             assertThat(log.getAccessUnit().getUnitId()).isEqualTo(unitId);
         });
         assertThat(audits.findAll()).anyMatch(a -> "DOOR_UNLOCK".equals(a.getAction()) && "ACCESS_UNIT".equals(a.getEntityType()));
+    }
+
+    @Test
+    void remoteLockUsesExplicitPermissionAndAuditWithoutGrantingAccess() {
+        assertThatThrownBy(() -> unlockService.lock(userId,unitId)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> unlockService.lock(otherManagerId,unitId)).isInstanceOf(BusinessException.class);
+        tx.executeWithoutResult(s -> units.findById(unitId).orElseThrow().setRemoteUnlockEnabled(false));
+        long logsBefore=accessLogs.count();
+        CommandResponse result=unlockService.lock(managerId,unitId);
+        assertThat(gateway.sent.get(0).type()).isEqualTo("DOOR_LOCK");
+        ackService.handleAck(uid,result.commandUuid(),true,"LOCK_WAITING_FOR_DOOR");
+        assertThat(commandService.getOwnCommand(managerId,result.commandUuid()).status()).isEqualTo(CommandStatus.ACKNOWLEDGED);
+        assertThat(accessLogs.count()).isEqualTo(logsBefore);
+        assertThat(audits.findAll()).anyMatch(a -> "DOOR_LOCK".equals(a.getAction()) && "ACCESS_UNIT".equals(a.getEntityType()));
+        tx.executeWithoutResult(s -> memberships.findById(new UserAccessId(userId,unitId)).orElseThrow().setAllowRemoteUnlock(true));
+        CommandResponse memberCommand=unlockService.lock(userId,unitId);
+        assertThat(commandService.getOwnCommand(userId,memberCommand.commandUuid()).status()).isEqualTo(CommandStatus.SENT);
     }
 
     @Test

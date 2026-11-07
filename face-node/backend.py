@@ -7,6 +7,7 @@ class Backend:
     def __init__(self, config):
         self.base = config.base_url
         self.session = requests.Session()
+        self.session.trust_env = False
         self.session.headers.update({"X-Device-Uid": config.device_uid,
                                      "X-Device-Secret": config.device_secret})
 

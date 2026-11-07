@@ -14,6 +14,9 @@ import static org.springframework.http.HttpStatus.*;
 @Service
 @Transactional(readOnly = true)
 public class FaceEnrollmentService {
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private MemberRemovalService removals;
     private final CurrentAccountService current;
     private final AccountRepository accounts;
     private final AccessUnitRepository units;
@@ -38,6 +41,7 @@ public class FaceEnrollmentService {
         Long targetId = input.accountId() == null ? actor.getAccountId() : input.accountId();
         Account target = accounts.findForUpdate(targetId).orElseThrow(() -> error(NOT_FOUND, "Không tìm thấy tài khoản."));
         AccessUnit unit = units.findById(input.unitId()).orElseThrow(() -> error(NOT_FOUND, "Không tìm thấy cửa."));
+        if(removals!=null)removals.requireNotRemoving(unit.getUnitId(),targetId);
         if (!input.consent()) throw error(BAD_REQUEST, "Cần có sự đồng ý rõ ràng trước khi đăng ký khuôn mặt.");
         if (!actor.getAccountId().equals(targetId))
             throw error(FORBIDDEN, "Chỉ chính chủ tài khoản được đăng ký hoặc gửi yêu cầu khuôn mặt.");
@@ -90,6 +94,7 @@ public class FaceEnrollmentService {
         Account target = accounts.findForUpdate(accountId).orElseThrow();
         FaceRequest request = lock(id);
         requireManager(request, actor.getAccountId());
+        if(removals!=null)removals.requireNotRemoving(request.getAccessUnit().getUnitId(),accountId);
         if (request.getStatus() != FaceRequestStatus.PENDING) throw error(CONFLICT, "Yêu cầu này đã được xử lý.");
         Credential sample = pendingSample(request).orElse(null);
         if (approved) {

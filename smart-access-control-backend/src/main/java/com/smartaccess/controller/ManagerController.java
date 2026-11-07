@@ -27,6 +27,11 @@ public class ManagerController {
         return service.getUsers(principal.accountId(), unitId);
     }
 
+    @GetMapping("/units/{unitId}/owner-access")
+    public UnitUserResponse ownerAccess(@AuthenticationPrincipal AccountPrincipal principal,@PathVariable Long unitId) {
+        return service.ownerAccess(principal.accountId(),unitId);
+    }
+
     @PostMapping("/units/{unitId}/users/{userId}")
     @ResponseStatus(HttpStatus.CREATED)
     public UnitUserResponse addUser(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable Long unitId,
@@ -48,9 +53,9 @@ public class ManagerController {
     }
 
     @DeleteMapping("/units/{unitId}/users/{userId}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void removeUser(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable Long unitId, @PathVariable Long userId) {
-        service.removeUser(principal.accountId(), unitId, userId);
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public CommandResponse removeUser(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable Long unitId, @PathVariable Long userId) {
+        return service.removeUser(principal.accountId(), unitId, userId);
     }
 
     @PostMapping("/units/{unitId}/devices")

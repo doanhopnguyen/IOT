@@ -1,0 +1,11 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+group = 'com.smartdoor.wifi'
+version = '1.0.0'
+expoModule { canBePublished false }
+android {
+  namespace 'com.smartdoor.wifi'
+  defaultConfig { versionCode 1; versionName '1.0.0' }
+}

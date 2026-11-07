@@ -8,6 +8,7 @@ import onnxruntime as ort
 from insightface.app import FaceAnalysis
 from insightface.app.common import Face
 from matching import normalized
+from media_validation import MediaValidationError
 
 
 def model_files(root):
@@ -75,21 +76,21 @@ class Engine:
         x1, y1, x2, y2 = [int(x) for x in face.bbox]
         height, width = frame.shape[:2]
         if x1 < 0 or y1 < 0 or x2 > width or y2 > height:
-            raise ValueError("Đưa toàn bộ khuôn mặt vào khung hình.")
+            raise MediaValidationError('FACE_OUT_OF_FRAME')
         if min(x2 - x1, y2 - y1) < self.config.min_face_size:
-            raise ValueError("Khuôn mặt quá nhỏ; hãy đưa lại gần camera.")
+            raise MediaValidationError('FACE_TOO_SMALL')
         crop = frame[y1:y2, x1:x2]
         blur = float(cv2.Laplacian(cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var())
         if blur < self.config.min_blur:
-            raise ValueError("Ảnh khuôn mặt bị mờ; hãy giữ yên và tăng ánh sáng.")
+            raise MediaValidationError('FACE_BLURRY')
 
     def embed_image(self, image_bytes):
         frame = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
         if frame is None or frame.shape[0] * frame.shape[1] > 20_000_000:
-            raise ValueError("Ảnh không hợp lệ hoặc vượt quá kích thước cho phép.")
+            raise MediaValidationError('IMAGE_FORMAT' if frame is None else 'IMAGE_DIMENSIONS')
         bboxes, landmarks = self.app.det_model.detect(frame, max_num=0)
         if len(bboxes) != 1:
-            raise ValueError("Đăng ký cần đúng một khuôn mặt trong ảnh.")
+            raise MediaValidationError('NO_FACE' if len(bboxes) == 0 else 'MULTIPLE_FACES')
         face = Face(bbox=bboxes[0, :4], kps=landmarks[0], det_score=bboxes[0, 4])
         self._quality(frame, face)
         self.app.models["recognition"].get(frame, face)
