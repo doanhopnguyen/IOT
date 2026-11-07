@@ -285,7 +285,7 @@ function RequestCard({
             <View style={s.photoTagPill}>
               <Ionicons name="scan-outline" size={14} color="#fff" />
               <Text style={s.photoTagText} numberOfLines={1}>
-                Ảnh mẫu · ArcFace 512-D
+                Ảnh mẫu AI
               </Text>
             </View>
             <View style={s.zoomPill}>
@@ -701,8 +701,7 @@ export function FaceApprovals({ door, back }: { door: Door; back: () => void }) 
       <PageHeader
         back={back}
         title="Duyệt khuôn mặt"
-        description={`${door.name} · Kiểm tra ảnh trước khi cấp quyền`}
-        eyebrow="PHÊ DUYỆT SINH TRẮC HỌC"
+        description={door.name}
       />
 
       <View style={s.summaryRow}>

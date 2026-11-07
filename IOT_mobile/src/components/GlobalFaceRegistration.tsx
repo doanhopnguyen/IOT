@@ -69,8 +69,6 @@ export function GlobalFaceRegistration({ doors, back }: { doors: Door[]; back: (
       <PageHeader
         back={back}
         title="Khuôn mặt của tôi"
-        description="Hồ sơ sinh trắc học dùng chung cho các cửa được cấp quyền"
-        eyebrow="SINH TRẮC HỌC AI"
       />
       {error ? <Notice tone="error">{error}</Notice> : null}
       {loading ? <LoadingState label="Đang tải hồ sơ khuôn mặt…" /> : null}

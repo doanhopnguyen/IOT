@@ -16,7 +16,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, radius } from '../theme/tokens';
+import { colors, fonts, radius } from '../theme/tokens';
 
 export type IconName = keyof typeof Ionicons.glyphMap;
 export type ToneName =
@@ -100,10 +100,12 @@ export function FeatureTile({
           <Ionicons name={icon} size={22} color={palette.ink} />
         </View>
         {compact ? (
-          <View style={{ flex: 1, gap: 3 }}>
-            <Text style={styles.tileTitle}>{title}</Text>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={styles.tileTitle} numberOfLines={1}>
+              {title}
+            </Text>
             {subtitle ? (
-              <Text style={styles.tileSubtitle} numberOfLines={2}>
+              <Text style={styles.tileSubtitle} numberOfLines={1}>
                 {subtitle}
               </Text>
             ) : null}
@@ -113,25 +115,22 @@ export function FeatureTile({
           {badge ? (
             <View style={[styles.tileBadge, { backgroundColor: palette.bg }]}>
               <Text style={[styles.tileBadgeText, { color: palette.ink }]}>{badge}</Text>
-              {!compact ? (
-                <Ionicons name="chevron-forward" size={12} color={palette.ink} />
-              ) : null}
             </View>
           ) : null}
           {compact || !badge ? (
             <View style={styles.tileArrow}>
-              <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+              <Ionicons name="chevron-forward" size={15} color={colors.muted} />
             </View>
           ) : null}
         </View>
       </View>
       {!compact ? (
-        <View style={{ gap: 4, marginTop: 6 }}>
-          <Text style={styles.tileTitle} numberOfLines={2}>
+        <View style={{ gap: 2, marginTop: 8 }}>
+          <Text style={styles.tileTitle} numberOfLines={1}>
             {title}
           </Text>
           {subtitle ? (
-            <Text style={styles.tileSubtitle} numberOfLines={2}>
+            <Text style={styles.tileSubtitle} numberOfLines={1}>
               {subtitle}
             </Text>
           ) : null}
@@ -241,7 +240,12 @@ export function Badge({
   const palette = toneMap[tone];
   return (
     <View style={[styles.status, { backgroundColor: palette.bg, borderColor: palette.border }]}>
-      <Text style={[styles.caption, { color: palette.ink, fontWeight: '700', fontSize: 13, flexShrink: 1 }]}>
+      <Text
+        style={[
+          styles.caption,
+          { color: palette.ink, fontFamily: fonts.semibold, fontWeight: '600', fontSize: 12, flexShrink: 1 },
+        ]}
+      >
         {label}
       </Text>
     </View>
@@ -263,7 +267,12 @@ export function Status({ online }: { online: boolean }) {
       <Text
         style={[
           styles.caption,
-          { color: online ? colors.success : colors.muted, fontWeight: '700', fontSize: 13 },
+          {
+            color: online ? colors.success : colors.muted,
+            fontFamily: fonts.semibold,
+            fontWeight: '600',
+            fontSize: 12,
+          },
         ]}
       >
         {online ? 'Trực tuyến' : 'Ngoại tuyến'}
@@ -277,7 +286,6 @@ export function PageHeader({
   description,
   back,
   action,
-  eyebrow,
 }: {
   title: string;
   description?: string;
@@ -295,13 +303,18 @@ export function PageHeader({
             accessibilityLabel="Quay lại"
             style={styles.back}
           >
-            <Ionicons name="arrow-back" size={21} color={colors.text} />
+            <Ionicons name="arrow-back" size={20} color={colors.text} />
           </Pressable>
         ) : null}
-        <View style={{ flex: 1, gap: 2 }}>
-          {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
-          <Text style={styles.pageTitle}>{title}</Text>
-          {description ? <Text style={styles.description}>{description}</Text> : null}
+        <View style={{ flex: 1, gap: 1 }}>
+          <Text style={styles.pageTitle} numberOfLines={1}>
+            {title}
+          </Text>
+          {description ? (
+            <Text style={styles.description} numberOfLines={1}>
+              {description}
+            </Text>
+          ) : null}
         </View>
         {action}
       </View>
@@ -457,20 +470,20 @@ export const styles = StyleSheet.create({
     borderRadius: radius.card,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 16,
+    padding: 15,
     shadowColor: colors.shadow,
-    shadowOpacity: 0.045,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
     elevation: 2,
   },
   tileGrid: {
     justifyContent: 'space-between',
-    minHeight: 132,
+    minHeight: 114,
   },
   tileCompact: {
-    paddingVertical: 15,
-    paddingHorizontal: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 15,
   },
   tilePressed: {
     opacity: 0.9,
@@ -486,12 +499,12 @@ export const styles = StyleSheet.create({
   tileRowHead: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 13,
   },
   tileIconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 15,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -506,74 +519,85 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 2,
     paddingHorizontal: 9,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: radius.pill,
   },
   tileBadgeText: {
+    fontFamily: fonts.semibold,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   tileArrow: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: colors.slateSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
   tileTitle: {
+    fontFamily: fonts.bold,
     color: colors.text,
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: 15,
+    lineHeight: 20,
     fontWeight: '700',
     letterSpacing: -0.2,
   },
   tileSubtitle: {
+    fontFamily: fonts.regular,
     color: colors.muted,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12.5,
+    lineHeight: 17,
   },
   button: {
-    minHeight: 52,
-    paddingVertical: 13,
+    minHeight: 50,
+    paddingVertical: 12,
     paddingHorizontal: 18,
     borderRadius: radius.button,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
-    gap: 9,
+    gap: 8,
     borderWidth: 1,
     borderColor: 'transparent',
   },
   primary: {
     backgroundColor: colors.primary,
     shadowColor: colors.primary,
-    shadowOpacity: 0.22,
+    shadowOpacity: 0.2,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
     elevation: 2,
   },
   buttonText: {
+    fontFamily: fonts.semibold,
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '600',
     flexShrink: 1,
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: 21,
   },
   ghost: { borderColor: colors.borderStrong, backgroundColor: colors.surface },
   danger: { backgroundColor: colors.error },
   disabled: { backgroundColor: colors.slateSoft, borderColor: colors.border, shadowOpacity: 0 },
-  field: { gap: 7 },
-  label: { color: colors.text, fontSize: 14, fontWeight: '700', marginLeft: 2 },
+  field: { gap: 6 },
+  label: {
+    fontFamily: fonts.semibold,
+    color: colors.text,
+    fontSize: 13.5,
+    fontWeight: '600',
+    marginLeft: 2,
+  },
   inputWrap: { position: 'relative' },
   input: {
-    minHeight: 52,
+    fontFamily: fonts.regular,
+    minHeight: 50,
     backgroundColor: colors.surfaceAlt,
     borderWidth: 1.2,
     borderColor: colors.borderStrong,
     borderRadius: radius.input,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
     fontSize: 15,
     color: colors.text,
   },
@@ -582,11 +606,17 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   inputError: { borderColor: colors.error, backgroundColor: colors.errorSoft },
-  fieldError: { color: colors.error, fontSize: 13, lineHeight: 19, marginLeft: 2 },
+  fieldError: {
+    fontFamily: fonts.regular,
+    color: colors.error,
+    fontSize: 13,
+    lineHeight: 18,
+    marginLeft: 2,
+  },
   trailing: { position: 'absolute', right: 4, top: 4, bottom: 4, justifyContent: 'center' },
   status: {
-    paddingHorizontal: 11,
-    paddingVertical: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: radius.pill,
     borderWidth: 1,
     flexDirection: 'row',
@@ -596,14 +626,14 @@ export const styles = StyleSheet.create({
     flexShrink: 1,
   },
   dot: { width: 7, height: 7, borderRadius: 4 },
-  caption: { fontSize: 13, lineHeight: 20, color: colors.muted },
+  caption: { fontFamily: fonts.regular, fontSize: 13, lineHeight: 19, color: colors.muted },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  header: { gap: 6, marginBottom: 2 },
+  header: { gap: 4, marginBottom: 2 },
   headerTopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   back: {
-    width: 44,
-    height: 44,
-    borderRadius: 16,
+    width: 42,
+    height: 42,
+    borderRadius: 15,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -615,15 +645,34 @@ export const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
   },
   pageTitle: {
+    fontFamily: fonts.bold,
     color: colors.text,
-    fontSize: 25,
-    lineHeight: 32,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '700',
+    letterSpacing: -0.3,
   },
-  heading: { color: colors.text, fontSize: 18, lineHeight: 25, fontWeight: '700' },
-  description: { color: colors.muted, fontSize: 15, lineHeight: 22 },
-  eyebrow: { color: colors.primary, fontSize: 12, fontWeight: '800', letterSpacing: 1.2, textTransform: 'uppercase' },
+  heading: {
+    fontFamily: fonts.bold,
+    color: colors.text,
+    fontSize: 16.5,
+    lineHeight: 23,
+    fontWeight: '700',
+  },
+  description: {
+    fontFamily: fonts.regular,
+    color: colors.muted,
+    fontSize: 13.5,
+    lineHeight: 19,
+  },
+  eyebrow: {
+    fontFamily: fonts.semibold,
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
   notice: {
     flexDirection: 'row',
     gap: 10,
@@ -673,7 +722,13 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  modalTitle: { color: colors.text, fontSize: 20, fontWeight: '800', flex: 1 },
+  modalTitle: {
+    fontFamily: fonts.bold,
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '700',
+    flex: 1,
+  },
   close: {
     width: 42,
     height: 42,

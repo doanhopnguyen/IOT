@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 export const colors = {
   navy: '#0F172A',
   navyMid: '#1E293B',
@@ -43,11 +45,22 @@ export const radius = {
   pill: 999,
 } as const;
 
+const webFamily =
+  "'Be Vietnam Pro', 'BeVietnamPro_400Regular', 'ionicons', 'Ionicons', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+
+export const fonts = {
+  regular: Platform.select({ web: webFamily, default: 'BeVietnamPro_400Regular' }),
+  medium: Platform.select({ web: webFamily, default: 'BeVietnamPro_500Medium' }),
+  semibold: Platform.select({ web: webFamily, default: 'BeVietnamPro_600SemiBold' }),
+  bold: Platform.select({ web: webFamily, default: 'BeVietnamPro_700Bold' }),
+  extrabold: Platform.select({ web: webFamily, default: 'BeVietnamPro_800ExtraBold' }),
+} as const;
+
 export const typography = {
-  title: 28,
-  heading: 20,
-  body: 16,
-  caption: 14,
+  title: 24,
+  heading: 18,
+  body: 15,
+  caption: 13,
 } as const;
 
 export const space = (n: number) => n * 4;

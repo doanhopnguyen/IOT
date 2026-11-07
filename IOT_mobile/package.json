@@ -6,6 +6,7 @@
   },
   "main": "expo-router/entry",
   "dependencies": {
+    "@expo-google-fonts/be-vietnam-pro": "^0.4.1",
     "@expo/vector-icons": "^15.0.2",
     "expo": "~58.0.23",
     "expo-camera": "~58.0.14",

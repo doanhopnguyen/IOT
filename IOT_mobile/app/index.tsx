@@ -55,7 +55,7 @@ import { useNotificationBanner } from '../src/components/EventNotificationProvid
 import { AccessHistory } from '../src/components/AccessHistory';
 import { Alerts } from '../src/components/Alerts';
 import { useConfirm } from '../src/components/ConfirmationProvider';
-import { colors, radius } from '../src/theme/tokens';
+import { colors, fonts, radius } from '../src/theme/tokens';
 import { canManageDoor, canRemoteUnlock, canRemoteLock } from '../src/utils/permissions';
 import { memberContactLabel } from '../src/utils/memberProfileInput';
 import { NewPersonMember } from '../src/components/NewPersonMember';
@@ -839,8 +839,6 @@ function Devices({
     >
       <PageHeader
         title="Thiết bị của tôi"
-        description={`${owned.length} thiết bị thuộc quyền sở hữu`}
-        eyebrow="DANH SÁCH PHẦN CỨNG"
         action={
           <Pressable
             onPress={onAdd}
@@ -955,8 +953,7 @@ function Detail({
       <PageHeader
         back={back}
         title={door.name}
-        description={owner ? 'Chủ sở hữu · Toàn quyền quản trị' : 'Thành viên được chia sẻ'}
-        eyebrow="ĐIỀU KHIỂN & QUẢN LÝ CỬA"
+        description={owner ? 'Chủ cửa' : 'Thành viên'}
       />
       {lifecycleNotice(door.lifecycleStatus) ? (
         <Notice tone="warning">{lifecycleNotice(door.lifecycleStatus)}</Notice>
@@ -1028,10 +1025,7 @@ function Detail({
 
       {owner ? (
         <>
-          <View style={{ gap: 2 }}>
-            <Text style={x.section}>Quản lý cửa</Text>
-            <Text style={x.caption}>Chạm vào nút biểu tượng để mở trang chức năng tương ứng</Text>
-          </View>
+          <Text style={x.section}>Quản lý cửa</Text>
           {door.activationState && door.activationState !== 'ACTIVE' ? (
             <Button
               title="Tiếp tục thiết lập PIN và hiệu chỉnh"
@@ -1046,8 +1040,7 @@ function Detail({
                 icon="people-outline"
                 tone="primary"
                 title="Thành viên"
-                subtitle="Mời người dùng & cấp quyền mở cửa"
-                badge={`${door.members}`}
+                subtitle={`${door.members} người dùng`}
                 onPress={members}
               />
             </View>
@@ -1055,9 +1048,8 @@ function Detail({
               <FeatureTile
                 icon="shield-checkmark-outline"
                 tone="teal"
-                title="Duyệt đăng ký khuôn mặt"
-                subtitle="Xem ảnh mẫu & phê duyệt quyền AI"
-                badge="Xem ảnh"
+                title="Duyệt khuôn mặt"
+                subtitle="Xem ảnh & cấp quyền"
                 onPress={approvals}
               />
             </View>
@@ -1065,9 +1057,8 @@ function Detail({
               <FeatureTile
                 icon="scan-outline"
                 tone="purple"
-                title="Khuôn mặt & xác thực"
-                subtitle="Hồ sơ sinh trắc học cá nhân của bạn"
-                badge="512-D"
+                title="Khuôn mặt AI"
+                subtitle="Mẫu sinh trắc học"
                 onPress={setupFace}
               />
             </View>
@@ -1076,8 +1067,7 @@ function Detail({
                 icon="time-outline"
                 tone="indigo"
                 title="Lịch sử ra vào"
-                subtitle="Nhật ký đóng mở & nguyên nhân từ chối"
-                badge="Nhật ký"
+                subtitle="Nhật ký đóng mở"
                 onPress={history}
               />
             </View>
@@ -1088,8 +1078,7 @@ function Detail({
             icon="settings-outline"
             tone="warning"
             title="Cài đặt thiết bị"
-            subtitle="Thống kê, hẹn giờ, tạm khóa, thẻ/vân tay, servo, PIN, Wi-Fi, camera & reset"
-            badge="9 mục"
+            subtitle="Thống kê, PIN, Wi-Fi & phần cứng"
             onPress={settings}
           />
         </>
@@ -1183,8 +1172,6 @@ function Members({
       <PageHeader
         back={back}
         title="Thành viên"
-        description={`${people.length} thành viên được phân quyền`}
-        eyebrow="PHÂN QUYỀN NGƯỜI DÙNG"
         action={
           <Pressable
             onPress={add}
@@ -1290,7 +1277,6 @@ function AddMemberChoice({
       <PageHeader
         back={back}
         title="Thêm thành viên"
-        description="Chọn hình thức thêm người dùng vào cửa"
       />
       <Pressable
         onPress={chooseApp}
@@ -1521,8 +1507,6 @@ function MemberDetail({
       <PageHeader
         back={back}
         title="Chi tiết thành viên"
-        description={person.name}
-        eyebrow="HỒ SƠ & PHƯƠNG THỨC"
       />
       {feedback ? (
         <Notice tone={feedback.pending ? 'info' : feedback.success ? 'success' : 'error'}>
@@ -1668,8 +1652,6 @@ function Profile({
     >
       <PageHeader
         title="Cá nhân"
-        description="Quản lý thông tin tài khoản và bảo mật sinh trắc học"
-        eyebrow="TÀI KHOẢN CỦA TÔI"
       />
       <Card style={x.profile}>
         <View style={x.profileAvatar}>
@@ -1697,7 +1679,7 @@ function Profile({
         icon="person-outline"
         tone="primary"
         title="Thông tin cá nhân"
-        subtitle="Cập nhật họ tên, email và số điện thoại liên hệ"
+        subtitle="Họ tên, email & số điện thoại"
         onPress={edit}
       />
       <FeatureTile
@@ -1705,7 +1687,7 @@ function Profile({
         icon="key-outline"
         tone="warning"
         title="Đổi mật khẩu"
-        subtitle="Thay đổi mật khẩu đăng nhập và làm mới phiên bảo mật"
+        subtitle="Cập nhật mật khẩu đăng nhập"
         onPress={password}
       />
       <FeatureTile
@@ -1713,8 +1695,7 @@ function Profile({
         icon="scan-outline"
         tone="purple"
         title="Phương thức xác thực của tôi"
-        subtitle="Quản lý mẫu khuôn mặt AI dùng chung cho các cửa"
-        badge="AI"
+        subtitle="Mẫu khuôn mặt AI dùng chung"
         onPress={verify}
       />
       <SignOutButton logout={logout} />
@@ -1857,8 +1838,9 @@ const x = StyleSheet.create({
     borderColor: '#DBEAFE',
   },
   authSecurityText: {
+    fontFamily: fonts.semibold,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     color: colors.primary,
   },
   authCard: {
@@ -1867,12 +1849,13 @@ const x = StyleSheet.create({
     gap: 16,
   },
   authTitle: {
+    fontFamily: fonts.bold,
     color: colors.text,
-    fontSize: 26,
-    lineHeight: 34,
-    fontWeight: '800',
+    fontSize: 24,
+    lineHeight: 32,
+    fontWeight: '700',
     textAlign: 'center',
-    letterSpacing: -0.5,
+    letterSpacing: -0.4,
   },
   authSwitch: {
     flexDirection: 'row',
@@ -1880,17 +1863,17 @@ const x = StyleSheet.create({
     flexWrap: 'wrap',
     alignItems: 'center',
   },
-  title: { color: colors.text, fontSize: 27, fontWeight: '800', letterSpacing: -0.7 },
-  eyebrow: { color: colors.success, fontSize: 14, letterSpacing: 1.5, fontWeight: '700' },
-  sub: { color: colors.muted, fontSize: 15, lineHeight: 21 },
-  label: { color: colors.text, fontSize: 15, fontWeight: '600' },
-  link: { color: colors.primary, textAlign: 'center', fontSize: 14, fontWeight: '800' },
+  title: { fontFamily: fonts.bold, color: colors.text, fontSize: 24, fontWeight: '700', letterSpacing: -0.5 },
+  eyebrow: { fontFamily: fonts.semibold, color: colors.success, fontSize: 13, letterSpacing: 1, fontWeight: '600' },
+  sub: { fontFamily: fonts.regular, color: colors.muted, fontSize: 14, lineHeight: 20 },
+  label: { fontFamily: fonts.semibold, color: colors.text, fontSize: 14, fontWeight: '600' },
+  link: { fontFamily: fonts.bold, color: colors.primary, textAlign: 'center', fontSize: 14, fontWeight: '700' },
   eye: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   iconButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 15,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -1900,8 +1883,8 @@ const x = StyleSheet.create({
   },
   bellDot: {
     position: 'absolute',
-    top: 11,
-    right: 11,
+    top: 10,
+    right: 10,
     width: 8,
     height: 8,
     borderRadius: 4,
@@ -1912,11 +1895,11 @@ const x = StyleSheet.create({
   heroSummaryCard: {
     backgroundColor: colors.navy,
     borderRadius: radius.hero,
-    padding: 22,
-    gap: 18,
+    padding: 20,
+    gap: 16,
     shadowColor: colors.navy,
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
     elevation: 4,
   },
@@ -1942,9 +1925,10 @@ const x = StyleSheet.create({
     backgroundColor: '#34D399',
   },
   heroBadgeText: {
+    fontFamily: fonts.semibold,
     color: '#E2E8F0',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   heroAddChip: {
     flexDirection: 'row',
@@ -1956,9 +1940,10 @@ const x = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   heroAddChipText: {
+    fontFamily: fonts.semibold,
     color: '#fff',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   summaryStats: {
     flexDirection: 'row',
@@ -1971,9 +1956,9 @@ const x = StyleSheet.create({
     alignItems: 'center',
     gap: 2,
   },
-  big: { color: '#FFFFFF', fontSize: 34, fontWeight: '800', letterSpacing: -0.8 },
-  summaryCaption: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
-  statDivider: { height: 44, width: 1, backgroundColor: 'rgba(255,255,255,0.16)' },
+  big: { fontFamily: fonts.extrabold, color: '#FFFFFF', fontSize: 32, fontWeight: '800', letterSpacing: -0.6 },
+  summaryCaption: { fontFamily: fonts.medium, color: '#94A3B8', fontSize: 13.5, fontWeight: '500' },
+  statDivider: { height: 42, width: 1, backgroundColor: 'rgba(255,255,255,0.16)' },
   softAddPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1984,18 +1969,19 @@ const x = StyleSheet.create({
     backgroundColor: colors.primarySoft,
   },
   section: {
+    fontFamily: fonts.bold,
     color: colors.text,
-    fontSize: 19,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-    marginTop: 4,
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    marginTop: 2,
   },
   doorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
   door: { gap: 14, borderRadius: radius.card },
   doorIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
+    width: 46,
+    height: 46,
+    borderRadius: 15,
     backgroundColor: colors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2014,13 +2000,13 @@ const x = StyleSheet.create({
     gap: 8,
   },
   disabledMessage: { flexDirection: 'row', gap: 9, alignItems: 'center', paddingVertical: 4 },
-  cardTitle: { color: colors.text, fontSize: 17, fontWeight: '800', lineHeight: 24 },
+  cardTitle: { fontFamily: fonts.bold, color: colors.text, fontSize: 16, fontWeight: '700', lineHeight: 22 },
   hero: { gap: 16, borderRadius: radius.hero },
   heroHeading: { flexDirection: 'row', gap: 15, alignItems: 'center' },
   largeLock: {
-    width: 60,
-    height: 60,
-    borderRadius: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.navy,
@@ -2035,9 +2021,9 @@ const x = StyleSheet.create({
   },
   choice: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   choiceIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
+    width: 46,
+    height: 46,
+    borderRadius: 15,
     backgroundColor: colors.primarySoft,
     justifyContent: 'center',
     alignItems: 'center',
@@ -2045,20 +2031,20 @@ const x = StyleSheet.create({
   accountFound: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   member: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 },
   avatar: {
-    width: 46,
-    height: 46,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 15,
     backgroundColor: colors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { color: colors.primary, fontWeight: '800', fontSize: 17 },
-  caption: { fontSize: 13, color: colors.muted, lineHeight: 19 },
+  avatarText: { fontFamily: fonts.bold, color: colors.primary, fontWeight: '700', fontSize: 16 },
+  caption: { fontFamily: fonts.regular, fontSize: 13, color: colors.muted, lineHeight: 19 },
   filters: { flexDirection: 'row', gap: 9, flexWrap: 'wrap' },
   filterChip: {
-    minHeight: 42,
-    paddingHorizontal: 16,
-    paddingVertical: 9,
+    minHeight: 40,
+    paddingHorizontal: 15,
+    paddingVertical: 8,
     borderRadius: radius.pill,
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -2066,19 +2052,19 @@ const x = StyleSheet.create({
     justifyContent: 'center',
   },
   filterSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
-  filterActiveText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  filterActiveText: { fontFamily: fonts.semibold, color: '#fff', fontSize: 13, fontWeight: '600' },
   profile: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   profileAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 20,
+    width: 52,
+    height: 52,
+    borderRadius: 18,
     flexShrink: 0,
     backgroundColor: colors.navy,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  profileName: { color: colors.text, fontSize: 19, lineHeight: 26, fontWeight: '800' },
-  profileInitial: { color: '#fff', fontSize: 22, lineHeight: 28, fontWeight: '800' },
+  profileName: { fontFamily: fonts.bold, color: colors.text, fontSize: 17.5, lineHeight: 24, fontWeight: '700' },
+  profileInitial: { fontFamily: fonts.bold, color: '#fff', fontSize: 20, lineHeight: 26, fontWeight: '700' },
   segmentedBar: {
     flexDirection: 'row',
     backgroundColor: colors.surface,
@@ -2102,13 +2088,15 @@ const x = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   segmentText: {
+    fontFamily: fonts.semibold,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     color: colors.muted,
   },
   segmentTextActive: {
+    fontFamily: fonts.bold,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#fff',
   },
   unlockSymbol: {

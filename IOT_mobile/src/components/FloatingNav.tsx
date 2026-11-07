@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import { Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, radius } from '../theme/tokens';
+import { colors, fonts, radius } from '../theme/tokens';
 
 export type TabKey = 'home' | 'devices' | 'invitations' | 'profile';
 const items: {
@@ -98,8 +98,19 @@ const s = StyleSheet.create({
   item: { flex: 1, minHeight: 60, gap: 4, alignItems: 'center', justifyContent: 'center' },
   tabIcon: { paddingHorizontal: 14, paddingVertical: 5, borderRadius: radius.pill },
   selected: { backgroundColor: colors.primarySoft },
-  label: { fontSize: 12, lineHeight: 16, color: colors.muted, textAlign: 'center', fontWeight: '600' },
-  labelSelected: { color: colors.primary, fontWeight: '800' },
+  label: {
+    fontFamily: fonts.semibold,
+    fontSize: 11.5,
+    lineHeight: 15,
+    color: colors.muted,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  labelSelected: {
+    fontFamily: fonts.bold,
+    color: colors.primary,
+    fontWeight: '700',
+  },
   add: {
     height: 52,
     width: 52,

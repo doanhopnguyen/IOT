@@ -6,7 +6,7 @@ import { request } from '../services/api/client';
 import { Badge, Button, Card, FeatureTile, Notice, PageHeader, styles as s } from './ui';
 import type { InventoryDevice } from './ActivationWizard';
 import { FactoryReset } from './FactoryReset';
-import { colors, radius } from '../theme/tokens';
+import { colors, fonts, radius } from '../theme/tokens';
 import { CameraNodeSettings } from './CameraNodeSettings';
 import { DeviceSetup } from './DeviceSetup';
 import { OwnerCredentials } from './OwnerCredentials';
@@ -29,57 +29,37 @@ export type SettingsSection =
 
 const sectionMeta: Record<
   Exclude<SettingsSection, 'hub'>,
-  { title: string; subtitle: string; eyebrow: string }
+  { title: string }
 > = {
   stats: {
     title: 'Thống kê & Báo cáo',
-    subtitle: 'Biểu đồ ra vào 7 ngày, sóng Wi-Fi 24 giờ và xuất tệp CSV',
-    eyebrow: 'THỐNG KÊ HOẠT ĐỘNG',
   },
   'remote-config': {
-    title: 'Hẹn giờ & Phương thức',
-    subtitle: 'Thời gian tự khóa, cảnh báo cửa mở lâu và bật/tắt quyền',
-    eyebrow: 'CẤU HÌNH TỪ XA',
+    title: 'Hẹn giờ & Quyền',
   },
   lockdown: {
-    title: 'Chế độ Tạm khóa (Lockdown)',
-    subtitle: 'Khóa khẩn cấp toàn bộ quyền thành viên, chỉ giữ quyền chủ cửa',
-    eyebrow: 'AN NINH KHẨN CẤP',
+    title: 'Tạm khóa khẩn cấp',
   },
   'owner-credentials': {
     title: 'Thẻ & Vân tay chủ cửa',
-    subtitle: 'Đăng ký và quản lý thẻ NFC/RFID, vân tay của riêng bạn',
-    eyebrow: 'XÁC THỰC CHỦ CỬA',
   },
   servo: {
     title: 'Góc khóa Servo',
-    subtitle: 'Tinh chỉnh góc đóng/mở chốt cơ khí và quay thử trực tiếp',
-    eyebrow: 'CƠ KHÍ & SERVO',
   },
   'pins-calibrate': {
-    title: 'Mã PIN & Hiệu chỉnh',
-    subtitle: 'Đổi PIN mở cửa, PIN quản trị 6 số và hiệu chỉnh cảm biến',
-    eyebrow: 'MÃ PIN & CẢM BIẾN',
+    title: 'Mã PIN & Cảm biến',
   },
   wifi: {
-    title: 'Mạng Wi-Fi của cửa',
-    subtitle: 'Kiểm tra mạng đang lưu và mở cổng kết nối Wi-Fi mới',
-    eyebrow: 'KẾT NỐI MẠNG',
+    title: 'Wi-Fi của cửa',
   },
   'camera-ai': {
     title: 'Camera AI & Laptop',
-    subtitle: 'Mã ghép nối Smart Door AI trên laptop và cấp phát node camera',
-    eyebrow: 'NHẬN DIỆN KHUÔN MẶT',
   },
   'factory-reset': {
     title: 'Khôi phục xuất xưởng',
-    subtitle: 'Xóa toàn bộ dữ liệu người dùng và đưa khóa về mặc định ban đầu',
-    eyebrow: 'QUẢN TRỊ HỆ THỐNG',
   },
   'setup-wizard': {
-    title: 'Tiến độ thiết lập cửa',
-    subtitle: 'Hoàn tất các bước thiết lập PIN, cảm ứng, cảm biến và servo',
-    eyebrow: 'THIẾT LẬP BAN ĐẦU',
+    title: 'Thiết lập ban đầu',
   },
 };
 
@@ -189,8 +169,6 @@ export function OwnerDeviceSettings({
         <PageHeader
           back={() => setSection('hub')}
           title={meta.title}
-          description={meta.subtitle}
-          eyebrow={meta.eyebrow}
         />
         {message ? <Notice tone={failed ? 'error' : 'info'}>{message}</Notice> : null}
         {lifecycleNotice(device?.lifecycleStatus) ? (
@@ -249,8 +227,6 @@ export function OwnerDeviceSettings({
       <PageHeader
         back={back}
         title="Cài đặt cửa"
-        description="Chọn mục chức năng để vào trang cấu hình chi tiết"
-        eyebrow="TRUNG TÂM CẤU HÌNH"
         action={
           <Pressable
             onPress={() => {
@@ -388,17 +364,15 @@ export function OwnerDeviceSettings({
       {device?.unitId && !isResetting ? (
         <>
           <View style={oStyles.groupHeader}>
-            <Text style={oStyles.groupTitle}>Thống kê & Vận hành thông minh</Text>
-            <Text style={s.caption}>Chạm vào từng biểu tượng để mở trang cài đặt chi tiết</Text>
+            <Text style={oStyles.groupTitle}>Vận hành & An ninh</Text>
           </View>
           <View style={oStyles.bentoGrid}>
             <View style={{ width: gridCellWidth }}>
               <FeatureTile
                 icon="bar-chart-outline"
                 tone="indigo"
-                title="Thống kê & CSV"
-                subtitle="Biểu đồ 7 ngày, sóng Wi-Fi & tải báo cáo"
-                badge="7 ngày"
+                title="Thống kê"
+                subtitle="Biểu đồ & xuất CSV"
                 onPress={() => setSection('stats')}
               />
             </View>
@@ -407,8 +381,7 @@ export function OwnerDeviceSettings({
                 icon="timer-outline"
                 tone="primary"
                 title="Hẹn giờ & Quyền"
-                subtitle="Tự động khóa, cảnh báo & công tắc mở cửa"
-                badge="Từ xa"
+                subtitle="Tự khóa & cấp quyền"
                 onPress={() => setSection('remote-config')}
               />
             </View>
@@ -416,9 +389,8 @@ export function OwnerDeviceSettings({
               <FeatureTile
                 icon="shield-half-outline"
                 tone="rose"
-                title="Tạm khóa cửa"
-                subtitle="Khóa khẩn cấp chỉ cho phép chủ cửa"
-                badge="An ninh"
+                title="Tạm khóa"
+                subtitle="Khóa khẩn cấp"
                 onPress={() => setSection('lockdown')}
               />
             </View>
@@ -426,26 +398,23 @@ export function OwnerDeviceSettings({
               <FeatureTile
                 icon="finger-print-outline"
                 tone="teal"
-                title="Thẻ & Vân tay tôi"
-                subtitle="Đăng ký thẻ NFC/RFID & vân tay chủ cửa"
-                badge="Chủ cửa"
+                title="Thẻ & Vân tay"
+                subtitle="Phương thức chủ cửa"
                 onPress={() => setSection('owner-credentials')}
               />
             </View>
           </View>
 
           <View style={oStyles.groupHeader}>
-            <Text style={oStyles.groupTitle}>Phần cứng & Kết nối thiết bị</Text>
-            <Text style={s.caption}>Tinh chỉnh cơ khí, mã PIN, mạng Wi-Fi và Camera AI</Text>
+            <Text style={oStyles.groupTitle}>Phần cứng & Kết nối</Text>
           </View>
           <View style={oStyles.bentoGrid}>
             <View style={{ width: gridCellWidth }}>
               <FeatureTile
                 icon="options-outline"
                 tone="purple"
-                title="Góc khóa Servo"
-                subtitle="Chỉnh góc đóng/mở chốt & quay thử"
-                badge="180°/360°"
+                title="Góc Servo"
+                subtitle="Chỉnh chốt cơ khí"
                 onPress={() => setSection('servo')}
               />
             </View>
@@ -453,9 +422,8 @@ export function OwnerDeviceSettings({
               <FeatureTile
                 icon="keypad-outline"
                 tone="warning"
-                title="Mã PIN & Cảm biến"
-                subtitle="Đổi 2 mã PIN 6 số & hiệu chỉnh lại"
-                badge="6 số"
+                title="PIN & Cảm biến"
+                subtitle="Đổi PIN & hiệu chỉnh"
                 onPress={() => setSection('pins-calibrate')}
               />
             </View>
@@ -463,9 +431,8 @@ export function OwnerDeviceSettings({
               <FeatureTile
                 icon="wifi-outline"
                 tone="sky"
-                title="Wi-Fi của cửa"
-                subtitle="Xem SSID đang lưu & đổi mạng kết nối"
-                badge="2.4 GHz"
+                title="Wi-Fi"
+                subtitle="Đổi mạng kết nối"
                 onPress={() => setSection('wifi')}
               />
             </View>
@@ -473,9 +440,8 @@ export function OwnerDeviceSettings({
               <FeatureTile
                 icon="videocam-outline"
                 tone="success"
-                title="Camera AI & Laptop"
-                subtitle="Mã ghép nối Laptop AI & node camera"
-                badge="AI"
+                title="Camera AI"
+                subtitle="Ghép nối Laptop"
                 onPress={() => setSection('camera-ai')}
               />
             </View>
@@ -486,15 +452,14 @@ export function OwnerDeviceSettings({
       {device ? (
         <>
           <View style={oStyles.groupHeader}>
-            <Text style={oStyles.groupTitle}>Hệ thống & Khôi phục</Text>
+            <Text style={oStyles.groupTitle}>Hệ thống</Text>
           </View>
           <FeatureTile
             compact
             icon="refresh-circle-outline"
             tone="error"
-            title="Khôi phục mặc định nhà sản xuất"
-            subtitle="Xóa toàn bộ PIN, thẻ, vân tay, thành viên và đưa khóa về trạng thái xuất xưởng"
-            badge="Reset"
+            title="Khôi phục cài đặt gốc"
+            subtitle="Đặt lại mặc định nhà sản xuất"
             onPress={() => setSection('factory-reset')}
           />
         </>
@@ -505,9 +470,9 @@ export function OwnerDeviceSettings({
 
 const oStyles = StyleSheet.create({
   refreshIconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 16,
+    width: 42,
+    height: 42,
+    borderRadius: 15,
     backgroundColor: colors.primarySoft,
     borderWidth: 1,
     borderColor: '#DBEAFE',
@@ -516,50 +481,54 @@ const oStyles = StyleSheet.create({
   },
   heroCard: {
     borderRadius: radius.hero,
-    padding: 20,
-    gap: 16,
+    padding: 18,
+    gap: 14,
     backgroundColor: colors.surface,
   },
   chipEmblem: {
-    width: 50,
-    height: 50,
-    borderRadius: 18,
+    width: 46,
+    height: 46,
+    borderRadius: 16,
     backgroundColor: colors.navy,
     alignItems: 'center',
     justifyContent: 'center',
   },
   heroTitle: {
-    fontSize: 18,
-    fontWeight: '800',
+    fontFamily: fonts.bold,
+    fontSize: 16.5,
+    fontWeight: '700',
     color: colors.text,
   },
   heroUid: {
+    fontFamily: fonts.medium,
     fontSize: 13,
     color: colors.muted,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   sensorGrid: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   sensorBox: {
     flex: 1,
     backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 18,
-    padding: 13,
-    gap: 6,
+    borderRadius: 16,
+    padding: 12,
+    gap: 5,
   },
   sensorLabel: {
+    fontFamily: fonts.medium,
     fontSize: 12,
     color: colors.muted,
-    fontWeight: '600',
+    fontWeight: '500',
     flex: 1,
   },
   sensorValue: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontFamily: fonts.bold,
+    fontSize: 14.5,
+    fontWeight: '700',
     color: colors.text,
   },
   heroFooter: {
@@ -571,21 +540,22 @@ const oStyles = StyleSheet.create({
     backgroundColor: '#FFFBEB',
   },
   bannerIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
   },
   groupHeader: {
     gap: 2,
-    marginTop: 4,
+    marginTop: 2,
   },
   groupTitle: {
-    fontSize: 18,
-    fontWeight: '800',
+    fontFamily: fonts.bold,
+    fontSize: 16.5,
+    fontWeight: '700',
     color: colors.text,
-    letterSpacing: -0.3,
+    letterSpacing: -0.2,
   },
   bentoGrid: {
     flexDirection: 'row',
