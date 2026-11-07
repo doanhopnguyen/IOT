@@ -43,4 +43,22 @@ class AdminDeviceControllerTest {
         assertThatThrownBy(() -> controller.lifecycle(actor, "door-1", new AdminDeviceController.Lifecycle(DeviceLifecycleStatus.REGISTERED)))
                 .isInstanceOf(ResponseStatusException.class);
     }
+    @Test void transitionsRequireAnOwnerForActiveAndProvisioned() {
+        Device d = new Device(); d.setDeviceUid("door-1");
+        when(devices.findByDeviceUidForUpdate("door-1")).thenReturn(Optional.of(d));
+        AccessUnit unit = new AccessUnit(); d.setAccessUnit(unit);
+        for (var status : List.of(DeviceLifecycleStatus.ACTIVE, DeviceLifecycleStatus.PROVISIONED)) {
+            assertThat(com.smartaccess.service.DeviceLifecyclePolicy.allowed(d)).doesNotContain(status);
+            assertThatThrownBy(() -> controller.lifecycle(actor, "door-1", new AdminDeviceController.Lifecycle(status)))
+                    .isInstanceOf(ResponseStatusException.class);
+        }
+        unit.setManager(new Account());
+        controller.lifecycle(actor, "door-1", new AdminDeviceController.Lifecycle(DeviceLifecycleStatus.PROVISIONED));
+        controller.lifecycle(actor, "door-1", new AdminDeviceController.Lifecycle(DeviceLifecycleStatus.ACTIVE));
+        controller.lifecycle(actor, "door-1", new AdminDeviceController.Lifecycle(DeviceLifecycleStatus.MAINTENANCE));
+        controller.lifecycle(actor, "door-1", new AdminDeviceController.Lifecycle(DeviceLifecycleStatus.SUSPENDED));
+        controller.lifecycle(actor, "door-1", new AdminDeviceController.Lifecycle(DeviceLifecycleStatus.DECOMMISSIONED));
+        assertThat(com.smartaccess.service.DeviceLifecyclePolicy.allowed(d)).isEmpty();
+        assertThat(d.getDeviceSecretHash()).isNull();
+    }
 }

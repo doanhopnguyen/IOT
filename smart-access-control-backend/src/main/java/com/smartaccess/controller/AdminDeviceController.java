@@ -58,8 +58,8 @@ public class AdminDeviceController {
         Device device = require(uid);
         if (device.getLifecycleStatus() == DeviceLifecycleStatus.DECOMMISSIONED)
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Thiết bị đã thu hồi vĩnh viễn");
-        if ((request.status() == DeviceLifecycleStatus.ACTIVE || request.status() == DeviceLifecycleStatus.PROVISIONED)
-                && device.getAccessUnit() == null) throw new ResponseStatusException(HttpStatus.CONFLICT, "Thiết bị chưa được gắn cửa");
+        if (!com.smartaccess.service.DeviceLifecyclePolicy.allowed(device).contains(request.status()))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Chuyển trạng thái không hợp lệ; ACTIVE/PROVISIONED cần có chủ cửa");
         device.setLifecycleStatus(request.status());
         if (request.status() == DeviceLifecycleStatus.DECOMMISSIONED) device.setDeviceSecretHash(null);
         audit(actor, device, "DEVICE_" + request.status()); return DeviceResponse.from(device);

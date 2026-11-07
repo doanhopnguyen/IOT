@@ -22,7 +22,8 @@ import static org.springframework.http.HttpStatus.*;
 public class DeploymentService {
     public record InventoryView(Long deviceId,String deviceUid,String factoryMac,String name,Long unitId,
         String owner,String state,long generation,boolean setupReady,Boolean doorClosed,Boolean latchReleased,
-        LocalDateTime lastSeenAt,String operationUuid) {}
+        LocalDateTime lastSeenAt,String operationUuid,DeviceLifecycleStatus lifecycleStatus,
+        List<DeviceLifecycleStatus> allowedTransitions) {}
     public record Issued(InventoryView device,String activationCode,String deviceSecret,String setupSsid,String setupPassword,
                          com.smartaccess.dto.manager.CommandResponse syncCommand) {
         public Issued(InventoryView device,String activationCode,String deviceSecret,String setupSsid,String setupPassword){this(device,activationCode,deviceSecret,setupSsid,setupPassword,null);}
@@ -293,6 +294,7 @@ public class DeploymentService {
         Device d=i.getDevice();AccessUnit u=d.getAccessUnit();
         return new InventoryView(d.getDeviceId(),d.getDeviceUid(),i.getFactoryMac(),d.getDeviceName(),u==null?null:u.getUnitId(),
             u==null||u.getManager()==null?null:u.getManager().getFullName(),i.getState(),i.getGeneration(),i.isSetupReady(),
-            i.getDoorClosed(),i.getLatchReleased(),d.getLastSeenAt(),i.getOperationUuid());
+            i.getDoorClosed(),i.getLatchReleased(),d.getLastSeenAt(),i.getOperationUuid(),d.getLifecycleStatus(),
+            DeviceLifecyclePolicy.allowed(d));
     }
 }
