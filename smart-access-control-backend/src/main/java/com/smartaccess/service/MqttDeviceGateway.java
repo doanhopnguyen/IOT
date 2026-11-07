@@ -27,6 +27,9 @@ public class MqttDeviceGateway implements DeviceGateway {
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
     private MemberRemovalService removals;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    @org.springframework.context.annotation.Lazy
+    private DecommissionNotifier decommissions;
     private static final Logger log = LoggerFactory.getLogger(MqttDeviceGateway.class);
     private static final long RETRY_MS = 10_000;
     // Thiết bị bỏ qua lệnh đã quá thời gian này; lệnh mở cửa dùng UNLOCK_TTL_SEC ngắn hơn.
@@ -151,7 +154,9 @@ public class MqttDeviceGateway implements DeviceGateway {
         if (!java.util.Set.of("face", "ack", "status", "access").contains(kind)) return;
         try {
             JsonNode body = json.readTree(message.getPayload());
-            var device = authentication.authenticate(deviceUid, text(body, "deviceSecret"));
+            com.smartaccess.model.Device device;
+            try { device = authentication.authenticate(deviceUid, text(body, "deviceSecret")); }
+            catch (RuntimeException rejected) { handleRejected(deviceUid, kind, body); return; }
             if (deployment != null && !"status".equals(kind) && !deployment.acceptGeneration(device, body)) return;
             if (device.getDeviceType() == com.smartaccess.model.enumtype.DeviceType.FACE_CAMERA_NODE) {
                 // Node camera chỉ dùng topic face và status (heartbeat); topic khác của nó bị bỏ qua.
@@ -210,6 +215,7 @@ public class MqttDeviceGateway implements DeviceGateway {
                         config.putAll(policies.snapshot(deviceUid));
                     if(removals!=null && device.getAccessUnit()!=null && !stale && !"RESETTING".equals(config.get("activationState")))
                         config.put("memberRemovals",removals.configuration(deviceUid,body.path("generation").asLong()));
+                    config.put("lifecycle", String.valueOf(device.getLifecycleStatus()));
                     config.put("serverTime", java.time.Instant.now().getEpochSecond());
                     config.put("requestId", requestId);
                     reply(deviceUid, "config", config);
@@ -222,6 +228,28 @@ public class MqttDeviceGateway implements DeviceGateway {
         } catch (Exception e) {
             log.warn("Đã từ chối tin nhắn MQTT trên {} ({})", topic, e.getClass().getSimpleName());
         }
+    }
+
+    /**
+     * Bản tin bị từ chối: thiết bị SUSPENDED vẫn nhận cấu hình rút gọn qua heartbeat để chip chặn mở cửa;
+     * thiết bị DECOMMISSIONED được báo lại lệnh thu hồi. Không ghi telemetry, không đồng bộ quyền.
+     */
+    private void handleRejected(String deviceUid, String kind, JsonNode body) {
+        if ("status".equals(kind) && body.path("requestId").asText().length() == 36) {
+            try {
+                authentication.authenticateSuspended(deviceUid, text(body, "deviceSecret"));
+                Map<String, Object> config = new LinkedHashMap<>();
+                long generation = deployment == null ? 0 : deployment.generation(deviceUid);
+                if (generation > 0) config.put("generation", generation);
+                config.put("lifecycle", "SUSPENDED");
+                config.put("serverTime", java.time.Instant.now().getEpochSecond());
+                config.put("requestId", body.path("requestId").asText());
+                reply(deviceUid, "config", config);
+                return;
+            } catch (RuntimeException notSuspended) { /* rơi xuống kiểm tra thu hồi */ }
+        }
+        if (decommissions != null) decommissions.onRejected(deviceUid);
+        log.warn("Đã từ chối tin nhắn MQTT từ thiết bị {} ({})", deviceUid, kind);
     }
 
     private void publishUpdate() {

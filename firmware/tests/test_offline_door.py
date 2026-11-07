@@ -52,6 +52,8 @@ int motorMutex=0;
 bool actuatorReady=true, testConfigured=true;
 bool storageFault=false;
 bool claimed=true,appPinsReady=true,resetPending=false;
+bool openBlocked=false;
+bool connectedOpenBlocked() { return openBlocked; } // admin tạm ngưng / thu hồi
 uint32_t millis() { return 1000; }
 bool configured() { return testConfigured; }
 void xSemaphoreTake(int,int) {}
@@ -129,6 +131,7 @@ int main() {
   claimed=false;assert(!requestOpen());claimed=true;
   appPinsReady=false;assert(!requestOpen());appPinsReady=true;
   resetPending=true;assert(!requestOpen());resetPending=false;
+  openBlocked=true;assert(!requestOpen());openBlocked=false;
   motor.calibrating=true;assert(!requestOpen() && !requestLock());motor.calibrating=false;
   State s;
   assert(!tick(s,0,true) && !s.released);

@@ -46,6 +46,9 @@ public class MemberRemovalService {
         Device d=devices.findFirstByAccessUnit_UnitIdAndDeviceType(unit.getUnitId(),DeviceType.DOOR_CONTROLLER)
                 .orElseThrow(()->new BusinessException(HttpStatus.CONFLICT,"Cửa chưa có bộ điều khiển để xác nhận xóa"));
         d=devices.findByDeviceUidForUpdate(d.getDeviceUid()).orElseThrow();
+        // ACK của cửa không ACTIVE bị từ chối, lệnh sẽ treo mãi và thành viên kẹt ở trạng thái đang xóa.
+        if(d.getLifecycleStatus()!=DeviceLifecycleStatus.ACTIVE)
+            throw new BusinessException(HttpStatus.CONFLICT,"Cửa đang bảo trì hoặc tạm ngưng; chưa xóa thành viên được");
         var item=inventory.findById(d.getDeviceId()).orElse(null);
         if(item!=null && "RESETTING".equals(item.getState()))
             throw new BusinessException(HttpStatus.CONFLICT,"Chờ cửa reset xong trước khi xóa thành viên");

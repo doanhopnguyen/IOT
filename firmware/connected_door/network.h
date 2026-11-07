@@ -11,6 +11,7 @@
 #include "../include/product_qr.h"
 #include "../include/product_activation.h"
 #include "../include/door_timing.h"
+#include "../include/door_restriction.h"
 #include "setup_page.h"
 #include "setup_logic.h"
 #include <time.h>
@@ -46,6 +47,10 @@ bool appPinsReady=false;
 uint32_t wifiPermitUntil=0,wifiOfflineSince=0,lastSetupDraw=0;
 uint32_t lastStatusBarDraw=0;
 String setupError;
+// Thu hồi / admin tạm ngưng / chủ cửa tạm khóa. Cờ thu hồi nằm ở namespace riêng mà không hàm reset nào xóa.
+Preferences retirePrefs;bool retirePrefsOpen=false;
+DoorRestriction::Mode restriction=DoorRestriction::NORMAL;
+String ownerCards=",",ownerFingers=",";
 
 String randomId() {
   uint8_t b[16];esp_fill_random(b,16);b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;
@@ -116,6 +121,7 @@ void connectedDrawStatusBar(bool force) {
   }
   text(30,3,wifi?String(rssi)+"dBm":"WiFi OFF",wifi?WHITE:YELLOW);
   text(103,3,service?"NET":"NO SERVER",service?GREEN:YELLOW);
+  if(restriction!=DoorRestriction::NORMAL){bool locked=restriction==DoorRestriction::LOCKDOWN;text(187,3,locked?"LOCKED":"SUSPEND",locked?YELLOW:RED);return;}
   text(187,3,local?(wifi&&service?"ONLINE":"OFFLINE"):"SETUP",local?GREEN:YELLOW);
 }
 bool connectedIsEnrolling(){return remoteStage!=0 || !rfidScanUuid.isEmpty();}
@@ -131,16 +137,85 @@ void sendAck(const String &uuid,bool success,const String &message,bool remember
     eventPrefs.putUInt("ackpos",n+1);eventPrefs.remove("started");}
   publishDocument("ack",doc);
 }
-void connectedRecord(const char *method,bool granted,const char *uid,int fingerId) {
+void connectedRecord(const char *method,bool granted,const char *uid,int fingerId,const char *reason) {
   if(!claimed || resetPending || deviceUid.isEmpty())return;
   DynamicJsonDocument doc(512);doc["eventUuid"]=randomId();doc["method"]=method;
   doc["result"]=granted?"GRANTED":"DENIED";time_t now=time(nullptr);doc["occurredAt"]=now>1700000000?now:0;
   if(uid && *uid)doc["rfidUid"]=uid;if(fingerId>=0)doc["templateId"]=fingerId;
+  if(reason && *reason)doc["reason"]=reason; // LOCKDOWN: thẻ/vân tay hợp lệ bị chặn, không tính là xác thực sai
   uint16_t next=(queueTail+1)%64;
   if(next==queueHead){eventPrefs.remove(("ev"+String(queueHead)).c_str());queueHead=(queueHead+1)%64;eventPrefs.putUShort("head",queueHead);droppedEvents++;eventPrefs.putUInt("dropped",droppedEvents);}
   String value;serializeJson(doc,value);
   if(!eventPrefs.putString(("ev"+String(queueTail)).c_str(),value)){storageFault=true;return;}
   queueTail=next;eventPrefs.putUShort("tail",queueTail);
+}
+bool openRetirePrefs(){if(!retirePrefsOpen)retirePrefsOpen=retirePrefs.begin("doorretire",false);return retirePrefsOpen;}
+bool connectedRetired(){return openRetirePrefs() && retirePrefs.getBool("retired",false);}
+const char *connectedRestrictionNotice(){
+  if(restriction==DoorRestriction::LOCKDOWN)return "Door locked by owner";
+  if(restriction==DoorRestriction::SUSPENDED)return "Device suspended by admin";
+  if(restriction==DoorRestriction::RETIRED)return "Device retired";
+  return nullptr;
+}
+void setRestriction(DoorRestriction::Mode next){
+  if(next==restriction)return;
+  restriction=next;
+  if(next!=DoorRestriction::RETIRED && !nvs.putUChar("restrict",uint8_t(next)))storageFault=true;
+  lastStatusBarDraw=0;
+  if(screen==HOME)tell(connectedRestrictionNotice()?connectedRestrictionNotice():"PIN / card / fingerprint");
+}
+bool connectedAllowsCard(const String &uid){return DoorRestriction::allowLocal(restriction,ownerCards.indexOf(","+uid+",")>=0);}
+bool connectedAllowsFinger(int id){return DoorRestriction::allowLocal(restriction,ownerFingers.indexOf(","+String(id)+",")>=0);}
+bool connectedAllowsPin(){return DoorRestriction::allowLocal(restriction,false);}
+// Chặn cả lệnh mở từ menu quản trị khi admin tạm ngưng hoặc đã thu hồi; tạm khóa của chủ cửa không chặn ở đây.
+bool connectedOpenBlocked(){return restriction==DoorRestriction::SUSPENDED || restriction==DoorRestriction::RETIRED;}
+void saveOwners(JsonArrayConst cards,JsonArrayConst fingers){
+  String c=",",f=",";
+  for(JsonVariantConst v:cards){String uid=v.as<String>();uid.replace(":","");uid.toUpperCase();if(uid.length()>=8&&uid.length()<=20)c+=uid+",";}
+  for(JsonVariantConst v:fingers){int id=v.as<int>();if(id>0&&id<256)f+=String(id)+",";}
+  if(c!=ownerCards){ownerCards=c;if(!nvs.putString("ownerCards",c))storageFault=true;}
+  if(f!=ownerFingers){ownerFingers=f;if(!nvs.putString("ownerFingers",f))storageFault=true;}
+}
+// Xóa PIN, thẻ, vân tay, Wi-Fi, secret. Gọi lại được: lần khởi động sau tiếp tục nếu mất điện giữa chừng.
+bool retireWipe(){
+  if(!fingerReady)probeSensors();
+  bool ok=fingerReady && finger.emptyDatabase()==FINGERPRINT_OK;
+  ok=nvs.clear() && ok;ok=eventPrefs.clear() && ok;ok=networkPrefs.clear() && ok;ok=factoryPrefs.clear() && ok;
+  return ok;
+}
+void retireDevice(const String &uuid){
+  // Ghi cờ trước mọi thao tác phá hủy.
+  if(!openRetirePrefs() || !retirePrefs.putBool("retired",true))storageFault=true;
+  restriction=DoorRestriction::RETIRED;adminSession=false;remoteStage=0;rfidScanUuid="";networkPage=false;
+  if(actuatorReady){
+    xSemaphoreTake(motorMutex,portMAX_DELAY);
+    motor.door.released=false;motor.door.lockPending=false;motor.calibrating=false;
+    if(motor.enabled && !motor.fault){motor.target=motor.lockAngle;motor.pending=true;}
+    xSemaphoreGive(motorMutex);
+    uint32_t started=millis();
+    while(millis()-started<1500){MotorState m=snapshot();if(!m.pending && !m.pulsing)break;delay(20);}
+    xSemaphoreTake(motorMutex,portMAX_DELAY);motor.enabled=false;motor.pending=false;servo.detach();xSemaphoreGive(motorMutex);
+  }
+  // Đang ở trong callback MQTT: không gọi broker.loop() lồng nhau; publish ghi thẳng ra socket.
+  if(uuid.length()==36){sendAck(uuid,true,"DEVICE_RETIRED",false);delay(200);}
+  retireWipe();
+  broker.disconnect();WiFi.disconnect(true,true);delay(200);ESP.restart();
+}
+// Gọi đầu setup() khi cờ thu hồi đã bật: không Wi-Fi, không cảm biến mở cửa, không bao giờ trả về.
+void connectedRetiredBoot(){
+  restriction=DoorRestriction::RETIRED;
+  nvs.begin("offlinedoor",false);factoryPrefs.begin("doorfactory",false);
+  networkPrefs.begin("doornetwork",false);eventPrefs.begin("doorevents",false);
+  bool wiped=retireWipe();
+  tft.fillScreen(BLACK);
+  text(10,120,"DEVICE RETIRED",RED,2);
+  text(10,150,"Thiet bi da thu hoi",WHITE);
+  text(10,170,"Access disabled permanently",WHITE);
+  Serial.println(wiped?"DEVICE_RETIRED":"DEVICE_RETIRED wipe incomplete; retrying");
+  for(;;){
+    delay(5000);
+    if(!wiped && (wiped=retireWipe()))Serial.println("DEVICE_RETIRED wipe complete");
+  }
 }
 void enableSetupAp() {
   if(setupApActive)return;
@@ -447,11 +522,16 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
   if(incomingTopic==topic("config")) {
     if(doc["requestId"].as<String>()!=requestNonce)return;
     if(doc["serverTime"].as<long long>()>1700000000){timeval tv{(time_t)doc["serverTime"].as<long long>(),0};settimeofday(&tv,nullptr);}
+    const char *lifecycle=doc["lifecycle"]|(const char *)nullptr;
+    // Admin tạm ngưng: bản tin rút gọn, không có quyền. Chặn mọi lượt mở nhưng giữ dữ liệu.
+    if(lifecycle && strcmp(lifecycle,"SUSPENDED")==0){setRestriction(DoorRestriction::fromServer(restriction,lifecycle,false));return;}
     if(doc["generationMismatch"]|false){claimed=false;factoryPrefs.putBool("claimed",false);tell("Generation mismatch - service required");return;}
     if(doc["generation"].as<uint32_t>()!=generation)return;
     if(doc.containsKey("resetCommand")){executeReset(doc["resetCommand"].as<String>(),generation+1);return;}
     claimed=doc["claimed"]|false;factoryPrefs.putBool("claimed",claimed);
     if(!claimed)return;
+    saveOwners(doc["ownerRfid"].as<JsonArrayConst>(),doc["ownerFingerprints"].as<JsonArrayConst>());
+    setRestriction(DoorRestriction::fromServer(restriction,lifecycle,doc["lockdown"]|false));
     if(doc["unlockDurationSec"].is<int>() && doc["doorOpenTimeoutSec"].is<int>()) {
       int seconds=doc["unlockDurationSec"].as<int>(),openSeconds=doc["doorOpenTimeoutSec"].as<int>();
       bool wait=doc["autoLockWaitForClose"]|true;
@@ -476,6 +556,9 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
   }
   if(incomingTopic!=topic("cmd"))return;
   String uuid=doc["commandUuid"]|"",type=doc["commandType"]|"";
+  // Thu hồi: chỉ backend ghi được topic cmd (ACL) và chỉ gửi cho thiết bị đã thu hồi. Bỏ qua generation/TTL
+  // vì chip cắm lại sau nhiều ngày có thể chưa có giờ hoặc lệch generation.
+  if(type=="DEVICE_DECOMMISSION"){retireDevice(uuid);return;}
   if(uuid.length()!=36||doc["data"]["generation"].as<uint32_t>()!=generation){sendAck(uuid,false,"GENERATION_MISMATCH",false);return;}
   if(type=="MEMBER_REMOVE") {
     time_t now=time(nullptr);long long issued=doc["issuedAt"]|0LL;int ttl=doc["ttlSec"]|0;
@@ -497,6 +580,11 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
     sendAck(uuid,saved,saved?"ACTIVATION_QR_SAVED":result==ProductActivation::STALE?"STALE_ACTIVATION_CODE":result==ProductActivation::INVALID?"INVALID_ACTIVATION_CODE":"ACTIVATION_QR_STORAGE_FAILED");return;
   }
   if(!claimed || resetPending){sendAck(uuid,false,"NOT_READY");return;}
+  if(type=="DOOR_LOCKDOWN" || type=="DOOR_RELEASE") {
+    if(restriction==DoorRestriction::SUSPENDED){sendAck(uuid,false,"DEVICE_SUSPENDED");return;}
+    bool on=type=="DOOR_LOCKDOWN";setRestriction(on?DoorRestriction::LOCKDOWN:DoorRestriction::NORMAL);
+    lastStatusAt=millis()-5001;sendAck(uuid,!storageFault,on?"LOCKDOWN_ON":"LOCKDOWN_OFF");return;
+  }
   if(type=="WIFI_SETUP") {
     if(screen==SERVO_CAL || snapshot().calibrating){sendAck(uuid,false,"DEVICE_BUSY");return;}
     wifiPermitUntil=0;connectedNetworkPage();sendAck(uuid,true,"WIFI_SETUP_ENABLED");return;
@@ -554,6 +642,7 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
     rfidScanUuid=uuid;rfidScanStarted=millis();tell("Tap card for mobile registration");return;
   }
   if(type=="DOOR_UNLOCK"){
+    if(!DoorRestriction::allowRemote(restriction)){sendAck(uuid,false,"DEVICE_SUSPENDED");return;}
     int seconds=doc["data"]["durationSec"]|int(snapshot().unlockMs/1000);
     if(!DoorTiming::valid(seconds)){sendAck(uuid,false,"INVALID_UNLOCK_DURATION");return;}
     bool accepted=requestOpen(uint32_t(seconds)*1000);
@@ -589,6 +678,8 @@ void connectedSetup() {
   if(!json.isEmpty() && !deserializeJson(doc,json))loadFactoryJson(doc);
   generation=factoryPrefs.getUInt("gen",1);claimed=factoryPrefs.getBool("claimed",false);
   appPinsReady=nvs.getBool("appPins",false);applyMotorConfig();
+  restriction=DoorRestriction::decode(nvs.getUChar("restrict",0));
+  ownerCards=nvs.getString("ownerCards",",");ownerFingers=nvs.getString("ownerFingers",",");
   uint32_t timing=DoorTiming::load(nvs);
   if(actuatorReady){xSemaphoreTake(motorMutex,portMAX_DELAY);motor.unlockMs=(timing&255)*1000;motor.heldOpenMs=DoorTiming::openSeconds(timing)*1000;motor.waitForClose=DoorTiming::waitForClose(timing);xSemaphoreGive(motorMutex);}
   resetReceipt=factoryPrefs.getString("resetAck","");resetIntent=factoryPrefs.getString("resetIntent","");

@@ -15,6 +15,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class FaceRecognitionService {
     @org.springframework.beans.factory.annotation.Autowired(required=false)
     private FaceEnrollmentService faceEnrollment;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    @org.springframework.context.annotation.Lazy
+    private LockdownService lockdown;
     public static final String MODEL = "buffalo_l/w600k_r50:v1";
     private final DeviceRepository devices;
     private final CredentialRepository credentials;
@@ -90,6 +93,9 @@ public class FaceRecognitionService {
                 if (commands.existsByDevice_DeviceIdAndCommandTypeAndStatusIn(controller.getDeviceId(),
                         RemoteUnlockService.DOOR_UNLOCK, List.of(CommandStatus.PENDING, CommandStatus.SENT))) {
                     save(entry, AccessResult.DENIED, "DOOR_BUSY"); return;
+                }
+                if (!owner && lockdown != null && lockdown.isLockedDown(controller)) {
+                    save(entry, AccessResult.DENIED, "LOCKDOWN"); return;
                 }
                 save(entry, AccessResult.ERROR, "WAITING_ACK");
                 Map<String, Object> payload = Map.of("unitId", unit.getUnitId(), "accessMethod", "FACE",

@@ -49,7 +49,7 @@ public class AlertRuleService {
     static final long AUTH_WINDOW_SEC = 120;
     static final long AUTH_LIMIT = 5;
     /** Lý do do hệ thống (cửa bận, tắt khuôn mặt, sai model), không phải người thử mở. */
-    static final Set<String> IGNORED_REASONS = Set.of("DOOR_BUSY", "FACE_DISABLED", "MODEL_MISMATCH");
+    static final Set<String> IGNORED_REASONS = Set.of("DOOR_BUSY", "FACE_DISABLED", "MODEL_MISMATCH", "LOCKDOWN");
     private static final List<AccessMethod> PIN_METHODS = List.of(AccessMethod.PIN);
     private static final List<AccessMethod> AUTH_METHODS =
             List.of(AccessMethod.FINGERPRINT, AccessMethod.RFID, AccessMethod.FACE);

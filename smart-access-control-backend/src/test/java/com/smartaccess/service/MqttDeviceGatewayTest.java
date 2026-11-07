@@ -130,4 +130,54 @@ class MqttDeviceGatewayTest {
             org.assertj.core.api.Assertions.assertThat(message.isRetained()).isFalse();
         }
     }
+
+    org.eclipse.paho.client.mqttv3.MqttClient connectedClient() throws Exception {
+        var client = mock(org.eclipse.paho.client.mqttv3.MqttClient.class);
+        when(client.isConnected()).thenReturn(true);
+        var field = MqttDeviceGateway.class.getDeclaredField("client"); field.setAccessible(true); field.set(gateway, client);
+        return client;
+    }
+    com.fasterxml.jackson.databind.JsonNode published(org.eclipse.paho.client.mqttv3.MqttClient client, String topic) throws Exception {
+        var capture = org.mockito.ArgumentCaptor.forClass(MqttMessage.class);
+        verify(client, timeout(2000)).publish(eq(topic), capture.capture());
+        return new ObjectMapper().readTree(capture.getValue().getPayload());
+    }
+    String status() { return "{\"deviceSecret\":\"s\",\"generation\":1,\"requestId\":\"" + java.util.UUID.randomUUID() + "\"}"; }
+    org.springframework.web.server.ResponseStatusException unauthorized() {
+        return new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test void configReplyCarriesLifecycle() throws Exception {
+        var client = connectedClient();
+        Device door = device(DeviceType.DOOR_CONTROLLER);
+        door.setLifecycleStatus(com.smartaccess.model.enumtype.DeviceLifecycleStatus.ACTIVE);
+        gateway.handle("test/doors/door-1/status", message(status()));
+        org.assertj.core.api.Assertions.assertThat(published(client, "test/doors/door-1/config").path("lifecycle").asText())
+                .isEqualTo("ACTIVE");
+    }
+
+    @Test void suspendedHeartbeatGetsMinimalConfig() throws Exception {
+        var client = connectedClient();
+        when(auth.authenticate(anyString(), anyString())).thenThrow(unauthorized());
+        Device door = new Device(); door.setDeviceType(DeviceType.DOOR_CONTROLLER);
+        door.setLifecycleStatus(com.smartaccess.model.enumtype.DeviceLifecycleStatus.SUSPENDED);
+        when(auth.authenticateSuspended("door-1", "s")).thenReturn(door);
+        gateway.handle("test/doors/door-1/status", message(status()));
+        var config = published(client, "test/doors/door-1/config");
+        org.assertj.core.api.Assertions.assertThat(config.path("lifecycle").asText()).isEqualTo("SUSPENDED");
+        org.assertj.core.api.Assertions.assertThat(config.has("rfid")).isFalse();
+        org.assertj.core.api.Assertions.assertThat(config.path("requestId").asText()).hasSize(36);
+        verify(telemetry, never()).record(any(), any(), anyString());
+        verifyNoInteractions(policies);
+    }
+
+    @Test void rejectedMessageNotifiesDecommission() throws Exception {
+        DecommissionNotifier notifier = mock(DecommissionNotifier.class);
+        var field = MqttDeviceGateway.class.getDeclaredField("decommissions"); field.setAccessible(true); field.set(gateway, notifier);
+        when(auth.authenticate(anyString(), anyString())).thenThrow(unauthorized());
+        when(auth.authenticateSuspended(anyString(), anyString())).thenThrow(unauthorized());
+        gateway.handle("test/doors/door-1/status", message(status()));
+        verify(notifier).onRejected("door-1");
+        verifyNoInteractions(devices, acks, events);
+    }
 }

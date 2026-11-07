@@ -19,10 +19,12 @@ public class RemoteUnlockService {
 
     private final ManagerAccessGuard guard;
     private final DeviceCommandService commands;
+    private final LockdownService lockdown;
 
-    public RemoteUnlockService(ManagerAccessGuard guard, DeviceCommandService commands) {
+    public RemoteUnlockService(ManagerAccessGuard guard, DeviceCommandService commands, LockdownService lockdown) {
         this.guard = guard;
         this.commands = commands;
+        this.lockdown = lockdown;
     }
 
     @Transactional
@@ -32,6 +34,9 @@ public class RemoteUnlockService {
             throw new BusinessException(HttpStatus.CONFLICT, "Cửa này đang tắt chức năng mở từ xa");
         }
         Device device = guard.requireReadyController(unitId);
+        boolean owner = unit.getManager() != null && unit.getManager().getAccountId().equals(managerId);
+        if (!owner && lockdown.isLockedDown(device))
+            throw new BusinessException(HttpStatus.CONFLICT, "Cửa đang tạm khóa; chỉ chủ cửa mở được");
 
         Map<String, Object> payload = Map.of("unitId", unitId);
         Map<String, Object> wireData = Map.of(

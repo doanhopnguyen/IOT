@@ -86,6 +86,8 @@ public class AccessEventService {
             entry.setOccurredAt(LocalDateTime.ofInstant(java.time.Instant.ofEpochSecond(epoch), ZONE));
         }
         if (result == AccessResult.DENIED) reasons.add("LOCAL_ACCESS_DENIED");
+        // Chip từ chối thẻ/vân tay hợp lệ vì chủ cửa tạm khóa: không phải xác thực sai.
+        if (result == AccessResult.DENIED && "LOCKDOWN".equals(event.path("reason").asText())) reasons.add("LOCKDOWN");
         if (credential != null) { entry.setCredential(credential); entry.setAccount(credential.getAccount()); }
         else if (method != AccessMethod.PIN && result == AccessResult.GRANTED) reasons.add("OFFLINE_CREDENTIAL_CHANGED");
         entry.setReasonCode(reasons.isEmpty() ? null : String.join(",", reasons));

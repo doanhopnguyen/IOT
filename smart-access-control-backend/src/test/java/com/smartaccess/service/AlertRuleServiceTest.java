@@ -175,6 +175,12 @@ class AlertRuleServiceTest {
         assertThat(e.getMessage()).isEqualTo("Cửa Cửa chính: nhập sai PIN 5 lần trong 5 phút, nghi có người dò mã");
     }
 
+    @Test void lockdownRefusalsAreNotFailedAuthentication() {
+        attempts(AccessMethod.RFID, "LOCAL_ACCESS_DENIED,LOCKDOWN", 5);
+        attempts(AccessMethod.FACE, "LOCKDOWN", 5);
+        assertThat(service.evaluate(now)).isZero();
+    }
+
     @Test void mixedAuthFailuresRaiseOneCriticalWithBreakdown() {
         attempts(AccessMethod.FINGERPRINT, "LOCAL_ACCESS_DENIED", 2);
         attempts(AccessMethod.RFID, "LOCAL_ACCESS_DENIED", 3);

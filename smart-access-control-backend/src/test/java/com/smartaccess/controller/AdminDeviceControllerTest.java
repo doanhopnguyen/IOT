@@ -16,7 +16,18 @@ class AdminDeviceControllerTest {
     final AccountRepository accounts = mock(AccountRepository.class);
     final AuditLogRepository audits = mock(AuditLogRepository.class);
     final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
-    final AdminDeviceController controller = new AdminDeviceController(devices, accounts, audits, encoder);
+    final com.smartaccess.service.DecommissionNotifier notifier = mock(com.smartaccess.service.DecommissionNotifier.class);
+    final AdminDeviceController controller = new AdminDeviceController(devices, accounts, audits, encoder, notifier);
+
+    @Test void decommissionNotifiesDeviceOnlyForDecommission() {
+        Device d = new Device(); d.setDeviceUid("door-1"); d.setDeviceSecretHash(encoder.encode("old-secret"));
+        when(devices.findByDeviceUidForUpdate("door-1")).thenReturn(Optional.of(d));
+        controller.lifecycle(actor, "door-1", new AdminDeviceController.Lifecycle(DeviceLifecycleStatus.SUSPENDED));
+        verifyNoInteractions(notifier);
+        controller.lifecycle(actor, "door-1", new AdminDeviceController.Lifecycle(DeviceLifecycleStatus.DECOMMISSIONED));
+        verify(notifier).notifyNow("door-1");
+        assertThat(d.getDeviceSecretHash()).isNull();
+    }
     final AccountPrincipal actor = new AccountPrincipal(1L);
 
     @Test void registrationReturnsOneTimeSecretAndStoresOnlyBcrypt() {

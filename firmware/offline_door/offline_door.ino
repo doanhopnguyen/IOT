@@ -302,7 +302,7 @@ void applyMotorConfig() {
 }
 bool requestOpen(uint32_t durationMs=0) {
 #ifdef CONNECTED_DOOR
-  if (!connectedAccessReady()) return false;
+  if (!connectedAccessReady() || connectedOpenBlocked()) return false;
 #endif
   if (storageFault || !actuatorReady || !configured()) return false;
   xSemaphoreTake(motorMutex,portMAX_DELAY);
@@ -744,6 +744,10 @@ void submitPin() {
       denyPin(); tell(pinBlocked?"Too many attempts - wait 30s":"Incorrect PIN"); return;
     }
     if (!setFailures(0)) { storageError(); return; }
+#ifdef CONNECTED_DOOR
+    // PIN dùng chung: bị chặn khi tạm khóa/tạm ngưng (không tính là nhập sai).
+    if (screen==HOME && !connectedAllowsPin()) { tell(connectedRestrictionNotice()); return; }
+#endif
     if (screen==HOME) { grant("PIN"); return; }
     adminSession=true; adminStarted=adminActivity=millis(); continueSetup(); return;
   }
@@ -818,6 +822,11 @@ void pollRfid() {
 #endif
   int index=cardIndex(card);
   if (screen==HOME) {
+#ifdef CONNECTED_DOOR
+    if (index>=0 && !connectedAllowsCard(cardName(card))) {
+      connectedRecord("RFID",false,cardName(card).c_str(),-1,"LOCKDOWN"); tell(connectedRestrictionNotice()); return;
+    }
+#endif
     bool opened=index>=0?grant("RFID"):false;
 #ifdef CONNECTED_DOOR
     String uid=cardName(card);
@@ -898,6 +907,11 @@ void pollFinger() {
   uint16_t id=finger.fingerID;
   int index=fingerIndex(id);
   if (screen==HOME) {
+#ifdef CONNECTED_DOOR
+    if (index>=0 && !connectedAllowsFinger(id)) {
+      connectedRecord("FINGERPRINT",false,"",id,"LOCKDOWN"); tell(connectedRestrictionNotice()); return;
+    }
+#endif
     bool opened=index>=0?grant("FINGER"):false;
 #ifdef CONNECTED_DOOR
     connectedRecord("FINGERPRINT",opened,"",id);
@@ -1163,6 +1177,9 @@ void setup() {
   tft.setRotation(2); touchReady=touch.begin(SPI); touch.setRotation(0);
   Serial.println("[DISPLAY] rotation=2 (180 degrees), touch calibration=rotation-0");
   fpSerial.begin(FP_BAUD,SERIAL_8N1,FP_RX,FP_TX);
+#ifdef CONNECTED_DOOR
+  if (connectedRetired()) connectedRetiredBoot(); // Thiết bị đã thu hồi: không bao giờ trả về.
+#endif
   loadConfig();
   motor.raw=motor.stable=digitalRead(DOOR_PIN); motor.changedAt=millis();
   motorMutex=xSemaphoreCreateMutex();

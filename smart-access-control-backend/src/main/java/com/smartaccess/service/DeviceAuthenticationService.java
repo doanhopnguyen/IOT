@@ -35,6 +35,18 @@ public class DeviceAuthenticationService {
         return device;
     }
 
+    /** Chỉ dùng cho heartbeat: thiết bị SUSPENDED được nhận cấu hình rút gọn để biết mình bị tạm ngưng. */
+    @Transactional(readOnly = true)
+    public Device authenticateSuspended(String uid, String secret) {
+        if (uid == null || uid.length() > 64 || secret == null || secret.length() < 24 || secret.length() > 128)
+            throw invalid();
+        Device device = devices.findByDeviceUid(uid).orElseThrow(DeviceAuthenticationService::invalid);
+        if (device.getLifecycleStatus() != DeviceLifecycleStatus.SUSPENDED || device.getDeviceSecretHash() == null
+                || !passwords.matches(secret, device.getDeviceSecretHash()))
+            throw invalid();
+        return device;
+    }
+
     private static ResponseStatusException invalid() {
         return new ResponseStatusException(UNAUTHORIZED, "Thông tin xác thực thiết bị không hợp lệ hoặc thiết bị đã bị vô hiệu hóa.");
     }

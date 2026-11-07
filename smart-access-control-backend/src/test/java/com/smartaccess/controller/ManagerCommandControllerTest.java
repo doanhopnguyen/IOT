@@ -10,6 +10,7 @@ import com.smartaccess.repository.AccountRepository;
 import com.smartaccess.security.AccountPrincipal;
 import com.smartaccess.service.DeviceCommandService;
 import com.smartaccess.service.FingerprintService;
+import com.smartaccess.service.LockdownService;
 import com.smartaccess.service.PinService;
 import com.smartaccess.service.RemoteUnlockService;
 import com.smartaccess.service.RfidService;
@@ -46,6 +47,7 @@ class ManagerCommandControllerTest {
     @MockitoBean RemoteUnlockService remoteUnlockService;
     @MockitoBean DeviceCommandService commandService;
     @MockitoBean RfidService rfidService;
+    @MockitoBean LockdownService lockdownService;
     @MockitoBean AccountRepository accounts;
     @Autowired SessionRegistry sessions;
     MockHttpSession session;
@@ -103,5 +105,18 @@ class ManagerCommandControllerTest {
         mvc.perform(post("/api/manager/units/10/unlock").session(session).with(csrf()))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value("Bạn không có quyền quản lý cửa này"));
+    }
+
+    @Test
+    void lockdownEndpointsUseAuthenticatedOwner() throws Exception {
+        when(lockdownService.start(1L, 10L)).thenReturn(pending);
+        when(lockdownService.release(1L, 10L)).thenReturn(pending);
+        when(lockdownService.status(1L, 10L)).thenReturn(java.util.Map.of("lockedDown", true));
+        mvc.perform(post("/api/manager/units/10/lockdown").session(session).with(csrf()))
+                .andExpect(status().isAccepted()).andExpect(jsonPath("$.commandUuid").value("u-1"));
+        mvc.perform(delete("/api/manager/units/10/lockdown").session(session).with(csrf()))
+                .andExpect(status().isAccepted()).andExpect(jsonPath("$.commandUuid").value("u-1"));
+        mvc.perform(get("/api/manager/units/10/lockdown").session(session))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.lockedDown").value(true));
     }
 }

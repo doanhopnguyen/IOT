@@ -1,0 +1,61 @@
+@startuml ST_VongDoiThietBi
+title Vòng đời thiết bị (devices.lifecycle_status)
+hide empty description
+
+[*] --> REGISTERED : Admin tạo UID\n(cấp secret một lần)
+
+state REGISTERED : Chưa có chủ cửa
+state REGISTERED : Được kết nối MQTT (bootstrap)
+state REGISTERED : Không có quyền mở cửa nào
+
+state ACTIVE : Kết nối MQTT, gửi heartbeat
+state ACTIVE : Nhận lệnh từ xa, đồng bộ quyền
+state ACTIVE : Mở cục bộ: PIN, thẻ, vân tay
+state ACTIVE : Được đánh giá cảnh báo tự sinh
+
+state PROVISIONED : Đã gắn cửa (access_unit)
+state PROVISIONED : Được kết nối, chưa nhận lệnh từ xa
+
+state MAINTENANCE : Server từ chối mọi bản tin
+state MAINTENANCE : App thấy cửa offline
+state MAINTENANCE : Firmware vẫn mở cục bộ
+
+state SUSPENDED : Server từ chối bản tin, trừ heartbeat
+state SUSPENDED : Chip từ chối mọi lượt mở, giữ dữ liệu
+state SUSPENDED : (khóa do vi phạm / tạm ngưng)
+
+state DECOMMISSIONED : Xóa secret, mất kết nối vĩnh viễn
+state DECOMMISSIONED : Chip xóa sạch, giữ chốt khóa
+state DECOMMISSIONED : Không khởi động lại được
+state DECOMMISSIONED : Trạng thái cuối, không đổi được
+
+REGISTERED --> ACTIVE : bản tin đầu tiên\nđã xác thực (touch)
+ACTIVE --> PROVISIONED : chủ cửa nhận cửa\n(claim, khi cửa online)
+PROVISIONED --> ACTIVE : bản tin kế tiếp\nđã xác thực (touch)
+ACTIVE --> REGISTERED : reset / chuyển giao\n(xóa dữ liệu cửa)
+
+ACTIVE --> MAINTENANCE : Admin
+ACTIVE --> SUSPENDED : Admin
+MAINTENANCE --> ACTIVE : Admin\n(phải đã gắn cửa)
+SUSPENDED --> ACTIVE : Admin\n(phải đã gắn cửa)
+MAINTENANCE --> SUSPENDED : Admin
+SUSPENDED --> MAINTENANCE : Admin
+
+REGISTERED --> DECOMMISSIONED : Admin
+PROVISIONED --> DECOMMISSIONED : Admin
+ACTIVE --> DECOMMISSIONED : Admin
+MAINTENANCE --> DECOMMISSIONED : Admin
+SUSPENDED --> DECOMMISSIONED : Admin
+DECOMMISSIONED --> [*]
+
+note bottom of MAINTENANCE
+  Server không gửi lệnh/cấu hình mới,
+  nên thành viên bị thu hồi lúc này
+  vẫn mở được cửa cho tới khi ACTIVE lại.
+end note
+note right of ACTIVE
+  Tạm khóa (chủ cửa): trạng thái con của ACTIVE.
+  Chỉ vân tay/thẻ/app của chủ cửa mở được,
+  không tự hết hạn.
+end note
+@enduml

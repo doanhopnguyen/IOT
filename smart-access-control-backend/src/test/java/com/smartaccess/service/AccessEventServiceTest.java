@@ -79,4 +79,14 @@ class AccessEventServiceTest {
                 .isInstanceOf(IllegalArgumentException.class);
         verify(logs, never()).saveAndFlush(any());
     }
+
+    @Test void lockdownRefusalKeepsItsReason() {
+        service.recordLocal("door-1", event("RFID", "DENIED", Instant.now().getEpochSecond()).put("reason", "LOCKDOWN"));
+        assertThat(saved().getReasonCode()).isEqualTo("LOCAL_ACCESS_DENIED,LOCKDOWN");
+    }
+
+    @Test void unknownDeviceReasonIsIgnored() {
+        service.recordLocal("door-1", event("RFID", "DENIED", Instant.now().getEpochSecond()).put("reason", "ANYTHING"));
+        assertThat(saved().getReasonCode()).isEqualTo("LOCAL_ACCESS_DENIED");
+    }
 }

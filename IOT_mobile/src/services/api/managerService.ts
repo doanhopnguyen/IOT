@@ -50,6 +50,10 @@ export const managerService = {
   },
   remoteUnlock(unitId: number) { return request<CommandDto>(`/api/manager/units/${unitId}/unlock`, post()); },
   remoteLock(unitId: number) { return request<CommandDto>(`/api/manager/units/${unitId}/lock`, post()); },
+  // Tạm khóa của chủ cửa: chỉ chủ cửa gọi được, cửa phải online.
+  lockdownStatus(unitId: number) { return request<{ lockedDown: boolean }>(`/api/manager/units/${unitId}/lockdown`); },
+  startLockdown(unitId: number) { return request<CommandDto>(`/api/manager/units/${unitId}/lockdown`, post()); },
+  endLockdown(unitId: number) { return request<CommandDto>(`/api/manager/units/${unitId}/lockdown`, { method: 'DELETE' }); },
   commandStatus(commandUuid: string) { return request<CommandDto>(`/api/manager/commands/${commandUuid}`); },
   // Backend tự đánh TIMEOUT sau 60 giây nếu thiết bị không phản hồi.
   async waitForCommand(command: CommandDto, timeoutMs = 75000, pollMs = 2000) {

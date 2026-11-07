@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Linking, Switch, Text, View } from 'react-native';
+import { Alert, Linking, Switch, Text, View } from 'react-native';
 import { BarChart } from './BarChart';
 import { rssiStrength } from './chartMath';
 import { Button, Card, Input } from './ui';
 import { colors } from '../theme/tokens';
+import { managerService } from '../services/api/managerService';
+import { lockdownCopy } from '../utils/lockdown';
 import { DailyAccessDto, statsService, TelemetryPointDto, UnitSettingsDto, validateSettings } from '../services/api/statsService';
 
 const dayLabel = (iso: string) => { const [, m, d] = iso.split('-'); return `${d}/${m}`; };
@@ -17,11 +19,13 @@ export function DoorDashboard({ unitId }: { unitId: number }) {
   const [unlock, setUnlock] = useState(''); const [openLimit, setOpenLimit] = useState('');
   const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false);
   const [reportedTiming, setReportedTiming] = useState<{ seconds: number; waitForClose: boolean }>();
+  const [lockedDown, setLockedDown] = useState<boolean>();
 
   const load = useCallback(async () => {
     const [d, r, s] = await Promise.all([statsService.dailyAccess(unitId, 7), statsService.telemetry(unitId, 'rssi'), statsService.settings(unitId)]);
     setDays(d); setRssi(r.slice(-24)); setSettings(s);
     setUnlock(String(s.unlockDurationSec)); setOpenLimit(String(s.doorOpenTimeoutSec));
+    setLockedDown((await managerService.lockdownStatus(unitId)).lockedDown);
   }, [unitId]);
   useEffect(() => { void load().catch(e => setMessage(e instanceof Error ? e.message : 'Không tải được thống kê.')); }, [load]);
   useEffect(() => {
@@ -53,6 +57,16 @@ export function DoorDashboard({ unitId }: { unitId: number }) {
   };
 
   const total = days.reduce((a, d) => ({ granted: a.granted + d.granted, denied: a.denied + d.denied }), { granted: 0, denied: 0 });
+  const toggleLockdown = async (next: boolean) => {
+    setBusy(true); setMessage('');
+    try {
+      const result = await managerService.waitForCommand(await (next ? managerService.startLockdown(unitId) : managerService.endLockdown(unitId)));
+      if (result.status !== 'ACKNOWLEDGED') setMessage(result.resultMessage || 'Cửa chưa xác nhận lệnh. Vui lòng thử lại.');
+      setLockedDown((await managerService.lockdownStatus(unitId)).lockedDown);
+    } catch (e) { setMessage(e instanceof Error ? e.message : 'Không gửi được lệnh tạm khóa.'); }
+    finally { setBusy(false); }
+  };
+  const lockdown = lockdownCopy(lockedDown === true);
   const latestRssi = rssi.length ? Number(rssi[rssi.length - 1].value) : undefined;
   const toggles: [keyof UnitSettingsDto, string][] = [['autoLockWaitForClose', 'Chờ cánh cửa đóng trước khi khóa'], ['remoteUnlockEnabled', 'Cho phép mở từ xa'], ['rfidEnabled', 'Cho phép thẻ RFID'], ['fingerprintEnabled', 'Cho phép vân tay']];
 
@@ -84,6 +98,16 @@ export function DoorDashboard({ unitId }: { unitId: number }) {
         <Text>{label}</Text>
         <Switch accessibilityLabel={label} value={key === 'autoLockWaitForClose' ? settings[key] !== false : Boolean(settings[key])} disabled={busy} onValueChange={value => { void save({ [key]: value }); }} />
       </View>) : null}
+    </Card>
+    <Card>
+      <Text style={{ fontWeight: '700', fontSize: 17 }}>Tạm khóa cửa</Text>
+      <Text style={{ color: lockedDown ? colors.error : colors.muted }}>{lockedDown === undefined ? 'Đang tải...' : lockdown.title}</Text>
+      <Text style={{ color: colors.muted }}>Khi tạm khóa, chỉ vân tay, thẻ của bạn và lệnh mở từ app của bạn còn mở được cửa. Không tự hết hạn.</Text>
+      <Button title={lockdown.button} variant={lockedDown ? 'primary' : 'ghost'} disabled={busy || lockedDown === undefined}
+        onPress={() => Alert.alert(lockdown.button, lockdown.confirm, [
+          { text: 'Hủy', style: 'cancel' },
+          { text: lockdown.button, style: lockedDown ? 'default' : 'destructive', onPress: () => { void toggleLockdown(!lockedDown); } },
+        ])} />
     </Card>
     <Card>
       <Text style={{ fontWeight: '700', fontSize: 17 }}>Xuất dữ liệu</Text>

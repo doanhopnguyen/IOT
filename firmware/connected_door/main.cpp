@@ -2,13 +2,20 @@
 #include <Preferences.h>
 #define CONNECTED_DOOR 1
 // Gửi trong heartbeat để backend theo dõi phiên bản phần cứng/firmware của thiết bị.
-#define FIRMWARE_VERSION "1.9.0"
+#define FIRMWARE_VERSION "1.10.0"
 #define HARDWARE_VERSION "esp32s3-n16r8"
 bool connectedAccessReady();
 bool connectedManaged();
 bool connectedIsEnrolling();
 bool connectedCaptureCard(const String &);
-void connectedRecord(const char *,bool,const char *,int);
+void connectedRecord(const char *,bool,const char *,int,const char *reason=nullptr);
+bool connectedRetired();
+void connectedRetiredBoot();
+bool connectedAllowsCard(const String &);
+bool connectedAllowsFinger(int);
+bool connectedAllowsPin();
+bool connectedOpenBlocked();
+const char *connectedRestrictionNotice();
 void connectedSetup();
 void connectedPoll();
 void connectedNetworkPage();

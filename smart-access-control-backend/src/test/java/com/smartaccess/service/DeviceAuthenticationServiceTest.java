@@ -28,4 +28,24 @@ class DeviceAuthenticationServiceTest {
             assertThatThrownBy(() -> service.authenticate("camera", secret)).isInstanceOf(ResponseStatusException.class);
         }
     }
+
+    @Test
+    void onlySuspendedDeviceWithCorrectSecretUsesStatusOnlyPath() {
+        DeviceRepository devices = mock(DeviceRepository.class);
+        var passwords = new BCryptPasswordEncoder(4);
+        var service = new DeviceAuthenticationService(devices, passwords);
+        Device d = new Device(); d.setDeviceUid("door"); d.setAccessUnit(new AccessUnit());
+        String secret = "unique-door-secret-123456789";
+        d.setDeviceSecretHash(passwords.encode(secret));
+        when(devices.findByDeviceUid("door")).thenReturn(Optional.of(d));
+        d.setLifecycleStatus(DeviceLifecycleStatus.SUSPENDED);
+        assertThat(service.authenticateSuspended("door", secret)).isSameAs(d);
+        assertThatThrownBy(() -> service.authenticateSuspended("door", "wrong-door-secret-123456789"))
+                .isInstanceOf(ResponseStatusException.class);
+        for (DeviceLifecycleStatus state : new DeviceLifecycleStatus[]{DeviceLifecycleStatus.ACTIVE,
+                DeviceLifecycleStatus.MAINTENANCE, DeviceLifecycleStatus.DECOMMISSIONED}) {
+            d.setLifecycleStatus(state);
+            assertThatThrownBy(() -> service.authenticateSuspended("door", secret)).isInstanceOf(ResponseStatusException.class);
+        }
+    }
 }

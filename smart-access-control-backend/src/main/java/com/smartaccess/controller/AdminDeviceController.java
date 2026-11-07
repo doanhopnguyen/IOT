@@ -27,8 +27,10 @@ public class AdminDeviceController {
     private final AccountRepository accounts;
     private final AuditLogRepository audits;
     private final PasswordEncoder passwords;
-    public AdminDeviceController(DeviceRepository devices, AccountRepository accounts, AuditLogRepository audits, PasswordEncoder passwords) {
-        this.devices = devices; this.accounts = accounts; this.audits = audits; this.passwords = passwords;
+    private final com.smartaccess.service.DecommissionNotifier decommissions;
+    public AdminDeviceController(DeviceRepository devices, AccountRepository accounts, AuditLogRepository audits, PasswordEncoder passwords,
+                                 com.smartaccess.service.DecommissionNotifier decommissions) {
+        this.devices = devices; this.accounts = accounts; this.audits = audits; this.passwords = passwords; this.decommissions = decommissions;
     }
     @GetMapping @Transactional(readOnly = true)
     public List<DeviceResponse> list() { return devices.findAll().stream().map(DeviceResponse::from).toList(); }
@@ -61,8 +63,21 @@ public class AdminDeviceController {
         if (!com.smartaccess.service.DeviceLifecyclePolicy.allowed(device).contains(request.status()))
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Chuyển trạng thái không hợp lệ; ACTIVE/PROVISIONED cần có chủ cửa");
         device.setLifecycleStatus(request.status());
-        if (request.status() == DeviceLifecycleStatus.DECOMMISSIONED) device.setDeviceSecretHash(null);
+        if (request.status() == DeviceLifecycleStatus.DECOMMISSIONED) {
+            device.setDeviceSecretHash(null);
+            notifyAfterCommit(device.getDeviceUid());
+        }
         audit(actor, device, "DEVICE_" + request.status()); return DeviceResponse.from(device);
+    }
+    // Chỉ báo chip sau khi DB đã ghi thu hồi, để chip không bị xóa dữ liệu khi giao dịch rollback.
+    private void notifyAfterCommit(String uid) {
+        if (!org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            decommissions.notifyNow(uid); return;
+        }
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override public void afterCommit() { decommissions.notifyNow(uid); }
+                });
     }
     private Device require(String uid) {
         return devices.findByDeviceUidForUpdate(uid).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy thiết bị"));

@@ -22,6 +22,9 @@ public interface CommandRepository extends JpaRepository<Command, Long> {
     boolean existsByDevice_DeviceIdAndCommandTypeAndStatusIn(
             Long deviceId, String commandType, Collection<CommandStatus> statuses);
 
+    Optional<Command> findFirstByDevice_DeviceIdAndCommandTypeInAndStatusInOrderByCommandIdDesc(
+            Long deviceId, Collection<String> commandTypes, Collection<CommandStatus> statuses);
+
     List<Command> findByStatusInAndRequestedAtBefore(
             Collection<CommandStatus> statuses, LocalDateTime before);
 

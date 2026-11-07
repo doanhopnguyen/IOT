@@ -8,6 +8,7 @@ import com.smartaccess.dto.manager.CommandResponse;
 import com.smartaccess.security.AccountPrincipal;
 import com.smartaccess.service.DeviceCommandService;
 import com.smartaccess.service.FingerprintService;
+import com.smartaccess.service.LockdownService;
 import com.smartaccess.service.PinService;
 import com.smartaccess.service.RemoteUnlockService;
 import com.smartaccess.service.RfidService;
@@ -23,14 +24,17 @@ public class ManagerCommandController {
     private final RemoteUnlockService remoteUnlockService;
     private final DeviceCommandService commandService;
     private final RfidService rfidService;
+    private final LockdownService lockdownService;
 
     public ManagerCommandController(PinService pinService, FingerprintService fingerprintService,
-            RemoteUnlockService remoteUnlockService, DeviceCommandService commandService, RfidService rfidService) {
+            RemoteUnlockService remoteUnlockService, DeviceCommandService commandService, RfidService rfidService,
+            LockdownService lockdownService) {
         this.pinService = pinService;
         this.fingerprintService = fingerprintService;
         this.remoteUnlockService = remoteUnlockService;
         this.commandService = commandService;
         this.rfidService = rfidService;
+        this.lockdownService = lockdownService;
     }
 
     @PutMapping("/units/{unitId}/pin")
@@ -84,5 +88,22 @@ public class ManagerCommandController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public CommandResponse lock(@AuthenticationPrincipal AccountPrincipal principal,@PathVariable Long unitId) {
         return remoteUnlockService.lock(principal.accountId(),unitId);
+    }
+
+    @GetMapping("/units/{unitId}/lockdown")
+    public java.util.Map<String, Boolean> lockdownStatus(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable Long unitId) {
+        return lockdownService.status(principal.accountId(), unitId);
+    }
+
+    @PostMapping("/units/{unitId}/lockdown")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public CommandResponse startLockdown(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable Long unitId) {
+        return lockdownService.start(principal.accountId(), unitId);
+    }
+
+    @DeleteMapping("/units/{unitId}/lockdown")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public CommandResponse releaseLockdown(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable Long unitId) {
+        return lockdownService.release(principal.accountId(), unitId);
     }
 }

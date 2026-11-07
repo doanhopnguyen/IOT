@@ -648,9 +648,11 @@ stateDiagram-v2
 | REGISTERED | Admin đã đăng ký chip và định danh gốc, chưa đủ điều kiện sử dụng |
 | PROVISIONED | Thiết bị đã gắn với hồ sơ sản phẩm và thông tin cấp phát; chưa tự cấp quyền chủ cửa |
 | ACTIVE | Đã có heartbeat xác thực hợp lệ và đủ điều kiện vận hành; điều khiển còn phải kiểm tra Đã kích hoạt, đúng chủ/quyền và online |
-| MAINTENANCE | Bảo trì có chủ đích; không nhận lệnh điều khiển/đăng ký thông thường. Chính sách thao tác tại chỗ phải thể hiện rõ, không tự mở/đóng cửa |
-| SUSPENDED | Tạm dừng dịch vụ kết nối theo nghiệp vụ, có lý do và thông báo manager; không cho mở từ app/FACE hoặc đăng ký mới |
-| DECOMMISSIONED | Ngừng sử dụng vĩnh viễn trong hệ thống, thu hồi credential dịch vụ; không đồng nghĩa reset để bán/nhận lại |
+| MAINTENANCE | Bảo trì có chủ đích; không nhận lệnh điều khiển/đăng ký thông thường. Chip vẫn mở cục bộ để kỹ thuật viên kiểm tra |
+| SUSPENDED | Tạm dừng dịch vụ theo nghiệp vụ; heartbeat nhận `lifecycle: SUSPENDED`, chip từ chối mọi lượt mở nhưng giữ dữ liệu, ACTIVE lại thì dùng tiếp |
+| DECOMMISSIONED | Ngừng sử dụng vĩnh viễn: chip xóa sạch dữ liệu, giữ chốt khóa và không khởi động lại được (cờ NVS riêng); không đồng nghĩa reset để bán/nhận lại |
+
+Thứ tự ưu tiên khi chip quyết định có mở cửa: **DECOMMISSIONED > SUSPENDED > Tạm khóa của chủ cửa > MAINTENANCE > ACTIVE**. Tạm khóa là trạng thái con của ACTIVE: chỉ vân tay/thẻ và lệnh app của chủ cửa còn mở được, không tự hết hạn.
 
 - Heartbeat đầu tiên không tự chọn chủ cửa, không tự hoàn tất PIN/Wi-Fi và không bỏ qua flow QR. ACTIVE nhưng chưa kích hoạt xong vẫn không được dùng API mở cửa.
 - ACTIVE có thể offline; mất mạng không tự biến thành SUSPENDED hay DECOMMISSIONED. UI hiển thị cả vòng đời và thời điểm heartbeat cuối.
