@@ -46,6 +46,7 @@ public class TelemetryService {
         m.put("servoRange","deg");
         m.put("lockPending","bool");m.put("unlockDurationSec","s");m.put("doorOpenTimeoutSec","s");
         m.put("autoLockWaitForClose","bool");
+        m.put("pinFailureLimit","count");m.put("buzzerAlarm","state");m.put("buzzerOn","bool");
         m.put("servoCommandAngle","deg");m.put("servoDirection","state");
         m.put("droppedEvents", "count"); m.put("rssi", "dBm"); m.put("freeHeap", "bytes"); m.put("uptime", "s");
         return java.util.Collections.unmodifiableMap(m);
@@ -85,9 +86,11 @@ public class TelemetryService {
             // Firmware gửi null khi chưa hiệu chỉnh cảm biến cửa: lưu "unknown" thay vì bỏ qua.
             case "doorClosed" -> node.isNull() ? "unknown" : node.isBoolean() ? String.valueOf(node.asBoolean()) : null;
             case "unlocked" -> node.isNull() ? "unknown" : node.isBoolean() ? String.valueOf(node.asBoolean()) : null;
-            case "fingerReady", "hasDoorPin", "adminPinSet", "touchCalibrated", "doorCalibrated", "servoCalibrated", "lockPending", "autoLockWaitForClose" -> node.isBoolean() ? String.valueOf(node.asBoolean()) : null;
+            case "fingerReady", "hasDoorPin", "adminPinSet", "touchCalibrated", "doorCalibrated", "servoCalibrated", "lockPending", "autoLockWaitForClose", "buzzerOn" -> node.isBoolean() ? String.valueOf(node.asBoolean()) : null;
             case "unlockDurationSec" -> inRange(node,1,30);
             case "doorOpenTimeoutSec" -> inRange(node,10,600);
+            case "pinFailureLimit" -> inRange(node,1,10);
+            case "buzzerAlarm" -> node.isTextual() && node.asText().matches("NONE|PIN_FAILURE|DOOR_OPEN|PIN_AND_DOOR") ? node.asText() : null;
             case "setupStage" -> node.isTextual() && node.asText().matches("WIFI|SERVICE|CLAIM|PINS|TOUCH_[1-4]|DOOR_CLOSED|DOOR_OPEN|SERVO_LOCK|SERVO_OPEN|READY|WIFI_SETTINGS|RESETTING") ? node.asText() : null;
             case "servoDirection" -> node.isTextual() && node.asText().matches("UNKNOWN|INCREASE|DECREASE|HOLD") ? node.asText() : null;
             case "wifiSsid" -> node.isTextual() && node.asText().length()<=32 ? node.asText() : null;

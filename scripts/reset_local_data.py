@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LOCAL = ROOT / ".local"
 TABLES = {"accounts", "access_units", "devices", "device_inventory", "user_access", "credentials",
           "face_requests", "access_logs", "telemetry", "events", "commands", "audit_logs", "door_invitations"}
-OPTIONAL_TABLES = {"event_related_accounts"}  # V5 may not have run on an older local database yet.
+OPTIONAL_TABLES = {"event_related_accounts", "firmware_releases"}  # Allow databases before V5/V6.
 
 
 def clear_database(db):

@@ -39,12 +39,15 @@ export function DoorDashboard({
   const [settings, setSettings] = useState<UnitSettingsDto>();
   const [unlock, setUnlock] = useState('');
   const [openLimit, setOpenLimit] = useState('');
+  const [pinLimit, setPinLimit] = useState('5');
   const [message, setMessage] = useState('');
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reportedTiming, setReportedTiming] = useState<{
     seconds: number;
     waitForClose: boolean;
+    openLimit: number;
+    pinLimit: number;
   }>();
   const [lockedDown, setLockedDown] = useState<boolean>();
 
@@ -60,6 +63,7 @@ export function DoorDashboard({
     setSettings(st);
     setUnlock(String(st.unlockDurationSec));
     setOpenLimit(String(st.doorOpenTimeoutSec));
+    setPinLimit(String(st.pinFailureLimit ?? 5));
     setLockedDown(ld.lockedDown);
   }, [unitId]);
 
@@ -78,20 +82,25 @@ export function DoorDashboard({
       if (running) return;
       running = true;
       try {
-        const [duration, policy] = await Promise.all([
+        const [duration, policy, doorLimit, pinFailures] = await Promise.all([
           statsService.telemetry(unitId, 'unlockDurationSec'),
           statsService.telemetry(unitId, 'autoLockWaitForClose'),
+          statsService.telemetry(unitId, 'doorOpenTimeoutSec'),
+          statsService.telemetry(unitId, 'pinFailureLimit'),
         ]);
         const seconds = Number(duration.at(-1)?.value);
         const wait = policy.at(-1)?.value;
+        const doorTimeout = Number(doorLimit.at(-1)?.value), pinThreshold = Number(pinFailures.at(-1)?.value);
         if (
           active &&
           Number.isInteger(seconds) &&
           seconds >= 1 &&
           seconds <= 30 &&
-          (wait === 'true' || wait === 'false')
+          (wait === 'true' || wait === 'false') &&
+          Number.isInteger(doorTimeout) && doorTimeout >= 10 && doorTimeout <= 600 &&
+          Number.isInteger(pinThreshold) && pinThreshold >= 1 && pinThreshold <= 10
         ) {
-          setReportedTiming({ seconds, waitForClose: wait === 'true' });
+          setReportedTiming({ seconds, waitForClose: wait === 'true', openLimit: doorTimeout, pinLimit: pinThreshold });
         }
       } catch {
         /* Keep requested settings distinct from an unavailable device confirmation. */
@@ -124,6 +133,7 @@ export function DoorDashboard({
       setSettings(st);
       setUnlock(String(st.unlockDurationSec));
       setOpenLimit(String(st.doorOpenTimeoutSec));
+      setPinLimit(String(st.pinFailureLimit ?? 5));
       setMessage('Đã lưu yêu cầu trên máy chủ. Theo dõi xác nhận từ thiết bị bên dưới.');
     } catch (e) {
       setFailed(true);
@@ -220,7 +230,9 @@ export function DoorDashboard({
     reportedTiming &&
     settings &&
     reportedTiming.seconds === settings.unlockDurationSec &&
-    reportedTiming.waitForClose === (settings.autoLockWaitForClose !== false);
+    reportedTiming.waitForClose === (settings.autoLockWaitForClose !== false) &&
+    reportedTiming.openLimit === settings.doorOpenTimeoutSec &&
+    reportedTiming.pinLimit === (settings.pinFailureLimit ?? 5);
 
   return (
     <View style={{ gap: 16 }}>
@@ -368,21 +380,30 @@ export function DoorDashboard({
             keyboardType="numeric"
             placeholder="60"
           />
+          <Input
+            label="Cảnh báo và khóa PIN sau số lần sai (1–10 lần)"
+            value={pinLimit}
+            onChangeText={setPinLimit}
+            keyboardType="numeric"
+            placeholder="5"
+          />
+          <Text style={s.caption}>Còi kêu khi sai PIN chạm ngưỡng; khóa nhập 30 giây. Cửa mở quá thời gian sẽ phát tiếng nhắc đến khi đóng cửa.</Text>
           <Button
-            title="Lưu thời gian"
+            title="Lưu cài đặt"
             icon="save-outline"
             disabled={busy || !settings}
             onPress={() => {
               void save({
                 unlockDurationSec: Number(unlock),
                 doorOpenTimeoutSec: Number(openLimit),
+                pinFailureLimit: Number(pinLimit),
               });
             }}
           />
           <Text style={s.caption}>
             {synced && reportedTiming
-              ? `Đã xác nhận trên cửa: tự khóa sau ${reportedTiming.seconds}s.`
-              : 'Đang chờ thiết bị xác nhận thời gian tự khóa.'}
+              ? `Đã xác nhận trên cửa: tự khóa ${reportedTiming.seconds}s, cảnh báo mở cửa ${reportedTiming.openLimit}s, sai PIN ${reportedTiming.pinLimit} lần.`
+              : 'Đang chờ cửa xác nhận thời gian và ngưỡng cảnh báo. Cửa cần firmware từ 1.14.0 hoặc demo 2.0.1.'}
           </Text>
         </Card>
       ) : null}

@@ -52,6 +52,9 @@ public class AccessUnit {
     @Column(name = "door_open_timeout_sec", nullable = false)
     private Short doorOpenTimeoutSec = (short) 60;
 
+    @Column(name = "pin_failure_limit", nullable = false)
+    private Short pinFailureLimit = (short) 5;
+
     @Column(name = "created_at", nullable = false, columnDefinition = "datetime(3)")
     private LocalDateTime createdAt;
 

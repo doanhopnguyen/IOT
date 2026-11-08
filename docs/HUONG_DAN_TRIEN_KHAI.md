@@ -1,5 +1,7 @@
 # Smart Door — triển khai và chuẩn bị sản phẩm
 
+**Cập nhật 08/11/2026:** admin đã bỏ giao diện đăng ký chip và QR. Cấp phát chip mới bằng CLI theo [mục 7 của hướng dẫn OTA](DEMO_CAP_NHAT_FIRMWARE_TU_XA.md#7-chỉ-dành-cho-cấp-phát-một-chip-mới). Chip bàn giao đã có QR và firmware cơ sở 1.14.0; không đăng ký lại. Các thao tác đăng ký bằng web trong ghi chú triển khai cũ bên dưới đã được thay bằng CLI.
+
 Luồng người mua mới nhất: [LUONG_SAN_PHAM.md](LUONG_SAN_PHAM.md). Người mua không nhập/đổi backend; địa chỉ dịch vụ do bên triển khai cấu hình trước khi phát hành app và nạp sản phẩm.
 
 Mã nguồn gồm `smart-access-control-backend` (Spring Boot/MySQL), `IOT_mobile` (Expo, dùng chung cho User/Manager), `admin-web` (đóng gói vào backend), `firmware/connected_door` (ESP32-S3) và `face-node` (camera chạy trên máy tính).

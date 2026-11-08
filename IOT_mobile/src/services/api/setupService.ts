@@ -28,14 +28,14 @@ export function validateSetupPins(pins: SetupPins): string | null {
   if (pins.pin === pins.adminPin) return 'PIN mở cửa và PIN quản trị cần khác nhau.';
   return null;
 }
-export type SetupPage = 'PINS' | 'TOUCH' | 'DOOR_CLOSED' | 'DOOR_OPEN' | 'SERVO_LOCK' | 'SERVO_OPEN' | 'VERIFY' | 'COMPLETE';
+export type SetupPage = 'PINS' | 'TOUCH' | 'DOOR_CLOSED' | 'DOOR_OPEN' | 'VERIFY' | 'COMPLETE';
 export function setupPage(status: SetupStatus, pinsAcknowledged = false): SetupPage {
   if ((!status.doorPinSet || !status.adminPinSet) && !pinsAcknowledged) return 'PINS';
   if (!status.touchCalibrated || status.stage.startsWith('TOUCH_')) return 'TOUCH';
   if (status.stage === 'DOOR_OPEN') return 'DOOR_OPEN';
   if (!status.doorCalibrated) return 'DOOR_CLOSED';
-  if (status.stage === 'SERVO_OPEN') return 'SERVO_OPEN';
-  if (!status.servoCalibrated) return 'SERVO_LOCK';
+  // Servo adjustment is an optional settings page, never an onboarding step.
+  // Wait for the device to persist its saved/default angles before completing.
   return status.ready ? 'COMPLETE' : 'VERIFY';
 }
 export function setupInstruction(status: SetupStatus): string {
@@ -48,8 +48,6 @@ export function setupInstruction(status: SetupStatus): string {
       : `Trên màn hình cửa, giữ ngón tay tại dấu cộng số ${point}, chờ báo đã nhận rồi nhấc ra. Không chạm vào màn hình điện thoại để hiệu chỉnh.`;
   }
   if (status.stage === 'DOOR_OPEN') return 'Mở cánh cửa hoặc đưa nam châm ra xa cảm biến. Giữ ổn định rồi bấm CONFIRM STATE trên màn hình cửa.';
-  if (status.stage === 'SERVO_LOCK') return 'Đóng cánh cửa. Trên chip, nhích LOCK bằng ±1° hoặc ±5°; servo quay ngay theo góc vừa chỉnh. Quan sát chốt vào đúng vị trí khóa, chờ servo dừng rồi bấm CONFIRM LOCK. TEST LOCK POSITION cho phép thử lại góc hiện tại.';
-  if (status.stage === 'SERVO_OPEN') return 'Trên chip, nhích OPEN bằng ±1° hoặc ±5°; servo quay ngay. Quan sát chốt nhả đúng vị trí, chờ servo dừng rồi bấm CONFIRM OPEN / FINISH để lưu cả hai góc. Chiều quay nhìn thực tế phụ thuộc cách lắp servo.';
   if (!status.doorCalibrated) return 'Đóng cánh cửa, đặt nam châm đúng vị trí cảm biến. Chờ ổn định rồi bấm CONFIRM STATE trên màn hình cửa; sau đó làm theo bước mở cửa.';
   return 'Đang chờ cửa báo kết quả. Giữ nguồn ổn định và làm theo hướng dẫn trên màn hình cửa.';
 }

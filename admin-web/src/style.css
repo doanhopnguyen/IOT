@@ -32,6 +32,7 @@ body {
 }
 button,
 input,
+textarea,
 select {
   font: inherit;
 }
@@ -119,6 +120,7 @@ a:focus-visible,
   padding: 0;
 }
 input,
+textarea,
 select {
   width: 100%;
   min-height: 52px;
@@ -135,6 +137,7 @@ input::placeholder {
   opacity: 1;
 }
 input:focus,
+textarea:focus,
 select:focus {
   outline: 2px solid var(--blue);
   outline-offset: 1px;

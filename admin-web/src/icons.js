@@ -1,4 +1,5 @@
 const paths = {
+  upload: '<path d="M12 16V3m-5 5 5-5 5 5M4 14v6h16v-6"/>',
   'brand-mark':
     '<g fill="currentColor" stroke="none"><path d="M20 3H8L2 9l6 6h4L6 9l3-3h8Z"/><path d="M4 21h12l6-6-6-6h-4l6 6-3 3H7Z"/></g>',
   shield: '<path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6l-8-3Z"/><path d="m8 12 3 3 5-6"/>',

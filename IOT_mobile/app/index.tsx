@@ -4,7 +4,8 @@ import { MemberPermissions } from '../src/components/MemberPermissions';
 import { CredentialEnrollment } from '../src/components/CredentialEnrollment';
 import { Ionicons } from '@expo/vector-icons';
 import { ActivationWizard as AddDevice } from '../src/components/ActivationWizard';
-import { OwnerDeviceSettings } from '../src/components/OwnerDeviceSettings';
+import { OwnerDeviceSettings, type SettingsSection } from '../src/components/OwnerDeviceSettings';
+import { FirmwareUpdateNotice } from '../src/components/FirmwareUpdates';
 import { GlobalFaceRegistration } from '../src/components/GlobalFaceRegistration';
 import { RealInvitations } from '../src/components/RealInvitations';
 import {
@@ -148,6 +149,7 @@ function SmartDoorApp() {
   const [pinDoor, setPinDoor] = useState<Door | null>(null);
   const [selected, setSelected] = useState<Door | null>(null);
   const [settingsUnitId, setSettingsUnitId] = useState<number | null>(null);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('hub');
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
   const [, setVerificationDoorName] = useState<string | undefined>();
   useEffect(() => {
@@ -345,8 +347,10 @@ function SmartDoorApp() {
         history={() => setView('history')}
         settings={() => {
           setSettingsUnitId(Number(selected.id));
+          setSettingsSection('hub');
           setView('settings');
         }}
+        firmware={() => { setSettingsUnitId(Number(selected.id)); setSettingsSection('firmware'); setView('settings'); }}
       />
     ) : view === 'members' && selected ? (
       <Members
@@ -414,8 +418,9 @@ function SmartDoorApp() {
       <AccountSettings logout={logout} back={() => setView('profile')} />
     ) : view === 'settings' && settingsUnitId ? (
       <OwnerDeviceSettings
-        key={settingsUnitId}
+        key={`${settingsUnitId}:${settingsSection}`}
         unitId={settingsUnitId}
+        initialSection={settingsSection}
         back={() => setView(selected ? 'detail' : 'home')}
       />
     ) : view === 'alerts' ? (
@@ -936,6 +941,7 @@ function Detail({
   setupFace,
   history,
   settings,
+  firmware,
 }: {
   door: Door;
   back: () => void;
@@ -945,6 +951,7 @@ function Detail({
   setupFace: () => void;
   history: () => void;
   settings: () => void;
+  firmware: () => void;
 }) {
   const owner = canManageDoor(door);
   return (
@@ -1028,6 +1035,7 @@ function Detail({
 
       {owner ? (
         <>
+          <FirmwareUpdateNotice unitId={Number(door.id)} onOpen={firmware} />
           <Text style={x.section}>Quản lý cửa</Text>
           {door.activationState && door.activationState !== 'ACTIVE' ? (
             <Button

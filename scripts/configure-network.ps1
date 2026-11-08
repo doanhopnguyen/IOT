@@ -36,17 +36,18 @@ if ($Role -eq 'server') {
     $lines = @(Get-Content -LiteralPath $mobileEnv -ErrorAction SilentlyContinue | Where-Object { $_ -notmatch '^EXPO_PUBLIC_API_BASE_URL=' })
     [System.IO.File]::WriteAllLines($mobileEnv, @($lines; "EXPO_PUBLIC_API_BASE_URL=http://${tailscale}:8080"), $utf8)
     $backendEnv = Join-Path $projectRoot 'smart-access-control-backend\.env'
-    $lines = @(Get-Content -LiteralPath $backendEnv | Where-Object { $_ -notmatch '^CORS_ALLOWED_ORIGINS=' })
+    $lines = @(Get-Content -LiteralPath $backendEnv | Where-Object { $_ -notmatch '^(CORS_ALLOWED_ORIGINS|APP_DEVICE_BASE_URL)=' })
     [System.IO.File]::WriteAllLines($backendEnv,
-        @($lines; "CORS_ALLOWED_ORIGINS=http://localhost:8081,http://127.0.0.1:8081,http://${tailscale}:8081,http://${LanAddress}:8081"), $utf8)
+        @($lines; "CORS_ALLOWED_ORIGINS=http://localhost:8081,http://127.0.0.1:8081,http://${tailscale}:8081,http://${LanAddress}:8081"; "APP_DEVICE_BASE_URL=http://${LanAddress}:8080"), $utf8)
     Write-Host "Backend/admin: http://${tailscale}:8080; Expo: exp://${tailscale}:8081"
 }
 if ($Firewall) {
     # Run this option in an Administrator PowerShell. Rules permit only LAN or tailnet sources.
     $rule = "Smart Door $Role LAN"
     Get-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+    $lanPorts = if ($Role -eq 'server') { @(1884,8080,8081) } else { @(1884) }
     New-NetFirewallRule -DisplayName $rule -Direction Inbound -Action Allow -Protocol TCP `
-        -LocalAddress $LanAddress -LocalPort 1884 -RemoteAddress LocalSubnet -Profile Any | Out-Null
+        -LocalAddress $LanAddress -LocalPort $lanPorts -RemoteAddress LocalSubnet -Profile Any | Out-Null
     if ($Role -eq 'server') {
         $rule = 'Smart Door server Tailscale'
         Get-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue | Remove-NetFirewallRule

@@ -1,11 +1,13 @@
 # Luồng sản phẩm Smart Door — 06/11/2026
 
+Cập nhật 08/11/2026: cấp phát bằng CLI kỹ thuật, admin không có đăng ký chip/QR. Firmware cơ sở **1.14.0** hỗ trợ OTA, chủ cửa tự xác nhận nhận bản do admin phát hành. Xem [hướng dẫn demo OTA và cấp phát hiện tại](DEMO_CAP_NHAT_FIRMWARE_TU_XA.md).
+
 Đây là luồng mới theo yêu cầu người dùng, thay cho các hướng dẫn demo trước đây bắt người mua nhập hoặc đổi địa chỉ backend.
 
 ## Bên sản xuất chuẩn bị trước khi giao
 
 1. Nạp firmware đúng phần cứng ESP32-S3.
-2. Admin đăng ký đúng MAC, tạo mã sản phẩm và mã nhận cửa dùng một lần. Mỗi sản phẩm có mạng thiết lập `SmartDoor-xxxxxx` và mật khẩu riêng.
+2. Kỹ thuật viên dùng `scripts/register_local_device.py` đăng ký đúng MAC, tạo mã sản phẩm và mã nhận cửa dùng một lần. Mỗi sản phẩm có mạng thiết lập `SmartDoor-xxxxxx` và mật khẩu riêng.
 3. File cấp phát chứa mã sản phẩm, mã nhận cửa, SSID/mật khẩu mạng thiết lập và khóa xác thực riêng. Công cụ sản xuất ghi file này vào bộ nhớ chip. Địa chỉ dịch vụ/broker và chứng chỉ cần thiết do bên triển khai cấu hình sẵn; không yêu cầu người mua nhập.
 4. In QR dán sản phẩm. Chip cũng dựng QR trên TFT từ thông tin đã nạp, không cần Internet để hiển thị. QR có mã nhận cửa và thông tin mạng thiết lập, không có khóa xác thực thiết bị hoặc địa chỉ máy chủ tùy ý.
 5. Không ghi trước Wi-Fi nhà của người mua và không nhận cửa vào tài khoản thử trước khi giao.
@@ -20,7 +22,7 @@
 6. Trang này chỉ chọn/kết nối Wi-Fi, không tạo PIN. Bấm Hoàn tất và chờ báo Đã lưu Wi-Fi; nhấn rồi thả RST/EN hoặc rút nguồn 5 giây rồi cấp lại, chờ cửa kết nối lại. Không giữ BOOT hoặc khôi phục mặc định.
 7. Đưa điện thoại về mạng có Internet. App dừng ở hướng dẫn khởi động lại, người dùng xác nhận đã thực hiện rồi kiểm tra lại cửa kết nối dịch vụ. Backend từ chối nhận cửa khi chưa có heartbeat online; chưa thể đặt tên/nhận cửa hoặc gửi PIN trước bước này.
 8. Đặt tên và nhận cửa bằng QR trong app. Nhập PIN mở cửa và PIN quản trị (mỗi PIN 6 số, khác nhau, có xác nhận) trong app; chỉ có hiệu lực khi ESP32 ACK. PIN quản trị dùng cho quản lý/đổi mạng cục bộ, không phải mã nhận QR. Không tạo PIN trên portal hoặc màn hình chip.
-9. Sau ACK, màn hình cửa tự bắt đầu hiệu chỉnh: giữ/nhấc từng dấu cộng 1–3, chạm giữa màn hình, xác nhận cửa đóng/mở, rồi chỉnh/thử và xác nhận hai góc servo LOCK/OPEN. App hiển thị hướng dẫn, góc lệnh và chiều tăng/giảm tương ứng. Cửa mới chỉ ACTIVE sau khi các bước đều được xác nhận; mất mạng sau khi đã hoàn tất không chặn PIN/thẻ/vân tay cục bộ. Có thể tiếp tục từ Cài đặt thiết bị nếu đóng app giữa chừng.
+9. Sau ACK, màn hình cửa tự bắt đầu hiệu chỉnh: giữ/nhấc từng dấu cộng 1–3, chạm giữa màn hình và xác nhận cửa đóng/mở. Đăng ký mới dùng góc servo mặc định, không yêu cầu trang chỉnh góc; khi cần chỉnh cơ khí, dùng Cài đặt thiết bị → Góc Servo sau khi đăng ký. Cửa mới chỉ ACTIVE sau khi PIN và các bước kiểm tra được xác nhận; mất mạng sau khi đã hoàn tất không chặn PIN/thẻ/vân tay cục bộ. Có thể tiếp tục từ Cài đặt thiết bị nếu đóng app giữa chừng.
 
 Trình duyệt là bước cấu hình Wi-Fi cục bộ; app là nơi nhận cửa, tạo/đổi PIN và theo dõi hiệu chỉnh. Firmware connected 1.4.0 không cho đi tắt qua bước tạo PIN trên chip/web. Khi cập nhật từ bản cũ, chủ cửa đặt PIN trong app một lần để chuyển sang luồng này; các PIN cũ không tự hoàn tất bước mới.
 

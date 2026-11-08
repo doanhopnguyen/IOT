@@ -26,6 +26,8 @@ test('kiểm tra khoảng cài đặt giống backend', () => {
   assert.match(validateSettings({ doorOpenTimeoutSec: 9 }) ?? '', /10 đến 600/);
   assert.match(validateSettings({ doorOpenTimeoutSec: 601 }) ?? '', /10 đến 600/);
   assert.notEqual(validateSettings({ unlockDurationSec: 2.5 }), null);
+  for(const value of [1,3,5,10])assert.equal(validateSettings({pinFailureLimit:value}),null);
+  for(const value of [0,11,1.5,Number.NaN])assert.match(validateSettings({pinFailureLimit:value})??'',/1 đến 10/);
 });
 
 function recorder(response: unknown) {
@@ -53,11 +55,11 @@ test('cập nhật cài đặt và cảnh báo dùng PATCH với body JSON', asy
   globalThis.fetch = (async () => new Response(JSON.stringify({ token: 't' }), { status: 200 })) as typeof fetch;
   try {
     const r = recorder({});
-    await statsService.updateSettings(3, { doorOpenTimeoutSec: 120 }, r.transport);
+    await statsService.updateSettings(3, { doorOpenTimeoutSec: 120, pinFailureLimit: 3 }, r.transport);
     await alertService.setStatus(9, 'RESOLVED', r.transport);
     assert.equal(r.calls[0].url, 'http://api2.test/api/manager/units/3/settings');
     assert.equal(r.calls[0].init.method, 'PATCH');
-    assert.equal(r.calls[0].init.body, JSON.stringify({ doorOpenTimeoutSec: 120 }));
+    assert.equal(r.calls[0].init.body, JSON.stringify({ doorOpenTimeoutSec: 120, pinFailureLimit: 3 }));
     assert.equal(r.calls[1].url, 'http://api2.test/api/alerts/9');
     assert.equal(r.calls[1].init.body, JSON.stringify({ status: 'RESOLVED' }));
     assert.equal(new Headers(r.calls[1].init.headers).get('X-CSRF-TOKEN'), 't');

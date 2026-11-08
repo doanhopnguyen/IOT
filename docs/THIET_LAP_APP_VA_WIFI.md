@@ -1,6 +1,6 @@
 # Thiết lập bằng app và phục hồi Wi-Fi — 06/11/2026
 
-Áp dụng cho firmware connected **1.11.0**. Không áp dụng cho sketch legacy; sketch offline dùng phần hiệu chỉnh tại chip riêng.
+Áp dụng cho firmware connected **1.12.0** (08/11/2026). Không áp dụng cho sketch legacy; sketch offline dùng phần hiệu chỉnh tại chip riêng.
 
 1. Cấp nguồn: chip chỉ hiện QR, mạng SmartDoor và địa chỉ chọn Wi-Fi. Chưa bắt hiệu chỉnh hoặc nhập PIN.
 2. App quét QR và hướng dẫn điện thoại vào Wi-Fi SmartDoor. Điện thoại thường tự mở captive portal; nếu không, mở `http://192.168.4.1`. Portal chỉ quét/chọn mạng 2.4 GHz, nhập mật khẩu mạng và hoàn tất. Thiết lập lần đầu chưa có PIN nên không hỏi PIN ở đây.
@@ -8,7 +8,7 @@
 4. Điện thoại trở về mạng có Internet/Tailscale. App dừng ở trang **Khởi động lại cửa sau khi lưu Wi-Fi**; người dùng xác nhận đã thực hiện rồi app kiểm tra lại kết nối dịch vụ trước khi sang đặt tên/nhận cửa. Wi-Fi kết nối mà chưa tới được broker/backend thì chưa đủ.
 5. Trong app chủ cửa đặt PIN mở cửa và PIN quản trị: 6 số, khác nhau, nhập lại để xác nhận. Backend chỉ lưu hash vào dữ liệu lệnh; PIN rõ chỉ nằm trong bản tin gửi tới đúng chip, không ghi log. Chỉ ACK thiết bị mới áp dụng hash vào hồ sơ cửa. Mạng demo MQTT plaintext chỉ dành cho LAN tin cậy; triển khai thực dùng TLS như tài liệu triển khai.
 6. Chip tự chuyển sang TOUCH SETUP. App hướng dẫn giữ/nhấc ngón trên dấu cộng của **màn hình chip**, lần lượt 3 điểm và điểm giữa. Sau xác nhận, chip chuyển DOOR SETUP: xác nhận cửa đóng và cửa mở. Tiếp theo là SERVO LOCK và SERVO OPEN: chỉnh góc, bấm TEST, quan sát chốt thực tế rồi xác nhận từng vị trí. App cập nhật hướng dẫn, góc đã ra lệnh và chiều tăng/giảm theo heartbeat.
-7. Cửa mới chỉ sẵn sàng sau PIN, cảm ứng, cảm biến cửa và hai vị trí servo đã xác nhận. Đổi số/đi vào bước hiệu chỉnh không tự xoay; chỉ nút TEST mới phát lệnh thử. TEST LOCK yêu cầu cánh cửa đóng, phải chờ hết xung thử trước khi xác nhận. Sau xác nhận OPEN, hệ thống giữ trạng thái vừa nhả chốt và dùng quy tắc tự khóa thông thường (đợi đóng ổn định, hoặc 5 giây nếu chưa mở cánh cửa). Không tự xoay lúc khởi động. Mặc định khóa 100°, mở 30°; góc đang lưu được giữ khi nâng firmware.
+7. Đăng ký mới hoàn tất sau PIN, cảm ứng và cảm biến cửa đóng/mở. Firmware lưu/xác nhận góc servo đã có hoặc mặc định rồi báo sẵn sàng, không mở hai trang căn LOCK/OPEN trong đăng ký. Không phát lệnh quay chỉ vì hoàn tất thiết lập hoặc khởi động. Mặc định khóa 100°, mở 30°, hành trình 180°; góc đã lưu được giữ khi nâng firmware. Chỉnh góc, quay thử và lưu servo nằm riêng trong Cài đặt cửa → Góc Servo.
 
 Nếu đóng app, vào cửa → Cài đặt thiết bị để tiếp tục. Có nút đổi PIN mở cửa/PIN quản trị và bắt đầu lại hiệu chỉnh. Hiệu chỉnh không yêu cầu tạo PIN lại. PIN quản trị chỉ dùng xác thực ADMIN trên chip/khôi phục Wi-Fi, không có màn hình tạo PIN trên chip.
 
@@ -63,7 +63,7 @@ API reset hiện có ở cả app và web admin đều yêu cầu `password`, `a
 | GET / PUT `/api/manager/units/{id}/servo` / `SERVO_SET` | Đọc/lưu góc khóa và mở; có thể bằng nhau; chỉ chủ cửa |
 | Heartbeat | `setupStage`, `hasDoorPin`, `adminPinSet`, `touchCalibrated`, `doorCalibrated`, `wifiSsid`; không chứa PIN/mật khẩu Wi-Fi |
 
-Firmware gửi `lockAngle`/`openAngle`, `servoCalibrated`, `servoCommandAngle` và `servoDirection`; các bước mới là SERVO_LOCK/SERVO_OPEN. Không thay giá trị chưa biết bằng góc mặc định. Kết quả xác nhận được lưu trong NVS người dùng; reset xóa cờ này cùng cấu hình người mua.
+Firmware gửi `lockAngle`/`openAngle`, `servoCalibrated`, `servoCommandAngle` và `servoDirection`. `servoCalibrated` xác nhận đã lưu cấu hình góc sẵn dùng, không phải phép đo góc cơ khí. SERVO_LOCK/SERVO_OPEN chỉ còn dùng khi người dùng chủ động mở trình căn servo trên chip. Đăng ký mới dùng bước chờ sẵn sàng sau cảm biến cửa; app không báo hoàn tất trước xác nhận backend. Reset xóa cờ này cùng cấu hình người mua.
 
 Không cần migration SQL: dùng telemetry và cột hash quản trị thiết bị đã có. Dữ liệu cấp phát/QR không thay đổi khi nâng firmware; `appPins` trong NVS người dùng đánh dấu đã nhận PIN từ app. Khi chuyển từ firmware cũ, cần thực hiện bước PIN app một lần; lần đầu này yêu cầu hiệu chỉnh lại để đi đúng luồng. Khi reset nghiệp vụ, marker này cũng bị xóa cùng NVS người dùng.
 

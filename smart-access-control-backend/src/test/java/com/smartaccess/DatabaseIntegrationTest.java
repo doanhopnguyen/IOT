@@ -52,14 +52,14 @@ class DatabaseIntegrationTest {
 
     @Test
     void migrationCreatesSchemaAndRequiredConstraints() {
-        assertThat(flyway.info().applied()).hasSize(5);
+        assertThat(flyway.info().applied()).hasSize(7);
         assertThat(flyway.validateWithResult().validationSuccessful).isTrue();
         assertThat(jdbc.queryForList(
                 "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME <> 'flyway_schema_history'",
                 String.class))
                 .containsExactlyInAnyOrder("accounts", "access_units", "devices", "user_access", "credentials",
                         "face_requests", "access_logs", "telemetry", "events", "commands", "audit_logs",
-                        "device_inventory", "door_invitations", "event_related_accounts");
+                        "device_inventory", "door_invitations", "event_related_accounts", "firmware_releases");
         assertThat(jdbc.queryForList(
                 "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_access' AND CONSTRAINT_NAME = 'PRIMARY' ORDER BY ORDINAL_POSITION",
                 String.class))
@@ -73,7 +73,8 @@ class DatabaseIntegrationTest {
                 String.class))
                 .containsExactlyInAnyOrder("accounts.email", "accounts.phone", "devices.device_uid",
                         "access_logs.access_uuid", "telemetry.message_uuid", "events.event_uuid",
-                        "commands.command_uuid", "device_inventory.factory_mac", "device_inventory.claim_hash");
+                        "commands.command_uuid", "device_inventory.factory_mac", "device_inventory.claim_hash",
+                        "firmware_releases.version", "firmware_releases.hardware_version");
         assertThat(jdbc.queryForList(
                 "SELECT CONCAT(TABLE_NAME, ':', GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX)) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND INDEX_NAME LIKE 'idx_%' GROUP BY TABLE_NAME, INDEX_NAME",
                 String.class))
@@ -89,7 +90,7 @@ class DatabaseIntegrationTest {
                         "events:device_id,occurred_at", "events:alert_status,severity,occurred_at",
                         "event_related_accounts:account_id,event_id",
                         "commands:device_id,requested_at", "commands:requested_by,requested_at",
-                        "audit_logs:actor_id,created_at");
+                        "audit_logs:actor_id,created_at", "firmware_releases:published_at");
         assertThat(jdbc.queryForList(
                 "SELECT CONCAT(TABLE_NAME, '.', CONSTRAINT_NAME, ':', DELETE_RULE) FROM information_schema.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE()",
                 String.class))
@@ -108,7 +109,8 @@ class DatabaseIntegrationTest {
                         "event_related_accounts.fk_event_related_event:CASCADE",
                         "commands.fk_commands_device_id:RESTRICT", "commands.fk_commands_requested_by:RESTRICT",
                         "audit_logs.fk_audit_logs_actor_id:SET NULL", "device_inventory.fk_inventory_device:CASCADE",
-                        "door_invitations.fk_invitation_unit:CASCADE", "door_invitations.fk_invitation_recipient:CASCADE");
+                        "door_invitations.fk_invitation_unit:CASCADE", "door_invitations.fk_invitation_recipient:CASCADE",
+                        "firmware_releases.fk_firmware_publisher:NO ACTION");
     }
 
     private Account account() {

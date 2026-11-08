@@ -72,3 +72,8 @@ jobs:
         run: pio run -c platformio.connected.ini
       - name: Member credential removal on host
         run: python firmware/tests/test_member_removal.py && python firmware/tests/test_activation_qr_sync.py && python firmware/tests/test_device_retirement.py
+      - name: Alarm and OTA behavior on host
+        run: python firmware/tests/test_door_alarm.py && python firmware/tests/test_ota_policy.py && python firmware/tests/test_ota_transfer.py
+      - name: Build black-button OTA demo
+        working-directory: firmware
+        run: pio run -c platformio.connected.ini -e esp32-s3-ota-demo

@@ -13,6 +13,8 @@ import { OwnerCredentials } from './OwnerCredentials';
 import { deviceDisplayName } from '../services/api/productQr';
 import type { SetupPage } from '../services/api/setupService';
 import { lifecycleNotice } from '../services/api/deviceState';
+import { FirmwareUpdates } from './FirmwareUpdates';
+import { firmwareService } from '../services/api/firmwareService';
 
 export type SettingsSection =
   | 'hub'
@@ -27,6 +29,7 @@ export type SettingsSection =
   | 'calibrate'
   | 'wifi'
   | 'camera-ai'
+  | 'firmware'
   | 'factory-reset'
   | 'setup-wizard';
 
@@ -67,6 +70,7 @@ const sectionMeta: Record<
   'camera-ai': {
     title: 'Camera AI & Laptop',
   },
+  firmware: { title: 'Cập nhật phần mềm cửa' },
   'factory-reset': {
     title: 'Khôi phục xuất xưởng',
   },
@@ -91,6 +95,13 @@ export function OwnerDeviceSettings({
   const [device, setDevice] = useState<InventoryDevice>();
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [updateCount, setUpdateCount] = useState(0);
+  useEffect(() => {
+    let active = true;
+    const check = async () => { try { const value = await firmwareService.status(unitId); if (active) setUpdateCount(value.available.length); } catch { /* Settings remain usable while update checks are unavailable. */ } };
+    void check(); const timer = setInterval(() => { void check(); }, 15000);
+    return () => { active = false; clearInterval(timer); };
+  }, [unitId]);
   const revision = useRef(0);
 
   const updateDevice = useCallback((next: InventoryDevice) => {
@@ -239,8 +250,9 @@ export function OwnerDeviceSettings({
           />
         ) : null}
         {section === 'camera-ai' ? <CameraNodeSettings unitId={unitId} /> : null}
+        {section === 'firmware' ? <FirmwareUpdates unitId={unitId} /> : null}
         {section === 'setup-wizard' ? (
-          <DeviceSetup unitId={unitId} onStepChange={setupChanged} />
+          <DeviceSetup unitId={unitId} onStepChange={setupChanged} onComplete={() => setSection('hub')} />
         ) : null}
         {section === 'factory-reset' && device ? (
           <FactoryReset key={device.deviceUid} device={device} onUpdated={updateDevice} />
@@ -274,6 +286,7 @@ export function OwnerDeviceSettings({
       />
 
       {message ? <Notice tone={failed ? 'error' : 'info'}>{message}</Notice> : null}
+      {updateCount > 0 ? <Button title={`Có ${updateCount} bản cập nhật cho cửa`} icon="cloud-download-outline" variant="ghost" onPress={() => setSection('firmware')} /> : null}
       {lifecycleNotice(device?.lifecycleStatus) ? (
         <Notice tone="warning">{lifecycleNotice(device?.lifecycleStatus)}</Notice>
       ) : null}
@@ -365,7 +378,7 @@ export function OwnerDeviceSettings({
             <View style={{ flex: 1, gap: 3 }}>
               <Text style={s.heading}>Chưa hoàn tất thiết lập ban đầu</Text>
               <Text style={s.caption}>
-                Cần hoàn tất tạo mã PIN, hiệu chỉnh cảm ứng, cảm biến cửa và góc servo.
+                Cần hoàn tất tạo mã PIN, hiệu chỉnh cảm ứng và xác nhận cảm biến cửa đóng/mở.
               </Text>
             </View>
           </View>
@@ -385,8 +398,12 @@ export function OwnerDeviceSettings({
           <Card style={oStyles.iconGroupCard}>
             <View style={oStyles.bentoGrid}>
               <View style={{ width: gridCellWidth }}>
+                <FeatureTile icon="cloud-download-outline" tone="indigo" title="Cập nhật" badge={updateCount ? String(updateCount) : undefined} onPress={() => setSection('firmware')} />
+              </View>
+              <View style={{ width: gridCellWidth }}>
                 <FeatureTile
                   icon="bar-chart-outline"
+                  tone="indigo"
                   title="Thống kê"
                   onPress={() => setSection('stats')}
                 />
@@ -394,6 +411,7 @@ export function OwnerDeviceSettings({
               <View style={{ width: gridCellWidth }}>
                 <FeatureTile
                   icon="timer-outline"
+                  tone="teal"
                   title="Hẹn giờ"
                   onPress={() => setSection('remote-config')}
                 />
@@ -408,6 +426,7 @@ export function OwnerDeviceSettings({
               <View style={{ width: gridCellWidth }}>
                 <FeatureTile
                   icon="finger-print-outline"
+                  tone="purple"
                   title="Thẻ & Vân tay"
                   onPress={() => setSection('owner-credentials')}
                 />
@@ -430,6 +449,7 @@ export function OwnerDeviceSettings({
               <View style={{ width: gridCellWidth }}>
                 <FeatureTile
                   icon="key-outline"
+                  tone="indigo"
                   title="PIN Admin"
                   onPress={() => setSection('admin-pin')}
                 />
@@ -437,6 +457,7 @@ export function OwnerDeviceSettings({
               <View style={{ width: gridCellWidth }}>
                 <FeatureTile
                   icon="options-outline"
+                  tone="sky"
                   title="Góc Servo"
                   onPress={() => setSection('servo')}
                 />
@@ -444,6 +465,7 @@ export function OwnerDeviceSettings({
               <View style={{ width: gridCellWidth }}>
                 <FeatureTile
                   icon="locate-outline"
+                  tone="purple"
                   title="Hiệu chỉnh"
                   onPress={() => setSection('calibrate')}
                 />
@@ -451,6 +473,7 @@ export function OwnerDeviceSettings({
               <View style={{ width: gridCellWidth }}>
                 <FeatureTile
                   icon="wifi-outline"
+                  tone="teal"
                   title="Wi-Fi"
                   onPress={() => setSection('wifi')}
                 />
@@ -458,6 +481,7 @@ export function OwnerDeviceSettings({
               <View style={{ width: gridCellWidth }}>
                 <FeatureTile
                   icon="videocam-outline"
+                  tone="indigo"
                   title="Camera AI"
                   onPress={() => setSection('camera-ai')}
                 />

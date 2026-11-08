@@ -1,5 +1,9 @@
 # Kiểm thử
 
+OTA: `FirmwareUpdateFlowTest` kiểm tra quyền phát hành, xác nhận của chủ cửa, tệp/phiên bản/phần cứng, xác thực tải và ACK sau reboot. `firmware/tests/test_ota_policy.py` kiểm tra kích thước/phân vùng/SHA-256 cùng điều kiện cửa đóng, khóa và đứng yên. `IOT_mobile/tests/firmware-update.test.ts` kiểm tra API xác nhận và trạng thái đợi đúng phiên bản. Build cả hai bản bằng `scripts/build-ota-demo.ps1`; quy trình thao tác thật ở [hướng dẫn demo OTA](../docs/DEMO_CAP_NHAT_FIRMWARE_TU_XA.md).
+
+Còi: `python firmware/tests/test_door_alarm.py` chạy các hàm production nhập sai PIN/khóa 30 giây và điều khiển GPIO với hardware giả; kiểm tra mở/đóng, đổi ngưỡng, reboot/NVS, setup/OTA, lỗi ghi và rollover. Kết quả phần cứng thật và cài đặt app ở [hướng dẫn còi cảnh báo](../docs/COI_CANH_BAO.md).
+
 Mã test nằm cạnh từng thành phần; thư mục này là mục lục và cách chạy toàn bộ. CI (`.github/workflows/ci.yml`) chạy cùng các lệnh này.
 
 | Thành phần | Vị trí | Lệnh | Nội dung chính |

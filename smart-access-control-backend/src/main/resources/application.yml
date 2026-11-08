@@ -28,6 +28,8 @@ server:
         same-site: lax
         secure: ${SESSION_COOKIE_SECURE:false}
 app:
+  firmware:
+    device-base-url: ${APP_DEVICE_BASE_URL:http://127.0.0.1:8080}
   face-processor:
     url: ${FACE_PROCESSOR_URL:http://127.0.0.1:8091/extract}
     token: ${FACE_PROCESSOR_TOKEN:}

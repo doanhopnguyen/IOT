@@ -16,6 +16,8 @@ import java.time.LocalDateTime;
 
 @Component
 public class ManagerAccessGuard {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private com.smartaccess.repository.CommandRepository commands;
     // Thiết bị được coi là online nếu có heartbeat trong 90 giây gần nhất
     static final long ONLINE_WINDOW_SEC = 90;
 
@@ -63,6 +65,8 @@ public class ManagerAccessGuard {
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Cửa chưa được gắn thiết bị"));
         if (inventory.findById(device.getDeviceId()).map(i -> "RESETTING".equals(i.getState())).orElse(false))
             throw new BusinessException(HttpStatus.CONFLICT, "Cửa đang reset; chờ hoàn tất trước khi gửi lệnh khác");
+        if(commands!=null && commands.existsByDevice_DeviceIdAndCommandTypeAndStatusIn(device.getDeviceId(),FirmwareUpdateService.COMMAND,FirmwareUpdateService.IN_FLIGHT))
+            throw new BusinessException(HttpStatus.CONFLICT,"Cửa đang cập nhật firmware; chờ cửa khởi động lại trước khi gửi lệnh khác");
         LocalDateTime limit = LocalDateTime.now().minusSeconds(ONLINE_WINDOW_SEC);
         if (device.getLifecycleStatus() != DeviceLifecycleStatus.ACTIVE
                 || device.getLastSeenAt() == null

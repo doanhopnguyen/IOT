@@ -1,5 +1,9 @@
 # Smart Door — Hệ thống kiểm soát ra vào thông minh (IoT)
 
+**Demo OTA v2.0 và bàn giao có sẵn QR:** làm theo [hướng dẫn admin phát hành → chủ cửa nhận cập nhật](docs/DEMO_CAP_NHAT_FIRMWARE_TU_XA.md). Admin đã bỏ giao diện đăng ký chip/QR; cấp phát sản phẩm dùng công cụ kỹ thuật CLI.
+
+**Còi cảnh báo GPIO5:** bản chính **1.14.0** và demo **2.0.1-demo** báo sai PIN đủ ngưỡng và cửa mở lâu; chỉnh ngưỡng trong app tại **Cài đặt thiết bị → Hẹn giờ**. [Chi tiết và kiểm thử](docs/COI_CANH_BAO.md).
+
 Đồ án kết thúc học phần IoT — nhóm 09. Cửa thông minh trên ESP32-S3 mở bằng **PIN, thẻ RFID, vân tay, khuôn mặt** hoặc **mở từ xa** qua app; backend lưu lịch sử, telemetry, sinh cảnh báo tự động và cho chủ cửa quản lý thành viên, cấu hình cửa từ xa.
 
 ## Kiến trúc
@@ -51,16 +55,19 @@ Sau lần xóa dữ liệu và nạp lại chip: làm theo [hướng dẫn từn
 ## Thiết bị
 
 1. Lắp theo [hardware/README.md](hardware/README.md); nạp `cd firmware && pio run -c platformio.connected.ini -t upload`.
-2. Admin đăng ký chip (MAC) trên web admin → tải file cấp phát → tạo tài khoản MQTT (`scripts/configure_local_device.py`) → ghi vào chip (`scripts/device_tool.py provision`). Chi tiết: [docs/HUONG_DAN_TRIEN_KHAI.md](docs/HUONG_DAN_TRIEN_KHAI.md).
+2. Kỹ thuật viên cấp phát chip qua `scripts/register_local_device.py`, khởi động lại broker dự án, rồi ghi bằng `scripts/device_tool.py provision`. Tạo nhãn bằng `node scripts/make-product-qr.cjs <factory.json>`. Chip bàn giao đã có QR thì bỏ qua bước này. Chi tiết ở [hướng dẫn OTA và cấp phát](docs/DEMO_CAP_NHAT_FIRMWARE_TU_XA.md).
 3. Người dùng quét QR, chọn Wi-Fi qua `http://192.168.4.1`, rồi trở lại app kiểm tra cửa online. Sau đó app nhận cửa/đặt tên và hai PIN; chip mới bắt đầu hiệu chỉnh cảm ứng/cảm biến, app hiển thị hướng dẫn theo tiến độ. Quản lý cửa có đổi Wi-Fi và khôi phục mạng; xem [luồng thiết lập hiện tại](docs/THIET_LAP_APP_VA_WIFI.md).
 
 ## Chức năng chính
+
+Firmware connected **1.12.0** rút gọn đăng ký mới còn 8 bước, kết thúc sau PIN, cảm ứng và cảm biến cửa. Góc servo được chỉnh riêng trong Cài đặt cửa; nâng firmware giữ Wi-Fi, PIN, thẻ, vân tay và các góc đã lưu. Xem [luồng thiết lập](docs/QUET_QR_VA_THIET_LAP.md).
 
 Firmware connected 1.11.0 đã tích hợp bàn phím HX-543 phía trong nhà dùng chung PIN cửa: nhập 6 số + `#`, `*` xóa. Giới hạn nhập sai, bật/tắt PIN từ app, trạng thái hạn chế và tự khóa đều dùng chung với TFT. Xem [hướng dẫn bàn phím trong nhà](docs/BAN_PHIM_TRONG_NHA.md).
 
 | Nhóm | Chức năng |
 |---|---|
-| Tài khoản & thiết bị | Đăng ký/đăng nhập, admin đăng ký chip + QR kích hoạt, nhận cửa, reset/chuyển giao có xác minh |
+| Tài khoản & thiết bị | Đăng ký/đăng nhập, cấp phát chip/QR qua công cụ kỹ thuật, nhận cửa, reset/chuyển giao có xác minh |
+| Firmware OTA | Admin phát hành `.bin`, chủ cửa xác nhận cài đặt, kiểm tra SHA-256 và xác nhận phiên bản sau reboot |
 | Quản lý cửa & quyền | Lời mời thành viên, quyền theo phương thức (RFID/vân tay/khuôn mặt/mở từ xa), PIN, đăng ký vân tay/thẻ từ xa, **cài đặt cửa từ xa** (thời gian mở, ngưỡng cửa mở, bật/tắt phương thức) |
 | Giám sát | Lịch sử ra vào, **telemetry** (RSSI, bộ nhớ, trạng thái cửa/cảm biến), **biểu đồ 7 ngày**, **xuất CSV**, dashboard admin |
 | Cảnh báo | Tự sinh: mất kết nối, cửa mở quá lâu, bị từ chối liên tục, lỗi cảm biến vân tay; chống trùng, tự đóng; chủ cửa đánh dấu đã xem/đã xử lý |

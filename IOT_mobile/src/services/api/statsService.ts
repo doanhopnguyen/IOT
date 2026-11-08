@@ -6,9 +6,10 @@ export interface UnitSettingsDto {
   unlockDurationSec: number; doorOpenTimeoutSec: number; remoteUnlockEnabled: boolean;
   rfidEnabled: boolean; fingerprintEnabled: boolean;
   autoLockWaitForClose?: boolean;
+  pinFailureLimit?: number;
 }
 /** Khoảng hợp lệ giống backend (UnitSettingsService). */
-export const SETTINGS_LIMITS = { unlockDurationSec: [1, 30], doorOpenTimeoutSec: [10, 600] } as const;
+export const SETTINGS_LIMITS = { unlockDurationSec: [1, 30], doorOpenTimeoutSec: [10, 600], pinFailureLimit: [1, 10] } as const;
 
 type Transport = typeof fetch;
 const json = (body: unknown): RequestInit => ({ method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -41,5 +42,7 @@ export function validateSettings(patch: Partial<UnitSettingsDto>): string | null
   const u = patch.unlockDurationSec, d = patch.doorOpenTimeoutSec;
   if (u !== undefined && (!Number.isInteger(u) || u < uMin || u > uMax)) return `Thời gian mở khóa phải từ ${uMin} đến ${uMax} giây.`;
   if (d !== undefined && (!Number.isInteger(d) || d < dMin || d > dMax)) return `Ngưỡng cảnh báo cửa mở phải từ ${dMin} đến ${dMax} giây.`;
+  const p = patch.pinFailureLimit;
+  if (p !== undefined && (!Number.isInteger(p) || p < 1 || p > 10)) return 'Ngưỡng sai PIN phải từ 1 đến 10 lần.';
   return null;
 }

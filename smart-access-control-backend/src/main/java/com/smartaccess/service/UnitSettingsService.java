@@ -46,6 +46,8 @@ public class UnitSettingsService {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "Cần ít nhất một thay đổi");
         check(request.unlockDurationSec(), UNLOCK_MIN, UNLOCK_MAX, "Thời gian mở khóa");
         check(request.doorOpenTimeoutSec(), DOOR_OPEN_MIN, DOOR_OPEN_MAX, "Ngưỡng cảnh báo cửa mở");
+        if(request.pinFailureLimit()!=null && (request.pinFailureLimit()<1 || request.pinFailureLimit()>10))
+            throw new BusinessException(HttpStatus.BAD_REQUEST,"Ngưỡng sai PIN phải từ 1 đến 10 lần");
         AccessUnit unit = guard.requireManagedUnit(managerId, unitId);
         UnitSettings.Response before = UnitSettings.Response.from(unit);
         if (request.unlockDurationSec() != null) unit.setUnlockDurationSec(request.unlockDurationSec().shortValue());
@@ -54,6 +56,7 @@ public class UnitSettingsService {
         if (request.rfidEnabled() != null) unit.setRfidEnabled(request.rfidEnabled());
         if (request.fingerprintEnabled() != null) unit.setFingerprintEnabled(request.fingerprintEnabled());
         if (request.autoLockWaitForClose() != null) unit.setAutoLockWaitForClose(request.autoLockWaitForClose());
+        if (request.pinFailureLimit() != null) unit.setPinFailureLimit(request.pinFailureLimit().shortValue());
         UnitSettings.Response after = UnitSettings.Response.from(unit);
         if (!after.equals(before)) {
             AuditLog audit = new AuditLog();
@@ -71,7 +74,7 @@ public class UnitSettingsService {
     static Map<String, Object> asMap(UnitSettings.Response s) {
         return Map.of("unlockDurationSec", s.unlockDurationSec(), "doorOpenTimeoutSec", s.doorOpenTimeoutSec(),
                 "remoteUnlockEnabled", s.remoteUnlockEnabled(), "rfidEnabled", s.rfidEnabled(),
-                "fingerprintEnabled", s.fingerprintEnabled(),"autoLockWaitForClose",s.autoLockWaitForClose());
+                "fingerprintEnabled", s.fingerprintEnabled(),"autoLockWaitForClose",s.autoLockWaitForClose(),"pinFailureLimit",s.pinFailureLimit());
     }
 
     private static void check(Integer value, int min, int max, String label) {

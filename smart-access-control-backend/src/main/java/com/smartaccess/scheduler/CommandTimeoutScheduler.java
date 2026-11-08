@@ -51,6 +51,7 @@ public class CommandTimeoutScheduler {
     }
 
     private long timeoutOf(Command command) {
+        if(com.smartaccess.service.FirmwareUpdateService.COMMAND.equals(command.getCommandType()))return 300;
         return RemoteUnlockService.DOOR_UNLOCK.equals(command.getCommandType())
                 ? UNLOCK_TIMEOUT_SEC : COMMAND_TIMEOUT_SEC;
     }

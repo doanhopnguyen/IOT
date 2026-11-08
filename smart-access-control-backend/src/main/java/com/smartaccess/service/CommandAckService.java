@@ -103,6 +103,13 @@ public class CommandAckService {
             case FingerprintService.FP_DELETE -> entityId = applyDelete(command);
             case OnboardingService.SERVO_SET, OnboardingService.SERVO_PREVIEW, OnboardingService.SERVO_PREVIEW_STOP -> { entityType="DEVICE"; entityId=command.getDevice().getDeviceId(); }
             case DeploymentService.SYNC_ACTIVATION -> { entityType="DEVICE"; entityId=command.getDevice().getDeviceId(); }
+            case FirmwareUpdateService.COMMAND -> {
+                Object version=command.getPayload()==null?null:command.getPayload().get("version");
+                if(version==null || !("FIRMWARE_UPDATED:"+version).equals(message)) {
+                    command.setStatus(CommandStatus.FAILED);command.setResultMessage("OTA_BOOT_VERSION_NOT_CONFIRMED");return;
+                }
+                entityType="DEVICE";entityId=command.getDevice().getDeviceId();
+            }
             default -> { }
         }
         command.setStatus(CommandStatus.ACKNOWLEDGED);

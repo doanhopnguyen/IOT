@@ -8,7 +8,7 @@ Tên hiển thị là tên thiết bị gọn hoặc `Smart Door C8149C`. Mục 
 
 Android dùng dữ liệu QR gốc (`raw`) để giữ mã nhận cửa trong QR Wi-Fi. Nếu đang mở bản app cũ báo mã không hợp lệ ngay sau quét, reload dự án trong Expo Go. Cửa đã nhận thành công thì mã dùng một lần hết hiệu lực; mở cửa đã thêm để tiếp tục thiết lập. Xem [kiểm tra QR và tải ảnh](KIEM_THU_QR_FACE_2026-11-07.md).
 
-QR sản phẩm mới trên web admin và trên màn hình ESP32 dùng định dạng Wi-Fi. Firmware hiện tại **1.7.2**. Khi cửa đã được nhận, QR trên màn hình đổi Wi-Fi chỉ chứa thông tin tham gia mạng, không cấp lại mã nhận cửa.
+QR sản phẩm mới trên web admin và trên màn hình ESP32 dùng định dạng Wi-Fi. Firmware hiện tại **1.12.0**. Khi cửa đã được nhận, QR trên màn hình đổi Wi-Fi chỉ chứa thông tin tham gia mạng, không cấp lại mã nhận cửa.
 
 ### Đưa chip chưa nhận về bước chọn Wi-Fi
 
@@ -44,17 +44,18 @@ Kết nối Wi-Fi tự động dùng API hệ thống, cần bản app được 
 
 1. **Quét QR sản phẩm.** Quét đúng thì chuyển sang Wi-Fi. Có thể nhập mã nhận cửa nếu camera không đọc được.
 2. **Kết nối Wi-Fi cho cửa.** Điện thoại tham gia mạng của khóa; trên trang của khóa chọn Wi-Fi 2.4 GHz thực tế và bấm Hoàn tất. Đưa điện thoại về mạng có Internet/Tailscale. App kiểm tra định kỳ và tự chuyển khi cửa online.
-3. **Đặt tên cửa.** Đặt tên, bấm Nhận cửa và tiếp tục. Chỉ sau phản hồi nhận cửa thành công mới chuyển sang PIN.
-4. **Tạo hai mã PIN** trên app. Chờ ESP32 xác nhận lưu; không chuyển bước chỉ vì yêu cầu đã gửi.
-5. **Hiệu chỉnh cảm ứng.** Làm theo các dấu cộng trên màn hình khóa; app hiển thị từng điểm và tự chuyển khi hoàn tất.
-6. **Xác nhận cửa đóng.** Đóng cửa/đặt nam châm, xác nhận trên màn hình khóa.
-7. **Xác nhận cửa mở.** Mở cửa/đưa nam châm ra xa, xác nhận trạng thái khác.
-8. **Căn vị trí khóa.** Chọn hành trình servo đúng loại; nhích ±1°/±5°, quan sát chốt rồi xác nhận LOCK.
-9. **Căn vị trí mở.** Quan sát và xác nhận OPEN. App chờ trạng thái sẵn sàng rồi hiện trang hoàn tất, kèm mã `SD-…` để ghép laptop AI.
+3. **Khởi động lại cửa.** Chờ portal báo Đã lưu Wi-Fi, nhấn/thả RST/EN hoặc ngắt nguồn 5 giây rồi cấp lại. App kiểm tra cửa đã kết nối lại trước khi cho tiếp tục.
+4. **Đặt tên cửa.** Đặt tên, bấm Nhận cửa và tiếp tục. Chỉ sau phản hồi nhận cửa thành công mới chuyển sang PIN.
+5. **Tạo hai mã PIN** trên app. Chờ ESP32 xác nhận lưu; không chuyển bước chỉ vì yêu cầu đã gửi.
+6. **Hiệu chỉnh cảm ứng.** Làm theo các dấu cộng trên màn hình khóa; app hiển thị từng điểm và tự chuyển khi hoàn tất.
+7. **Xác nhận cửa đóng.** Đóng cửa/đặt nam châm, xác nhận trên màn hình khóa.
+8. **Xác nhận cửa mở.** Mở cửa/đưa nam châm ra xa, xác nhận trạng thái khác. Firmware 1.12.0 lưu cấu hình servo đã có hoặc mặc định và báo sẵn sàng; không bắt căn góc trong đăng ký mới.
 
 Mỗi thời điểm chỉ có nội dung của bước hiện tại. Khi đóng và mở lại trang cài đặt, app đọc trạng thái cửa để tiếp tục đúng bước. Mất mạng không làm app coi bước chưa được xác nhận là đã xong. Sau thiết lập, các phần chỉnh servo, đổi PIN và đổi Wi-Fi mở thành từng trang riêng.
 
-Ghép laptop theo [hướng dẫn demo AI](DEMO_AI_TREN_LAPTOP.md). Khi laptop đã được ghép và bật chờ, hoàn tất bước 9 sẽ làm camera tự bắt đầu; không cần chép secret hay chạy worker thủ công.
+Góc servo là mục tùy chọn riêng tại **Cài đặt cửa → Góc Servo**; vẫn có quay thử, chỉnh và lưu theo ACK như trước. Cấu hình có sẵn không bị đổi khi nâng firmware. Thiết bị mới dùng góc mặc định khóa 100°/mở 30°, hành trình 180°; việc chấp nhận cấu hình này không tự phát lệnh quay.
+
+Ghép laptop theo [hướng dẫn demo AI](DEMO_AI_TREN_LAPTOP.md). Khi laptop đã được ghép và bật chờ, hoàn tất bước 8 và khóa báo sẵn sàng sẽ làm camera tự bắt đầu; không cần chép secret hay chạy worker thủ công.
 
 ## Build lại app Android
 

@@ -52,9 +52,11 @@ String digits,firstPin,notice;
 bool physicalPinInput=false,keypadReleaseRequired=true;
 uint32_t lastPhysicalKey=0,clockNow=1000,blockedSince=0,adminStarted=0,adminActivity=0,lastStatusBarDraw=0;
 uint32_t millis(){return clockNow;}
-bool ready=true,resetting=false,storageFault=false,pinBlocked=false,motorReady=true;
+bool ready=true,resetting=false,storageFault=false,pinBlocked=false,motorReady=true,updating=false;
+bool connectedUpdating(){return updating;}
 bool adminSession=false,pinAccessEnabled=true;
 unsigned failedPins=0,openCalls=0,opened=0,adminTransitions=0;
+uint8_t pinFailureLimit=5;
 DoorRestriction::Mode restriction=DoorRestriction::NORMAL;
 bool configured(){return ready;}
 bool connectedAccessReady(){return ready && !resetting && !storageFault;}
@@ -86,8 +88,8 @@ struct Nvs {
 void seed(){
   screen=HOME;digits=firstPin=notice="";physicalPinInput=false;lastPhysicalKey=0;
   keypadReleaseRequired=false;insideKeypad=KeypadFake{};clockNow=1000;
-  ready=true;resetting=storageFault=pinBlocked=adminSession=false;motorReady=true;
-  pinAccessEnabled=true;restriction=DoorRestriction::NORMAL;
+  ready=true;resetting=storageFault=pinBlocked=adminSession=updating=false;motorReady=true;
+  pinAccessEnabled=true;pinFailureLimit=5;restriction=DoorRestriction::NORMAL;
   failedPins=openCalls=opened=adminTransitions=0;events.clear();nvs=Nvs{};
 }
 void enter(const char *value,bool physical=true){for(const char *p=value;*p;++p)handlePinKey(*p,physical);}
@@ -112,6 +114,11 @@ int main(){
   seed();for(int i=0;i<5;i++)enter("111111#",i%2==0);
   assert(pinBlocked && failedPins==5 && events.size()==5);
   enter("123456#");assert(!opened && events.size()==5 && failedPins==5 && digits.empty());
+  for(uint8_t limit:{uint8_t(1),uint8_t(3),uint8_t(10)}){
+    seed();pinFailureLimit=limit;
+    for(uint8_t i=1;i<=limit;i++){enter("111111#");assert(pinBlocked==(i==limit));}
+    assert(events.size()==limit && !opened);enter("123456#");assert(!opened);
+  }
 
   // Never combine a partial PIN from inside and outside.
   seed();enter("123",false);enter("456");assert(digits=="456");enter("#");assert(!opened && failedPins==0);

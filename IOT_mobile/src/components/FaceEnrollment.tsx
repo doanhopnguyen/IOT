@@ -138,7 +138,7 @@ function EnrollmentForm({
     setConsent(false);
     setReplace(false);
     setNotice(
-      `Đã gửi mẫu cho yêu cầu #${created.id}. Mẫu có hiệu lực sau khi chủ cửa duyệt; máy chủ lưu đặc trưng khuôn mặt và ảnh đối chiếu.`,
+      `Đã gửi yêu cầu #${created.id}. Chủ cửa có thể xem ảnh thu nhỏ và duyệt quyền nhận diện tại cửa.`,
     );
     onChanged();
   };
@@ -186,7 +186,7 @@ function EnrollmentForm({
             <Text style={[s.caption, s.flex]}>
               {accountId
                 ? `Tôi xác nhận ${name} đồng ý đăng ký mẫu khuôn mặt và đồng bộ đến các cửa được cấp quyền.`
-                : 'Tôi đồng ý đăng ký đặc trưng khuôn mặt và đồng bộ đến camera của các cửa được cấp quyền.'}
+                : 'Tôi đồng ý lưu hồ sơ và ảnh thu nhỏ để chủ cửa đối chiếu, duyệt quyền nhận diện tại các cửa được cấp phép.'}
             </Text>
           </View>
           {captureOpen ? (
@@ -300,9 +300,9 @@ function RequestCard({
             <Ionicons name="person-circle-outline" size={32} color={colors.primary} />
           </View>
           <View style={{ flex: 1, gap: 2 }}>
-            <Text style={s.noPhotoTitle}>Đã lưu đặc trưng khuôn mặt 512 chiều</Text>
+            <Text style={s.noPhotoTitle}>Chưa có ảnh xem trước</Text>
             <Text style={s.caption}>
-              Mẫu sinh trắc học được trích xuất trên máy chủ ({item.unitName}).
+              Yêu cầu này chưa có ảnh thu nhỏ để đối chiếu.
             </Text>
           </View>
         </View>
@@ -414,9 +414,9 @@ function FaceInspectModal({
       ) : (
         <Card style={{ alignItems: 'center', paddingVertical: 28 }}>
           <Ionicons name="scan-circle-outline" size={56} color={colors.primary} />
-          <Text style={s.heading}>Mẫu đặc trưng 512 chiều</Text>
+          <Text style={s.heading}>Chưa có ảnh xem trước</Text>
           <Text style={[s.caption, { textAlign: 'center' }]}>
-            Yêu cầu này được tạo từ vector đặc trưng, không đính kèm ảnh chụp gốc.
+            Yêu cầu cũ có thể chưa đính kèm ảnh thu nhỏ. Người đăng ký có thể gửi ảnh mới để bạn đối chiếu.
           </Text>
         </Card>
       )}
@@ -455,7 +455,7 @@ function FaceInspectModal({
         </View>
         <View style={s.checkRow}>
           <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-          <Text style={s.checkText}>Đã trích xuất vector đặc trưng khuôn mặt (ArcFace 512-D)</Text>
+          <Text style={s.checkText}>Hồ sơ khuôn mặt đã được xử lý trên máy chủ</Text>
         </View>
         <View style={s.checkRow}>
           <Ionicons name="shield-checkmark" size={18} color={colors.primary} />

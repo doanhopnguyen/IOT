@@ -152,6 +152,32 @@ class FaceEnrollmentServiceTest {
         assertThat(service.templates("camera", "secret").templates()).isEmpty(); // Same profile needs a separate approval at this door.
         membership.setAllowFace(false); assertThat(service.templates("camera", "secret").templates()).isEmpty();
     }
+    @Test void profilePreviewMustMatchTheActiveCredential() {
+        Credential active=sample(CredentialStatus.ACTIVE);
+        when(credentials.findByAccount_AccountId(2L)).thenReturn(List.of(active));
+        AuditLog photo=new AuditLog(); photo.setDetails(Map.of("credentialId",20L,"previewImage","data:image/jpeg;base64,current"));
+        when(audits.findFirstByActionAndEntityTypeAndEntityIdOrderByAuditLogIdDesc("REGISTER_FACE_PROFILE","ACCOUNT",2L))
+                .thenReturn(Optional.of(photo));
+        assertThat(service.profile().previewImage()).isEqualTo("data:image/jpeg;base64,current");
+        photo.setDetails(Map.of("credentialId",19L,"previewImage","data:image/jpeg;base64,obsolete"));
+        assertThat(service.profile().previewImage()).isNull();
+    }
+    @Test void anOldRequestWithoutPhotoMustNotShowTheCurrentProfilePhoto() {
+        when(current.requireAccount()).thenReturn(owner);
+        FaceRequest old=request(sample(CredentialStatus.ACTIVE));
+        when(requests.findByAccessUnit_UnitIdOrderByRequestedAtDesc(10L)).thenReturn(List.of(old));
+        assertThat(service.list(10L).get(0).previewImage()).isNull();
+        verify(audits,never()).findFirstByActionAndEntityTypeAndEntityIdOrderByAuditLogIdDesc("REGISTER_FACE_PROFILE","ACCOUNT",2L);
+    }
+    @Test void requestKeepsItsOwnPhotoWhenProfileChanges() {
+        when(current.requireAccount()).thenReturn(owner);
+        FaceRequest old=request(sample(CredentialStatus.ACTIVE));
+        AuditLog receipt=new AuditLog(); receipt.setDetails(Map.of("credentialId",20L,"previewImage","data:image/jpeg;base64,request-snapshot"));
+        when(audits.findFirstByActionAndEntityTypeAndEntityIdOrderByAuditLogIdDesc("REQUEST_FACE_ENROLLMENT","FACE_REQUEST",8L))
+                .thenReturn(Optional.of(receipt));
+        when(requests.findByAccessUnit_UnitIdOrderByRequestedAtDesc(10L)).thenReturn(List.of(old));
+        assertThat(service.list(10L).get(0).previewImage()).isEqualTo("data:image/jpeg;base64,request-snapshot");
+    }
     @Test void globalRevocationCancelsPendingSamplesAndRequests() {
         Credential pending = sample(CredentialStatus.PENDING), old = sample(CredentialStatus.ACTIVE);
         FaceRequest r = request(pending);

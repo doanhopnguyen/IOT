@@ -9,6 +9,7 @@ import com.smartaccess.model.Command;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface CommandRepository extends JpaRepository<Command, Long> {
+    Optional<Command> findFirstByDevice_DeviceIdAndCommandTypeOrderByCommandIdDesc(Long deviceId,String commandType);
 
     Optional<Command> findByCommandUuid(String commandUuid);
 

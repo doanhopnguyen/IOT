@@ -25,6 +25,7 @@
 | Vân tay (UART2) | TX cảm biến → RX ESP / RX cảm biến ← TX ESP | 17 / 18 |
 | Servo | Tín hiệu | 4 |
 | Công tắc từ | Hai dây | 6 và GND |
+| Buzzer (còi cảnh báo) | Điều khiển active-HIGH, qua mạch driver nếu dùng nguồn còi 5V | 5 |
 | HX-543 | Chân 1 — Cột 4 (A/B/C/D) | 38 |
 | HX-543 | Chân 2 — Cột 3 (3/6/9/#) | 15 |
 | HX-543 | Chân 3 — Cột 2 (2/5/8/0) | 14 |
@@ -51,6 +52,8 @@ Sơ đồ khối:
 ```
 
 ## Lưu ý khi lắp
+
+Firmware **1.14.0 / 2.0.1-demo** hỗ trợ còi trên GPIO5: sai PIN chạm ngưỡng (mặc định 5 lần, chỉnh 1–10 lần trong app) và cửa mở quá thời gian cài đặt. Chi tiết ngưỡng, nhịp còi và kiểm thử tại [hướng dẫn còi cảnh báo](../docs/COI_CANH_BAO.md). GPIO5 dùng mức logic 3.3V; nguồn còi 5V qua driver dùng GND chung.
 
 - ESP32-S3 DevKit có **2 cổng USB-C**: cổng **UART** (chip CH343/CP210x) để nạp; cổng **USB** (USB-CDC) để xem log và cấp phát bằng `scripts/device_tool.py` (firmware build với `ARDUINO_USB_CDC_ON_BOOT=1`).
 - Nạp không vào được: giữ **BOOT**, nhấn/thả **RST**, thả BOOT rồi nạp lại.

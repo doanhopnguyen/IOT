@@ -174,6 +174,20 @@ class AlertRuleServiceTest {
         assertThat(e.getSeverity()).isEqualTo(EventSeverity.CRITICAL);
         assertThat(e.getMessage()).isEqualTo("Cửa Cửa chính: nhập sai PIN 5 lần trong 5 phút, nghi có người dò mã");
     }
+    @Test void perDoorPinLimitMatchesTheConfiguredThreshold() {
+        door.getAccessUnit().setPinFailureLimit((short)3);
+        attempts(AccessMethod.PIN,"LOCAL_ACCESS_DENIED",2);
+        assertThat(service.evaluate(now)).isZero();
+        attempts(AccessMethod.PIN,"LOCAL_ACCESS_DENIED",1);
+        assertThat(service.evaluate(now)).isEqualTo(1);
+        assertThat(created().getEventType()).isEqualTo(AlertRuleService.REPEATED_WRONG_PIN);
+    }
+    @Test void raisingPinLimitDoesNotAlertAtTheOldDefault() {
+        door.getAccessUnit().setPinFailureLimit((short)10);
+        attempts(AccessMethod.PIN,"LOCAL_ACCESS_DENIED",5);
+        assertThat(service.evaluate(now)).isZero();
+        verify(events,never()).save(any());
+    }
 
     @Test void lockdownRefusalsAreNotFailedAuthentication() {
         attempts(AccessMethod.RFID, "LOCAL_ACCESS_DENIED,LOCKDOWN", 5);

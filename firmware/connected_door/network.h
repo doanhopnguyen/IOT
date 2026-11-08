@@ -153,6 +153,7 @@ void sendAck(const String &uuid,bool success,const String &message,bool remember
     eventPrefs.putUInt("ackpos",n+1);eventPrefs.remove("started");}
   publishDocument("ack",doc);
 }
+#include "ota_update.h"
 void connectedRecord(const char *method,bool granted,const char *uid,int fingerId,const char *reason) {
   if(!claimed || resetPending || deviceUid.isEmpty())return;
   DynamicJsonDocument doc(512);doc["eventUuid"]=randomId();doc["method"]=method;
@@ -168,6 +169,7 @@ void connectedRecord(const char *method,bool granted,const char *uid,int fingerI
 bool openRetirePrefs(){if(!retirePrefsOpen)retirePrefsOpen=retirePrefs.begin("doorretire",false);return retirePrefsOpen;}
 bool connectedRetired(){return openRetirePrefs() && retirePrefs.getBool("retired",false);}
 const char *connectedRestrictionNotice(){
+  if(connectedUpdating())return "Firmware update in progress";
   if(restriction==DoorRestriction::LOCKDOWN)return "Door locked by owner";
   if(restriction==DoorRestriction::SUSPENDED)return "Device suspended by admin";
   if(restriction==DoorRestriction::RETIRED)return "Device retired";
@@ -198,7 +200,7 @@ bool savePinAccess(bool enabled) {
   return true;
 }
 // Chặn cả lệnh mở từ menu quản trị khi admin tạm ngưng hoặc đã thu hồi; tạm khóa của chủ cửa không chặn ở đây.
-bool connectedOpenBlocked(){return restriction==DoorRestriction::SUSPENDED || restriction==DoorRestriction::RETIRED;}
+bool connectedOpenBlocked(){return connectedUpdating() || restriction==DoorRestriction::SUSPENDED || restriction==DoorRestriction::RETIRED;}
 void saveOwners(JsonArrayConst cards,JsonArrayConst fingers){
   String c=",",f=",";
   for(JsonVariantConst v:cards){String uid=v.as<String>();uid.replace(":","");uid.toUpperCase();if(uid.length()>=8&&uid.length()<=20)c+=uid+",";}
@@ -282,6 +284,22 @@ String setupStage() {
   return SetupLogic::stage(resetPending,WiFi.status()==WL_CONNECTED,broker.connected(),claimed,appPinsReady,
     cfg.touch.valid,sensorCycleVerified && cfg.closedLevel>=0,calStep,doorCalClosedSample>=0,networkPage,servoCycleVerified,servoSetup.step>0);
 }
+// Initial onboarding accepts the saved/factory servo angles without a motor test.
+// Explicit servo adjustment remains available from the owner settings and TFT menu.
+bool connectedCompleteDoorSetup() {
+  if(!claimed || !appPinsReady || !cfg.admin.valid || !cfg.user.valid || resetPending || storageFault || !cfg.touch.valid ||
+     !sensorCycleVerified || cfg.closedLevel<0)return false;
+  if(!servoCycleVerified) {
+    if(!nvs.putBool("servoVerified",true) || !nvs.getBool("servoVerified",false)) {
+      storageError();return true;
+    }
+    servoCycleVerified=true;
+    applyMotorConfig();
+  }
+  adminSession=false;
+  go(HOME);
+  return true;
+}
 bool connectedContinueSetup() {
   if(resetPending){
     adminSession=false;networkPage=false;screen=APP_SETUP;title("FACTORY RESET");
@@ -308,10 +326,11 @@ bool connectedContinueSetup() {
   networkPage=false;adminSession=true;adminStarted=adminActivity=millis();
   if(!cfg.touch.valid)beginCalibration();
   else if(!sensorCycleVerified || cfg.closedLevel<0)go(DOOR_CAL);
-  else if(!servoCycleVerified && screen!=SERVO_CAL)beginServoCalibration();
+  else if(!servoCycleVerified && screen!=SERVO_CAL)connectedCompleteDoorSetup();
   return true;
 }
 bool connectedSetupTouch(int x,int y) {
+  if(connectedUpdating())return true;
   if(resetPending)return true;
   if(screen==APP_SETUP){if(cfg.touch.valid && cfg.admin.valid && y>=260)go(ADMIN_LOGIN);return true;}
   if(!networkPage || screen!=DEVICE_STATUS)return false;
@@ -539,6 +558,10 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
   String incomingTopic(incoming);
   if(incomingTopic==topic("ack-confirm")) {
     String uuid=doc["commandUuid"]|"";
+    if(!uuid.isEmpty() && uuid==factoryPrefs.getString("otaAck","")) {
+      if(factoryPrefs.remove("otaAck"))factoryPrefs.remove("otaVersion");
+      if(eventPrefs.getString("started","")==uuid)eventPrefs.remove("started");
+    }
     if(!resetReceipt.isEmpty()&&uuid==resetReceipt){
       if(!factoryPrefs.putBool("resetCommit",true) || !finishResetCommit()){tell("Reset storage retry pending");return;}
       broker.disconnect();WiFi.disconnect(true);delay(200);ESP.restart();
@@ -552,6 +575,9 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
         eventPrefs.remove(key.c_str());queueHead=(queueHead+1)%64;eventPrefs.putUShort("head",queueHead);}}
     return;
   }
+  // Leave NVS and sensor cleanup alone while the OTA worker writes flash.
+  // Backend retries config, member cleanup and retirement after the next boot.
+  if(connectedUpdating())return;
   if(incomingTopic==topic("config")) {
     if(doc["requestId"].as<String>()!=requestNonce)return;
     if(doc["serverTime"].as<long long>()>1700000000){timeval tv{(time_t)doc["serverTime"].as<long long>(),0};settimeofday(&tv,nullptr);}
@@ -566,6 +592,12 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
     saveOwners(doc["ownerRfid"].as<JsonArrayConst>(),doc["ownerFingerprints"].as<JsonArrayConst>());
     setRestriction(DoorRestriction::fromServer(restriction,lifecycle,doc["lockdown"]|false));
     if(doc["pinEnabled"].is<bool>() && !savePinAccess(doc["pinEnabled"].as<bool>()))return;
+    if(doc["pinFailureLimit"].is<int>() && DoorAlarm::validPinLimit(doc["pinFailureLimit"].as<int>())) {
+      int limit=doc["pinFailureLimit"].as<int>();
+      if(!DoorAlarm::savePinLimit(nvs,limit)){storageFault=true;return;}
+      pinFailureLimit=uint8_t(limit);
+      if(!pinBlocked && failedPins>=pinFailureLimit){pinBlocked=true;blockedSince=millis();}
+    }
     if(doc["unlockDurationSec"].is<int>() && doc["doorOpenTimeoutSec"].is<int>()) {
       int seconds=doc["unlockDurationSec"].as<int>(),openSeconds=doc["doorOpenTimeoutSec"].as<int>();
       bool wait=doc["autoLockWaitForClose"]|true;
@@ -600,10 +632,13 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
     executeMemberRemoval(uuid,doc["data"].as<JsonObjectConst>());return;
   }
   for(int i=0;i<16;i++){DynamicJsonDocument saved(512);if(!deserializeJson(saved,eventPrefs.getString(("ack"+String(i)).c_str(),""))&&saved["commandUuid"].as<String>()==uuid){publishDocument("ack",saved);return;}}
+  if((connectedUpdating() && otaJob.uuid==uuid) || factoryPrefs.getString("otaAck","")==uuid)return;
+  if(connectedUpdating()){sendAck(uuid,false,"DEVICE_BUSY_UPDATING");return;}
   if(eventPrefs.getString("started","")==uuid){if(remoteEnrollUuid!=uuid && rfidScanUuid!=uuid)sendAck(uuid,false,"INTERRUPTED_COMMAND");return;}
   time_t now=time(nullptr);long long issued=doc["issuedAt"]|0LL;int ttl=doc["ttlSec"]|0;
   if(now<1700000000 || issued>now+5 || ttl<1 || ttl>60 || now-issued>ttl){sendAck(uuid,false,"EXPIRED_OR_CLOCK_INVALID");return;}
   if(!eventPrefs.putString("started",uuid)){sendAck(uuid,false,"STORAGE_ERROR",false);return;}
+  if(type=="FIRMWARE_UPDATE"){startOtaUpdate(uuid,doc["data"].as<JsonObjectConst>());return;}
   if(type=="DEVICE_RESET"){executeReset(uuid,doc["data"]["nextGeneration"]|generation+1);return;}
   if(type=="ACTIVATION_CODE_SET") {
     if(claimed || resetPending){sendAck(uuid,false,"NOT_IN_INVENTORY");return;}
@@ -640,8 +675,8 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
   if(type=="SETUP_CALIBRATE") {
     MotorState active=snapshot();
     if(!appPinsReady || remoteStage || !rfidScanUuid.isEmpty() || active.door.released || active.pending || active.pulsing || active.calibrating || screen==SERVO_CAL){sendAck(uuid,false,"DEVICE_BUSY_OR_PINS_REQUIRED");return;}
-    Config next=cfg;next.touch.valid=0;next.closedLevel=-1;sensorCycleVerified=false;servoCycleVerified=false;
-    if(!nvs.putBool("reedVerified",false) || !nvs.putBool("servoVerified",false) || !saveConfig(next)){sendAck(uuid,false,"STORAGE_ERROR");return;}
+    Config next=cfg;next.touch.valid=0;next.closedLevel=-1;sensorCycleVerified=false;
+    if(!nvs.putBool("reedVerified",false) || !saveConfig(next)){sendAck(uuid,false,"STORAGE_ERROR");return;}
     sendAck(uuid,true,"CALIBRATION_STARTED");connectedContinueSetup();return;
   }
   if(type.startsWith("SERVO_")) {
@@ -780,7 +815,7 @@ void handleFactorySerial() {
       Serial.println("FACTORY_INFO mac="+factoryMac()+" uid="+deviceUid+" firmware="+String(FIRMWARE_VERSION)+" gen="+String(generation)+" wifi="+String(WiFi.status())+" mqtt="+String(broker.connected())+
         " fingerReady="+String(fingerReady)+" authenticated="+String(authenticated)+" parameters="+String(parameterStatus)+" capacity="+String(finger.capacity)+" bitmapOK="+String(bitmapOk)+" slot1empty="+String(bitmapOk&&!(bitmap[0]&2))+" templates="+String(countOk?int(finger.templateCount):-1)+
         " storageFault="+String(storageFault)+" configBytes="+String(nvs.getBytesLength("config"))+" freeEntries="+String(nvs.freeEntries())+" savedWifi="+String(savedWifiCount)+" claimed="+String(claimed)+" cards="+String(cfg.cardCount)+" fingers="+String(cfg.fingerCount)+
-        " motorEnabled="+String(state.enabled)+" motorFault="+String(state.fault)+" motorCommanded="+String(state.commanded)+" lockAngle="+String(cfg.lockAngle)+" openAngle="+String(cfg.openAngle)+" lastServoAngle="+String(state.lastAngle)+" servoReady="+String(servoCycleVerified)+" released="+String(state.door.released)+" lockPending="+String(state.door.lockPending)+" unlockSec="+String(state.unlockMs/1000)+" reedVerified="+String(sensorCycleVerified)+" appPins="+String(appPinsReady)+" offlineReady="+String(connectedAccessReady())+" ui="+String(screen==HOME?"KEYPAD":screen==SERVO_CAL?"SERVO_GUIDE":networkPage?"WIFI_SETUP":"SETUP")+" wifiBars="+String(WiFi.status()==WL_CONNECTED?SetupLogic::signalBars(WiFi.RSSI()):0)+" setupStage="+setupStage()+" productPrepared="+String(!deviceUid.isEmpty()&&activationCode.length()>=24&&setupPassword.length()>=8));
+        " motorEnabled="+String(state.enabled)+" motorFault="+String(state.fault)+" motorCommanded="+String(state.commanded)+" lockAngle="+String(cfg.lockAngle)+" openAngle="+String(cfg.openAngle)+" lastServoAngle="+String(state.lastAngle)+" servoReady="+String(servoCycleVerified)+" released="+String(state.door.released)+" lockPending="+String(state.door.lockPending)+" unlockSec="+String(state.unlockMs/1000)+" reedVerified="+String(sensorCycleVerified)+" appPins="+String(appPinsReady)+" offlineReady="+String(connectedAccessReady())+" ui="+String(screen==HOME?"KEYPAD":screen==SERVO_CAL?"SERVO_GUIDE":networkPage?"WIFI_SETUP":"SETUP")+" wifiBars="+String(WiFi.status()==WL_CONNECTED?SetupLogic::signalBars(WiFi.RSSI()):0)+" setupStage="+setupStage()+" productPrepared="+String(!deviceUid.isEmpty()&&activationCode.length()>=24&&setupPassword.length()>=8)+" pinFailureLimit="+String(pinFailureLimit)+" buzzerAlarm="+String(DoorAlarm::label(doorAlarm.reason))+" buzzerOn="+String(buzzerHigh));
     }
     serialLine="";
   }
@@ -792,11 +827,12 @@ bool connectedCaptureCard(const String &uid) {
   sendAck(uuid,true,"RFID_UID:"+uid);tell("Card read - confirm in mobile app");return true;
 }
 void connectedPoll() {
+  pollOtaUpdate();
   if(factoryPrefs.getBool("resetCommit",false) && finishResetCommit()){broker.disconnect();WiFi.disconnect(true);delay(200);ESP.restart();return;}
   if(resetIntent.length() && resetReceipt.isEmpty() && millis()-lastResetAttempt>15000)
     executeReset(resetIntent,factoryPrefs.getUInt("nextGen",generation+1));
   // AP recovery runs in the background; a configured door keeps its offline keypad.
-  if(connectedAccessReady() && screen==APP_SETUP && !networkPage)go(HOME);
+  if(!connectedUpdating() && connectedAccessReady() && screen==APP_SETUP && !networkPage)go(HOME);
   if(!rfidScanUuid.isEmpty() && millis()-rfidScanStarted>=30000){String uuid=rfidScanUuid;rfidScanUuid="";sendAck(uuid,false,"RFID_SCAN_TIMEOUT");tell("Card scan timed out");}
   handleFactorySerial();pollSetupScan();if(setupApActive)setupDns.processNextRequest();setupWeb.handleClient();pollRemoteEnroll();
   if(setupApCloseAt && WiFi.status()==WL_CONNECTED && int32_t(millis()-setupApCloseAt)>=0){setupApCloseAt=0;setupDns.stop();WiFi.softAPdisconnect(true);setupApActive=false;networkPage=false;wifiPermitUntil=0;if(!connectedContinueSetup())go(HOME);}
@@ -826,7 +862,7 @@ void connectedPoll() {
     if(broker.connect(deviceUid.c_str(),brokerUser.c_str(),brokerPassword.c_str()))for(const char *suffix:{"cmd","config","ack-confirm","access-ack"})broker.subscribe(topic(suffix).c_str(),1);
   }
   broker.loop();if(!broker.connected())return;
-  if(screen==APP_SETUP && millis()-lastSetupDraw>1000){lastSetupDraw=millis();if(!connectedContinueSetup())go(HOME);}
+  if(!connectedUpdating() && screen==APP_SETUP && millis()-lastSetupDraw>1000){lastSetupDraw=millis();if(!connectedContinueSetup())go(HOME);}
   if(wifiPermitUntil && int32_t(wifiPermitUntil-millis())<=0)wifiPermitUntil=0;
   if(!resetReceipt.isEmpty()&&millis()-lastStatusAt>3000){lastStatusAt=millis();sendAck(resetReceipt,true,"RESET_EMPTY_VERIFIED",false);return;}
   // Publish state transitions promptly so a short unlock is visible between heartbeats.
@@ -848,6 +884,7 @@ void connectedPoll() {
     status["lockAngle"]=cfg.lockAngle;status["openAngle"]=cfg.openAngle;status["servoRange"]=cfg.servoRange;
     status["lockPending"]=state.door.lockPending;status["unlockDurationSec"]=state.unlockMs/1000;
     status["doorOpenTimeoutSec"]=state.heldOpenMs/1000;
+    status["pinFailureLimit"]=pinFailureLimit;status["buzzerAlarm"]=DoorAlarm::label(doorAlarm.reason);status["buzzerOn"]=buzzerHigh;
     status["autoLockWaitForClose"]=state.waitForClose;
     status["servoCalibrated"]=servoCycleVerified;
     if(state.lastAngle>=0)status["servoCommandAngle"]=state.lastAngle;else status["servoCommandAngle"]=nullptr;
@@ -860,6 +897,8 @@ void connectedPoll() {
     // Telemetry chẩn đoán: cường độ Wi-Fi (dBm), RAM trống (bytes), thời gian chạy (s), phiên bản.
     status["rssi"]=WiFi.RSSI();status["freeHeap"]=ESP.getFreeHeap();status["uptime"]=millis()/1000;
     status["fw"]=FIRMWARE_VERSION;status["hw"]=HARDWARE_VERSION;
+    status["otaUpdating"]=connectedUpdating();status["otaProgress"]=otaProgress.load();
+    status["otaIdentity"]=FIRMWARE_IDENTITY;
     if(publishDocument("status",status)) {
       previousLeaf=leaf;previousLatch=currentLatch;previousLockPending=state.door.lockPending;
       previousLock=cfg.lockAngle;previousOpen=cfg.openAngle;previousRange=cfg.servoRange;

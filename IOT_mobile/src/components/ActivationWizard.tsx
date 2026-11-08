@@ -89,7 +89,7 @@ export function ActivationWizard({ open, close, onCreated }: { open: boolean; cl
   return <AppModal visible={open} title="Thiết lập cửa mới" scrollKey={`${page}:${setupStep}`} onClose={() => { if (!busy && !wifiBusy) close(); }}>
     <View style={{ gap: 16 }}>
       {page === 'SCAN' ? <>
-        <SetupProgress step={1} total={10} title="Quét QR sản phẩm" detail="QR chứa mã nhận cửa và Wi-Fi thiết lập của khóa." />
+        <SetupProgress step={1} total={8} title="Quét QR sản phẩm" detail="QR chứa mã nhận cửa và Wi-Fi thiết lập của khóa." />
         {scanner && permission?.granted ? <CameraView style={{ height: 260, borderRadius: 14 }} barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={event => {
           if (scanLocked.current) return; scanLocked.current = true;
           try { accept(event.data, event.raw); } catch (e) { setScanner(false); setError(e instanceof Error ? e.message : 'QR không hợp lệ.'); }
@@ -111,7 +111,7 @@ export function ActivationWizard({ open, close, onCreated }: { open: boolean; cl
           } catch (e) { setError(e instanceof Error ? e.message : 'Mã nhận cửa không hợp lệ.'); }
         }} />
       </> : page === 'WIFI' && product ? <>
-        <SetupProgress step={2} total={10} title="Kết nối Wi-Fi cho cửa" detail="Kết nối điện thoại với khóa, rồi chọn Wi-Fi 2.4 GHz để khóa sử dụng." />
+        <SetupProgress step={2} total={8} title="Kết nối Wi-Fi cho cửa" detail="Kết nối điện thoại với khóa, rồi chọn Wi-Fi 2.4 GHz để khóa sử dụng." />
         <Card><Text style={s.heading}>{deviceDisplayName(product.deviceUid, product.name)}</Text><Badge label="Đã quét sản phẩm" tone="success" />
           <Text selectable style={s.caption}>Mã nhận cửa: {product.activationCode}</Text>
         </Card>
@@ -126,7 +126,7 @@ export function ActivationWizard({ open, close, onCreated }: { open: boolean; cl
         <Button title="Kiểm tra lại kết nối" variant="ghost" disabled={busy || wifiBusy} onPress={() => { setError(''); setRefreshKey(key => key + 1); }} />
         <Button title="Quét lại sản phẩm" variant="ghost" disabled={wifiBusy} onPress={() => { setProduct(undefined); setOnline(false); setRestartConfirmed(false); setError(''); autoJoinCode.current = ''; }} />
       </> : page === 'RESTART' && product ? <>
-        <SetupProgress step={3} total={10} title="Khởi động lại cửa sau khi lưu Wi-Fi" detail="Thực hiện một lần trước khi nhận cửa và lưu hai mã PIN." />
+        <SetupProgress step={3} total={8} title="Khởi động lại cửa sau khi lưu Wi-Fi" detail="Thực hiện một lần trước khi nhận cửa và lưu hai mã PIN." />
         <Notice tone="info">Chỉ thực hiện sau khi trang thiết lập báo Đã lưu Wi-Fi. Nhấn rồi thả nút RST/EN trên bo, hoặc rút nguồn cửa 5 giây rồi cấp lại.</Notice>
         <Text style={s.description}>Chờ cửa khởi động và tự kết nối Wi-Fi đã lưu. Đưa điện thoại về mạng có Internet, sau đó bấm nút bên dưới để kiểm tra kết nối dịch vụ.</Text>
         <Text style={s.caption}>Đây là khởi động lại, không phải khôi phục mặc định. Không giữ BOOT và không chọn xóa dữ liệu cửa.</Text>
@@ -135,7 +135,7 @@ export function ActivationWizard({ open, close, onCreated }: { open: boolean; cl
           setName(value => value || deviceDisplayName(info.deviceUid, info.name)); setRestartConfirmed(true);
         }); }} />
       </> : page === 'NAME' && product ? <>
-        <SetupProgress step={4} total={10} title="Đặt tên cửa" detail="Đặt một tên dễ nhớ để phân biệt các cửa của bạn." />
+        <SetupProgress step={4} total={8} title="Đặt tên cửa" detail="Đặt một tên dễ nhớ để phân biệt các cửa của bạn." />
         <Badge label="Cửa đã kết nối" tone="success" />
         <Text style={s.description}>{deviceDisplayName(product.deviceUid, product.name)}</Text>
         <Text selectable style={s.caption}>Mã nhận cửa: {product.activationCode}</Text>

@@ -35,10 +35,8 @@ const pages: Record<SetupPage, { title: string; position: number }> = {
   TOUCH: { title: 'Hiệu chỉnh cảm ứng', position: 2 },
   DOOR_CLOSED: { title: 'Xác nhận cánh cửa đóng', position: 3 },
   DOOR_OPEN: { title: 'Xác nhận cánh cửa mở', position: 4 },
-  SERVO_LOCK: { title: 'Căn vị trí khóa', position: 5 },
-  SERVO_OPEN: { title: 'Căn vị trí mở', position: 6 },
-  VERIFY: { title: 'Chờ cửa hoàn tất', position: 6 },
-  COMPLETE: { title: 'Cửa đã sẵn sàng', position: 6 },
+  VERIFY: { title: 'Chờ cửa hoàn tất', position: 4 },
+  COMPLETE: { title: 'Cửa đã sẵn sàng', position: 4 },
 };
 
 export type SetupSubView = 'home' | 'door-pin' | 'admin-pin' | 'calibrate' | 'pins' | 'servo' | 'wifi';
@@ -237,7 +235,7 @@ function DeviceSetupFlow({
       <Card>
         <SetupProgress
           step={pages[page].position + stepOffset}
-          total={6 + stepOffset}
+          total={4 + stepOffset}
           title={pages[page].title}
         />
         {!effective.online ? (
@@ -282,23 +280,13 @@ function DeviceSetupFlow({
                     ? 'Đóng cánh cửa'
                     : page === 'DOOR_OPEN'
                       ? 'Mở cánh cửa'
-                      : page === 'SERVO_LOCK'
-                        ? 'LOCK · vị trí khóa'
-                        : page === 'SERVO_OPEN'
-                          ? 'OPEN · vị trí mở'
-                          : 'Đang xác nhận'}
+                      : 'Đang xác nhận'}
               </Text>
               <Text style={s.description}>
                 Thực hiện trên màn hình thiết bị. App tự chuyển sang bước tiếp theo khi cửa xác
                 nhận.
               </Text>
             </View>
-            {page.startsWith('SERVO_') ? (
-              <Text style={s.caption}>
-                Chọn RANGE 180/360 theo servo. Các nút ±1°/±5° quay thử ngay; quan sát chốt, chờ
-                dừng rồi xác nhận.
-              </Text>
-            ) : null}
           </>
         )}
         <Button
@@ -320,8 +308,8 @@ function DeviceSetupFlow({
         <Badge label="Hoàn tất" tone="success" />
         <Text style={s.heading}>Cửa đã sẵn sàng</Text>
         <Text style={s.description}>
-          Đã lưu PIN và xác nhận cảm ứng, cảm biến cửa, vị trí khóa/mở. Bạn có thể thêm thẻ, vân tay
-          và thành viên.
+          Đã lưu PIN và xác nhận cảm ứng, cảm biến cửa. Bạn có thể thêm thẻ, vân tay và thành viên.
+          Góc servo có thể chỉnh riêng trong Cài đặt cửa khi cần.
         </Text>
         <LaptopAiSetup unitId={unitId} />
         <Button title="Về danh sách cửa" icon="checkmark-circle-outline" onPress={onComplete} />
@@ -525,7 +513,7 @@ function DeviceSetupFlow({
           </View>
           <View style={{ flex: 1 }}>
             <Text style={s.heading}>Hiệu chỉnh phần cứng</Text>
-            <Text style={s.caption}>Cảm ứng màn hình, cảm biến từ & chốt khóa</Text>
+            <Text style={s.caption}>Cảm ứng màn hình và cảm biến đóng/mở cửa</Text>
           </View>
           <Badge
             label={effective.touchCalibrated && effective.doorCalibrated ? 'Đã chuẩn' : 'Cần căn'}
@@ -568,23 +556,10 @@ function DeviceSetupFlow({
               {effective.doorCalibrated ? 'Đã hiệu chỉnh' : 'Chưa hiệu chỉnh'}
             </Text>
           </View>
-          <View style={s.row}>
-            <Ionicons
-              name={effective.servoCalibrated !== false ? 'checkmark-circle' : 'ellipse-outline'}
-              size={18}
-              color={effective.servoCalibrated !== false ? colors.success : colors.muted}
-            />
-            <Text style={[s.caption, { flex: 1, color: colors.text }]}>
-              Vị trí khóa / mở chốt Servo
-            </Text>
-            <Text style={s.caption}>
-              {effective.servoCalibrated !== false ? 'Đã hiệu chỉnh' : 'Chưa hiệu chỉnh'}
-            </Text>
-          </View>
         </View>
         <Text style={s.description}>
-          Sử dụng khi bạn di dời vị trí lắp đặt cảm biến từ hoặc cần căn lại màn hình cảm ứng và
-          hành trình chốt cơ khí trực tiếp trên cửa.
+          Sử dụng khi bạn di dời cảm biến từ hoặc cần căn lại màn hình cảm ứng. Góc khóa/mở
+          được giữ nguyên; bạn có thể chỉnh riêng tại mục Góc Servo.
         </Text>
         <Button
           title={busy ? 'Đang gửi lệnh…' : 'Bắt đầu hiệu chỉnh trên cửa'}

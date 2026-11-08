@@ -56,7 +56,7 @@ public class SecurityConfig {
                 }))
                 .authorizeHttpRequests(authorize -> authorize
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/auth/csrf", "/api/health", "/admin/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/auth/csrf", "/api/health", "/admin/**", "/api/device/firmware/*/download").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())

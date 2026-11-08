@@ -297,13 +297,18 @@ public class FaceEnrollmentService {
                     .filter(s -> !s.isBlank());
             if (fromReq.isPresent()) return fromReq.get();
         }
-        return request.getAccount() != null ? accountPreviewImage(request.getAccount().getAccountId()) : null;
+        // The photo must belong to this request, never a newer profile uploaded later.
+        return null;
     }
 
     private String accountPreviewImage(Long accountId) {
         if (accountId == null) return null;
+        Long credentialId=active(accountId).map(Credential::getCredentialId).orElse(null);
+        if(credentialId==null)return null;
         return audits.findFirstByActionAndEntityTypeAndEntityIdOrderByAuditLogIdDesc(
                 "REGISTER_FACE_PROFILE", "ACCOUNT", accountId)
+                .filter(log -> log.getDetails()!=null && log.getDetails().get("credentialId") instanceof Number id
+                        && credentialId.equals(id.longValue()))
                 .map(log -> log.getDetails() != null ? log.getDetails().get("previewImage") : null)
                 .filter(String.class::isInstance).map(String.class::cast)
                 .filter(s -> !s.isBlank())

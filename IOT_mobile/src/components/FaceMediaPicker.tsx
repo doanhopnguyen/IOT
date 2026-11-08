@@ -47,8 +47,8 @@ export function FaceCapture({
   return (
     <View style={{ gap: 12 }}>
       <Notice>
-        Chọn ảnh rõ mặt hoặc chụp ảnh mới. Tệp được tải lên để xử lý; máy chủ lưu đặc trưng và không
-        giữ tệp gốc sau xử lý.
+        Chọn ảnh rõ mặt hoặc chụp ảnh mới. Máy chủ lưu hồ sơ nhận diện và ảnh thu nhỏ để bạn
+        và chủ cửa xem khi duyệt; tệp gốc được xóa sau xử lý.
       </Notice>
       <Text style={s.description}>
         Ảnh tối đa 20 MiB, rõ một khuôn mặt và đủ ánh sáng.

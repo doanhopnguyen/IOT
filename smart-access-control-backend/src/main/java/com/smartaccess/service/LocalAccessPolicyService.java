@@ -54,6 +54,7 @@ public class LocalAccessPolicyService {
         return Map.of("rfid", rfid, "fingerprints", fingerprints, "ownerRfid", ownerRfid,
                 "ownerFingerprints", ownerFingerprints, "lockdown", lockdown.isLockedDown(device),
                 "pinEnabled", unit.isPinEnabled(), "unlockDurationSec", unit.getUnlockDurationSec().intValue(),
-                "doorOpenTimeoutSec", unit.getDoorOpenTimeoutSec().intValue(),"autoLockWaitForClose",unit.isAutoLockWaitForClose());
+                "doorOpenTimeoutSec", unit.getDoorOpenTimeoutSec().intValue(),"autoLockWaitForClose",unit.isAutoLockWaitForClose(),
+                "pinFailureLimit",unit.getPinFailureLimit().intValue());
     }
 }

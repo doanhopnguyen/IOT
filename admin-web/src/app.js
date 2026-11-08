@@ -1,7 +1,4 @@
-import { wireUsbReader } from './usb';
 import { icon } from './icons';
-import QRCode from 'qrcode';
-import { createProductQr, deviceDisplayName } from '../../IOT_mobile/src/services/api/productQr';
 import { lifecycleNotice, recentHeartbeat, resetAvailable } from '../../IOT_mobile/src/services/api/deviceState';
 
 const root = document.querySelector('#app');
@@ -10,11 +7,10 @@ let csrf = '',
   tab = 'overview',
   inventory = [],
   accounts = [],
-  issued = null,
+  firmware = [],
   poll,
   dashboard = null;
-let usbBusy = false,
-  refreshing = false,
+let refreshing = false,
   loaded = false,
   loadError = '',
   lastUpdated = null;
@@ -28,7 +24,7 @@ const tabs = [
   ['overview', 'Tổng quan', 'grid'],
   ['devices', 'Quản lý thiết bị', 'door'],
   ['accounts', 'Tài khoản', 'users'],
-  ['new', 'Đăng ký chip & QR', 'chip'],
+  ['firmware', 'Cập nhật firmware', 'upload'],
 ];
 const esc = (value) =>
   String(value ?? '').replace(
@@ -93,7 +89,7 @@ async function api(path, method = 'GET', body) {
     if (response.status === 401 && account) {
       account = null;
       csrf = '';
-      issued = null;
+
       loaded = false;
       clearInterval(poll);
       document.querySelectorAll('dialog').forEach((dialog) => dialog.remove());
@@ -194,9 +190,8 @@ async function refresh(force = false) {
   if (
     !account ||
     refreshing ||
-    usbBusy ||
     document.querySelector('dialog[open]') ||
-    (!force && (document.activeElement?.matches('input,select') || issued))
+    (!force && document.activeElement?.matches('input,select'))
   )
     return;
   refreshing = true;
@@ -207,18 +202,19 @@ async function refresh(force = false) {
       api('/api/admin/inventory'),
       api('/api/admin/accounts'),
       api('/api/admin/dashboard').catch(() => null),
+      api('/api/admin/firmware'),
     ]);
     if (!account) return;
-    [inventory, accounts, dashboard] = result;
+    [inventory, accounts, dashboard, firmware] = result;
     loaded = true;
     loadError = '';
     lastUpdated = new Date();
-    if (tab !== 'new' && !issued) render();
-    else updateNotice();
+    if (tab !== 'firmware') render();
+    else { updateNotice(); updateFirmwareList(); }
   } catch (err) {
     loadError = err.message;
     if (account) {
-      if (!loaded && tab !== 'new') render();
+      if (!loaded && tab !== 'firmware') render();
       else updateNotice();
     }
   } finally {
@@ -235,45 +231,22 @@ function updateNotice() {
     ? `${loadError}${loaded ? ' Dữ liệu bên dưới là lần cập nhật gần nhất.' : ''}`
     : '';
 }
-async function navigate(next) {
-  if (next === tab) return;
-  if (
-    issued &&
-    !(await confirmAction(
-      'Bạn đã lưu thông tin bàn giao?',
-      'Thông tin riêng chỉ hiển thị một lần. Hãy tải file cấp phát và lưu QR trước khi chuyển màn hình.',
-      'Đã lưu, tiếp tục',
-    ))
-  )
-    return;
-  tab = next;
-  issued = null;
-  render();
-}
+async function navigate(next) { if(next===tab)return;tab=next;render(); }
 function render() {
   if (!account) return;
-  root.innerHTML = `<div class="shell"><aside><div class="sidebar-brand">${brand()}</div><nav class="nav" aria-label="Điều hướng chính">${tabs.map(([key, label, symbol]) => `<button data-tab="${key}" class="${tab === key ? 'active' : ''}" ${tab === key ? 'aria-current="page"' : ''}>${icon(symbol)}<span>${label}</span></button>`).join('')}</nav><div class="foot"><div class="account-mini"><span class="account-avatar" aria-hidden="true">${esc((account.fullName || '').trim().normalize('NFC').split(/\s+/).at(-1)?.charAt(0).toLocaleUpperCase('vi') || '?')}</span><div class="name">${esc(account.fullName)}</div></div><button id="logout" class="logout">${icon('logout')} Đăng xuất</button></div></aside><div class="workspace"><main><header class="bar"><h1>${tab === 'overview' ? 'Tổng quan hệ thống' : tab === 'devices' ? 'Danh mục thiết bị' : tab === 'accounts' ? 'Quản lý tài khoản' : 'Đăng ký chip & QR'}</h1><div class="bar-actions"><button id="reload" class="secondary" aria-label="Làm mới dữ liệu">${icon('refresh')}<span>Làm mới</span></button>${tab !== 'new' ? `<button data-tab="new" aria-label="Đăng ký chip mới">${icon('plus')}<span>Đăng ký chip</span></button>` : ''}</div></header><div id="load-error" class="error page-notice" role="alert" hidden></div><div id="content">${content()}</div></main></div></div>`;
+  root.innerHTML = `<div class="shell"><aside><div class="sidebar-brand">${brand()}</div><nav class="nav" aria-label="Điều hướng chính">${tabs.map(([key, label, symbol]) => `<button data-tab="${key}" class="${tab === key ? 'active' : ''}" ${tab === key ? 'aria-current="page"' : ''}>${icon(symbol)}<span>${label}</span></button>`).join('')}</nav><div class="foot"><div class="account-mini"><span class="account-avatar" aria-hidden="true">${esc((account.fullName || '').trim().normalize('NFC').split(/\s+/).at(-1)?.charAt(0).toLocaleUpperCase('vi') || '?')}</span><div class="name">${esc(account.fullName)}</div></div><button id="logout" class="logout">${icon('logout')} Đăng xuất</button></div></aside><div class="workspace"><main><header class="bar"><h1>${tab === 'overview' ? 'Tổng quan hệ thống' : tab === 'devices' ? 'Danh mục thiết bị' : tab === 'accounts' ? 'Quản lý tài khoản' : 'Cập nhật firmware'}</h1><div class="bar-actions"><button id="reload" class="secondary" aria-label="Làm mới dữ liệu">${icon('refresh')}<span>Làm mới</span></button></div></header><div id="load-error" class="error page-notice" role="alert" hidden></div><div id="content">${content()}</div></main></div></div>`;
   updateNotice();
   document
     .querySelectorAll('[data-tab]')
     .forEach((button) => (button.onclick = () => navigate(button.dataset.tab)));
   document.querySelector('#logout').onclick = async (event) => {
     const logoutButton = event.currentTarget;
-    if (
-      issued &&
-      !(await confirmAction(
-        'Rời thông tin bàn giao?',
-        'Hãy tải file cấp phát và lưu QR trước khi đăng xuất. Thông tin riêng chỉ hiển thị một lần.',
-        'Đăng xuất',
-      ))
-    )
-      return;
     logoutButton.disabled = true;
     try {
       await api('/api/auth/logout', 'POST');
       account = null;
       csrf = '';
-      issued = null;
+
       loaded = false;
       clearInterval(poll);
       login();
@@ -282,23 +255,15 @@ function render() {
       if (logoutButton.isConnected) logoutButton.disabled = false;
     }
   };
-  document.querySelector('#reload').onclick = () => {
-    if (issued) notify('Hãy lưu thông tin bàn giao trước khi chuyển màn hình.');
-    else void refresh(true);
-  };
-  document.querySelector('#register')?.addEventListener('submit', register);
-  if (tab === 'new')
-    wireUsbReader(api, (value) => {
-      usbBusy = value;
-    });
+  document.querySelector('#reload').onclick = () => { void refresh(true); };
+  document.querySelector('#firmware-upload')?.addEventListener('submit', publishFirmware);
   wireFilters();
   wireRows();
-  if (issued) showIssued();
 }
 function content() {
-  if (tab === 'new') return registration();
   if (!loaded)
     return `<section class="panel">${loadError ? empty('Chưa tải được dữ liệu', 'Kiểm tra kết nối rồi bấm Làm mới.', 'alert') : loading()}</section>`;
+  if (tab === 'firmware') return firmwarePage();
   if (tab === 'accounts')
     return `<section class="panel"><div class="section-header"><div class="account-summary"><h2>Tài khoản hệ thống</h2><strong class="account-total" aria-label="${accounts.length} tài khoản">${accounts.length}</strong></div></div>${filterBar('accounts')}<div id="results">${accountTable()}</div></section>`;
   const heading = tab === 'overview' ? 'Thiết bị trong hệ thống' : 'Tất cả thiết bị';
@@ -343,6 +308,29 @@ function content() {
       ['wifi', 'Thiết bị ngoại tuyến', dashboard.offline, '', ''],
     );
   return `<div class="metrics">${metrics.map(([symbol, label, value, note, tone]) => `<article class="panel metric ${tone === 'red' ? 'critical' : ''}"><div class="metric-top"><span>${label}</span><span class="metric-icon">${icon(symbol)}</span></div><b>${value}</b><small>${note}</small></article>`).join('')}</div>${table}`;
+}
+function firmwareRows() {
+  if(!firmware.length)return empty('Chưa có bản cập nhật','Tải firmware .bin lên để phát hành cho chủ cửa.','upload');
+  return `<div class="tablewrap"><table><thead><tr><th>Bản phát hành</th><th>Phần cứng</th><th>Dung lượng</th><th>Ngày phát hành</th><th>Nội dung</th></tr></thead><tbody>${firmware.map(r=>`<tr><td><b>${esc(r.label)}</b><code>${esc(r.version)}</code><small>SHA-256: ${esc(r.sha256.slice(0,16))}…</small></td><td>${esc(r.hardwareVersion)}</td><td>${(r.size/1024/1024).toFixed(2)} MiB</td><td>${date(r.publishedAt)}</td><td>${esc(r.notes)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function updateFirmwareList(){const host=document.querySelector('#firmware-list');if(host)host.innerHTML=firmwareRows();}
+function firmwarePage() {
+  return `<section class="panel panel-pad"><h2>Phát hành bản cập nhật</h2><p>Chủ cửa sẽ thấy bản phát hành phù hợp trong app và tự xác nhận cài đặt. Dữ liệu cửa được giữ khi cập nhật.</p><form id="firmware-upload" class="stack" style="max-width:760px"><label>Tên hiển thị<input name="label" maxlength="100" value="v2.0 demo" required></label><label>Phiên bản firmware<input name="version" value="2.0.1-demo" pattern="[0-9]+[.][0-9]+[.][0-9]+(-[a-zA-Z0-9.]+)?" required></label><input name="hardwareVersion" type="hidden" value="esp32s3-n16r8"><label>Nội dung cập nhật<textarea name="notes" rows="3" maxlength="2000">Thêm còi cảnh báo sai PIN và cửa mở lâu, đồng bộ ngưỡng từ app. Giữ nền nút đen và dữ liệu cửa.</textarea></label><label>Tệp firmware .bin · ESP32-S3 · tối đa 4 MiB<input name="file" type="file" accept=".bin,application/octet-stream" required></label><p id="firmware-status" role="status" aria-live="polite"></p><button type="submit">${icon('upload')} Phát hành cho chủ cửa</button></form></section><section class="panel panel-pad" style="margin-top:20px"><h2>Các bản đã phát hành</h2><div id="firmware-list">${firmwareRows()}</div></section>`;
+}
+async function publishFirmware(event) {
+  event.preventDefault();const button=event.submitter;const status=document.querySelector('#firmware-status');
+  const data=new FormData(event.target);const file=data.get('file');
+  if(!file || !file.size || file.size>4*1024*1024){status.textContent='Chọn firmware .bin tối đa 4 MiB.';return;}
+  button.disabled=true;status.textContent='Đang tải lên và kiểm tra firmware…';
+  try {
+    if(!csrf)await token();
+    const response=await fetch('/api/admin/firmware',{method:'POST',credentials:'include',headers:{'X-CSRF-TOKEN':csrf},body:data});
+    const result=await response.json();
+    if(!response.ok)throw Error(result.message||result.detail||'Chưa phát hành được firmware.');
+    status.textContent=`Đã phát hành ${result.label}. Chủ cửa có thể xem và xác nhận cập nhật trong app.`;
+    event.target.querySelector('[name="file"]').value='';
+    firmware=await api('/api/admin/firmware');updateFirmwareList();
+  }catch(error){status.textContent=error.message;}finally{button.disabled=false;}
 }
 function filterBar(kind) {
   const f = filters[kind];
@@ -394,9 +382,9 @@ function deviceTable() {
       inventory.length ? 'Không tìm thấy thiết bị' : 'Bắt đầu với thiết bị đầu tiên',
       inventory.length
         ? 'Thử tên khác hoặc thay đổi bộ lọc.'
-        : 'Đăng ký chip để tạo mã nhận cửa và QR bàn giao.',
+        : 'Thiết bị đã được cấp phát sẽ xuất hiện tại đây.',
       'chip',
-      inventory.length ? '' : '<button data-tab="new">' + icon('plus') + ' Đăng ký chip</button>',
+      '',
     );
   return `<p class="scroll-hint">Vuốt ngang bảng để xem đủ thông tin và thao tác.</p><div class="tablewrap" role="region" aria-label="Danh sách thiết bị" tabindex="0"><table><thead><tr><th>Thiết bị / định danh</th><th>Chủ cửa</th><th>Trạng thái thiết bị</th><th>Kết nối</th><th>Thao tác</th></tr></thead><tbody>${rows.map(deviceRow).join('')}</tbody></table></div>${footer(rows.length, inventory.length)}`;
 }
@@ -409,7 +397,7 @@ function deviceRow(d) {
     <td><span class="connection ${online(d) ? 'online' : ''}"><span class="dot"></span>${online(d) ? 'Online' : 'Offline'}</span><small>${date(d.lastSeenAt)}</small></td>
     <td class="actions"><button class="secondary" data-device-detail="${esc(d.deviceUid)}">Chi tiết</button>
     ${d.allowedTransitions?.length ? `<button class="secondary" data-lifecycle="${esc(d.deviceUid)}">Thay đổi trạng thái</button>` : ''}
-    ${retired ? '' : d.state === 'RESETTING' ? '<small>Đang chờ xác nhận xóa từ thiết bị</small>' : d.unitId ? `<button class="danger-outline" data-reset="${esc(d.deviceUid)}" ${resetAvailable(d) ? '' : 'disabled title="Cần thiết bị hoạt động và online để reset"'}>Đặt lại / Chuyển giao</button>` : d.state === 'INVENTORY' && d.operationUuid ? `<button class="secondary" data-code="${esc(d.deviceUid)}">Cấp mã mới</button>` : '<small>Mã đã cấp khi đăng ký</small>'}</td></tr>`;
+    ${retired ? '' : d.state === 'RESETTING' ? '<small>Đang chờ xác nhận xóa từ thiết bị</small>' : d.unitId ? `<button class="danger-outline" data-reset="${esc(d.deviceUid)}" ${resetAvailable(d) ? '' : 'disabled title="Cần thiết bị hoạt động và online để reset"'}>Đặt lại / Chuyển giao</button>` : '<small>Đang chờ nhận cửa</small>'}</td></tr>`;
 }
 function accountPagination(pageCount) {
   const pages = Array.from({ length: pageCount }, (_, i) => i + 1).filter(
@@ -489,114 +477,11 @@ function wireRows() {
     .querySelectorAll('[data-reset]')
     .forEach((b) => (b.onclick = () => resetDialog(b.dataset.reset)));
   document
-    .querySelectorAll('[data-code]')
-    .forEach((b) => (b.onclick = () => issueCode(b.dataset.code)));
-  document
     .querySelectorAll('[data-status]')
     .forEach((b) => (b.onclick = () => setStatus(b.dataset.status, b.dataset.next)));
   document
     .querySelectorAll('#results [data-tab]')
     .forEach((b) => (b.onclick = () => navigate(b.dataset.tab)));
-}
-function registration() {
-  return `<section class="panel panel-pad"><form id="register"><div class="step"><span class="step-number">1</span><div class="step-content"><h2>Xác định chip</h2><div class="usb-panel"><h3>Đọc MAC qua USB máy chủ</h3><p class="usb-warning">Đóng Serial Monitor; thao tác đọc sẽ khởi động lại thiết bị.</p><div class="actions"><button type="button" id="usbFind" class="secondary">Tìm cổng USB</button><select id="usbPort" aria-label="Cổng USB máy backend"><option value="">Chọn cổng USB</option></select><button type="button" id="usbRead" disabled>Đọc MAC</button></div><p id="usbStatus" role="status" aria-live="polite"></p></div><label>Địa chỉ MAC của chip<input name="factoryMac" placeholder="Ví dụ: 80:B5:4E:C8:14:9C" pattern="[0-9A-Fa-f:\\-]{12,17}" required spellcheck="false" autocomplete="off"></label></div></div><div class="step"><span class="step-number">2</span><div class="step-content"><h2>Thông tin sản phẩm</h2><label>Tên thiết bị<input name="name" maxlength="100" placeholder="Ví dụ: Cửa chính" required></label></div></div><div class="step"><span class="step-number">3</span><div class="step-content"><h2>Tạo QR bàn giao</h2><div id="register-error" class="error" role="alert" hidden></div><button type="submit">${icon('qr')} Tạo thiết bị & mã kích hoạt</button></div></div></form></section><div id="issued"></div>`;
-}
-async function register(event) {
-  event.preventDefault();
-  if (usbBusy) return;
-  const button = event.submitter;
-  button.disabled = true;
-  button.textContent = 'Đang tạo thiết bị…';
-  const errorEl = document.querySelector('#register-error');
-  errorEl.hidden = true;
-  try {
-    issued = await api(
-      '/api/admin/inventory',
-      'POST',
-      Object.fromEntries(new FormData(event.target)),
-    );
-    showIssued();
-    event.target.reset();
-    try {
-      inventory = await api('/api/admin/inventory');
-    } catch (err) {
-      notify(err.message, true);
-    }
-  } catch (err) {
-    errorEl.textContent = err.message;
-    errorEl.hidden = false;
-  } finally {
-    button.disabled = Boolean(issued);
-    button.innerHTML = issued
-      ? 'Đã tạo · hãy lưu thông tin bên dưới'
-      : `${icon('qr')} Tạo thiết bị & mã kích hoạt`;
-  }
-}
-function productActivationQr(value) {
-  return createProductQr({ activationCode: value.activationCode, deviceUid: value.device.deviceUid,
-    ssid: value.setupSsid || undefined, password: value.setupPassword || undefined,
-    name: deviceDisplayName(value.device.deviceUid, value.device.name) });
-}
-function showIssued() {
-  const host = document.querySelector('#issued') || document.querySelector('#content');
-  const panel = document.createElement('section');
-  panel.className = 'panel panel-pad';
-  panel.innerHTML = `<div class="success">${icon('check')} Đã cấp thông tin bàn giao. Hãy lưu trước khi rời màn hình này.</div><div class="result"><div class="qr-paper"><canvas aria-label="QR nhận cửa"></canvas><small>${esc(issued.device.name)}<br>${esc(issued.device.deviceUid)}</small></div><div class="stack"><div><h2>QR nhận cửa của sản phẩm</h2><p>Người mua quét mã này trong ứng dụng Smart Door.</p><label>Mã nhận cửa — không phải PIN mở khóa</label><div class="secret" tabindex="0">${esc(issued.activationCode)}</div></div><div class="notice">Nạp file cấp phát vào đúng chip trước khi giao. QR chứa mã nhận cửa và thông tin Wi-Fi thiết lập. Khóa xác thực thiết bị chỉ nằm trong file nạp.</div><div class="actions"><button class="download">${icon('download')} Tải file cấp phát</button><button class="print secondary">${icon('print')} In QR bàn giao</button></div></div></div>`;
-  host.replaceChildren(panel);
-  panel.querySelector('.qr-paper small').textContent = deviceDisplayName(issued.device.deviceUid, issued.device.name);
-  if (issued.syncCommand) watchProductQrSync(panel, issued);
-  QRCode.toCanvas(panel.querySelector('canvas'), productActivationQr(issued), {
-    width: 220,
-    margin: 2,
-  }).catch(() => notify('Chưa dựng được QR. Vui lòng lưu mã nhận cửa và file cấp phát.', true));
-  panel.querySelector('.download').hidden = !issued.deviceSecret;
-  panel.querySelector('.download').onclick = () => {
-    const data = {
-      deviceUid: issued.device.deviceUid,
-      factoryMac: issued.device.factoryMac,
-      deviceSecret: issued.deviceSecret,
-      generation: issued.device.generation,
-      activationCode: issued.activationCode,
-      setupSsid: issued.setupSsid,
-      setupPassword: issued.setupPassword,
-    };
-    const url = URL.createObjectURL(
-      new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }),
-    );
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${issued.device.deviceUid}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-  panel.querySelector('.print').onclick = () => window.print();
-  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-function watchProductQrSync(panel, value) {
-  const status = document.createElement('p'); status.className = 'notice'; status.setAttribute('role', 'status');
-  const retry = document.createElement('form'); retry.className = 'stack'; retry.hidden = true;
-  retry.innerHTML = '<label>Mật khẩu tài khoản hiện tại<input name="password" type="password" autocomplete="current-password" required></label><button type="submit">Gửi lại QR mới xuống khóa</button>';
-  panel.querySelector('.stack').append(status, retry);
-  const poll = async command => {
-    status.textContent = 'Đang cập nhật mã nhận cửa trên khóa. Giữ cửa có Wi-Fi; khi hoàn tất, quét QR trên màn hình khóa để lấy cả Wi-Fi.';
-    for (let attempt = 0; attempt < 35 && panel.isConnected; attempt++) {
-      if (command.status === 'ACKNOWLEDGED') { status.textContent = 'Khóa đã xác nhận lưu QR mới. Quét QR trên màn hình khóa để nhận cửa và lấy sẵn Wi-Fi.'; retry.hidden = true; return; }
-      if (['FAILED', 'TIMEOUT'].includes(command.status)) break;
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      command = await api(`/api/manager/commands/${encodeURIComponent(command.commandUuid)}`);
-    }
-    if (panel.isConnected) { status.textContent = 'Chưa cập nhật được QR trên khóa. Cần firmware 1.7.1 trở lên và cửa online; kết nối Wi-Fi rồi gửi lại mã mới bên dưới.'; retry.hidden = false; }
-  };
-  retry.onsubmit = async event => {
-    event.preventDefault(); const button = retry.querySelector('button'); button.disabled = true;
-    try {
-      const password = retry.elements.password.value; retry.elements.password.value = '';
-      const command = await api(`/api/admin/inventory/${encodeURIComponent(value.device.deviceUid)}/sync-code`, 'POST', { password, activationCode: value.activationCode });
-      retry.hidden = true; await poll(command);
-    } catch (error) { status.textContent = error.message; retry.hidden = false; }
-    finally { button.disabled = false; }
-  };
-  void poll(value.syncCommand).catch(error => { status.textContent = error.message; retry.hidden = false; });
 }
 function createDialog(title, description, fields, submitLabel, submit, danger = false) {
   const dialog = document.createElement('dialog');
@@ -704,22 +589,6 @@ function resetDialog(uid) {
   pin.inputMode = 'numeric'; pin.pattern = '[0-9]{6}'; pin.maxLength = 6;
   pin.required = true; pin.autocomplete = 'off'; label.append(pin);
   accountPassword.closest('label').after(label);
-}
-function issueCode(uid) {
-  createDialog(
-    'Cấp mã nhận cửa mới',
-    'Xác thực lại để cấp mã sau khi đặt lại đã hoàn tất. Hãy lưu QR mới để bàn giao.',
-    '<label>Mật khẩu admin hiện tại<input name="password" type="password" autocomplete="current-password" required></label>',
-    'Cấp mã mới',
-    async (body) => {
-      issued = await api(
-        `/api/admin/inventory/${encodeURIComponent(uid)}/issue-code`,
-        'POST',
-        body,
-      );
-      showIssued();
-    },
-  );
 }
 async function setStatus(id, status) {
   const a = accounts.find((item) => String(item.accountId) === id);

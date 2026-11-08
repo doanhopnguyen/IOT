@@ -43,7 +43,7 @@ public class AlertRuleService {
     public static final String REPEATED_AUTH_FAILED = "REPEATED_AUTH_FAILED";
     public static final String SENSOR_FAULT = "SENSOR_FAULT";
     static final long OFFLINE_AFTER_SEC = 300;
-    /** Bàn phím firmware tự khóa 30 giây sau 5 lần sai liên tiếp; cảnh báo dùng cùng ngưỡng. */
+    /** Ngưỡng mặc định; mỗi cửa có thể cấu hình pin_failure_limit từ 1 đến 10. */
     static final long PIN_WINDOW_SEC = 300;
     static final long PIN_LIMIT = 5;
     static final long AUTH_WINDOW_SEC = 120;
@@ -96,7 +96,7 @@ public class AlertRuleService {
             Set<com.smartaccess.model.Account> pinUsers = new HashSet<>(), authUsers = new HashSet<>();
             Map<AccessMethod, Long> pins = failedAttempts(device, REPEATED_WRONG_PIN, PIN_METHODS, PIN_WINDOW_SEC, now, pinUsers);
             long pinCount = pins.values().stream().mapToLong(Long::longValue).sum();
-            Outcome o3 = apply(device, REPEATED_WRONG_PIN, pinCount >= PIN_LIMIT, false, EventSeverity.CRITICAL,
+            Outcome o3 = apply(device, REPEATED_WRONG_PIN, pinCount >= device.getAccessUnit().getPinFailureLimit(), false, EventSeverity.CRITICAL,
                     "Cửa " + device.getDeviceName() + ": nhập sai PIN " + pinCount + " lần trong "
                             + PIN_WINDOW_SEC / 60 + " phút, nghi có người dò mã", now, pinUsers);
             Map<AccessMethod, Long> auth = failedAttempts(device, REPEATED_AUTH_FAILED, AUTH_METHODS, AUTH_WINDOW_SEC, now, authUsers);

@@ -58,6 +58,9 @@ class LocalAccessPolicyServiceTest {
         when(credentials.findByDevice_DeviceIdAndCredentialTypeAndStatus(2L, CredentialType.FINGERPRINT, CredentialStatus.ACTIVE))
                 .thenReturn(List.of(ownerFp, memberFp));
         var snapshot = new LocalAccessPolicyService(devices, credentials, memberships, lockdown).snapshot("door");
+        assertThat(snapshot.get("pinFailureLimit")).isEqualTo(5);
+        unit.setPinFailureLimit((short)3);
+        assertThat(new LocalAccessPolicyService(devices, credentials, memberships, lockdown).snapshot("door").get("pinFailureLimit")).isEqualTo(3);
         assertThat(snapshot.get("ownerRfid")).isEqualTo(List.of("A1B2C3D4"));
         assertThat(snapshot.get("ownerFingerprints")).isEqualTo(List.of(5));
         assertThat(snapshot.get("lockdown")).isEqualTo(true);

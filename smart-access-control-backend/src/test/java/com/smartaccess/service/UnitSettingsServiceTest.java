@@ -78,4 +78,16 @@ class UnitSettingsServiceTest {
         assertThat(waiting.unlockDurationSec()).isEqualTo(7);
         assertThat(waiting.autoLockWaitForClose()).isTrue();
     }
+    @Test void ownerSetsPinFailureLimitAndInvalidLimitsDoNotWrite() {
+        for(int value:new int[]{0,11,-1})
+            assertThatThrownBy(()->service.update(1L,3L,new UnitSettings.Request(null,null,null,null,null,null,value)))
+                    .isInstanceOf(BusinessException.class);
+        verifyNoInteractions(audits);
+        var changed=service.update(1L,3L,new UnitSettings.Request(null,null,null,null,null,null,3));
+        assertThat(changed.pinFailureLimit()).isEqualTo(3);
+        assertThat(changed.doorOpenTimeoutSec()).isEqualTo(60);
+        assertThat(UnitSettingsService.asMap(changed)).containsEntry("pinFailureLimit",3);
+        var unchanged=service.update(1L,3L,new UnitSettings.Request(7,null,null,null,null));
+        assertThat(unchanged.pinFailureLimit()).isEqualTo(3);
+    }
 }

@@ -32,6 +32,7 @@
 #include <ESP32Servo.h>
 #include <Keypad.h>
 #include "../include/servo_setup_logic.h"
+#include "../include/door_alarm.h"
 #include <mbedtls/sha256.h>
 #include <esp_system.h>
 #include <math.h>
@@ -97,6 +98,7 @@ int reportedLatch(bool finished,int angle,int lockAngle,int openAngle,const Stat
 constexpr int TFT_CS=47, TOUCH_CS=48, RFID_CS=10, RFID_RST=9;
 constexpr int TFT_DC=2, TFT_RST=1, DOOR_PIN=6, SERVO_PIN=4;
 constexpr int FP_RX=17, FP_TX=18;
+constexpr int BUZZER_GPIO=5;
 // Tested HX-543 connector: pins 8/7/6/5 are rows; 4/3/2/1 are columns.
 byte keypadRowPins[4]={7,8,11,12};
 byte keypadColPins[4]={13,14,15,38};
@@ -150,6 +152,9 @@ bool actuatorReady=false;
 uint8_t failedPins=0;
 uint32_t blockedSince=0;
 bool pinBlocked=false;
+uint8_t pinFailureLimit=DoorAlarm::DEFAULT_PIN_LIMIT;
+DoorAlarm::State doorAlarm;
+bool buzzerHigh=false;
 
 #if LCD_ILI9341
 Adafruit_ILI9341 tft(&SPI,TFT_CS,TFT_DC,TFT_RST);
@@ -435,7 +440,8 @@ void loadConfig() {
     }
   }
   failedPins=nvs.getUChar("badpin",0);
-  if (failedPins>=5) { pinBlocked=true; blockedSince=millis(); }
+  pinFailureLimit=DoorAlarm::loadPinLimit(nvs);
+  if (failedPins>=pinFailureLimit) { pinBlocked=true; blockedSince=millis(); }
   // Existing working doors retain offline access after upgrading; new setup
   // explicitly writes false before calibration starts.
   bool legacyReady=cfg.admin.valid && cfg.user.valid && cfg.touch.valid && sensorCycleVerified;
@@ -450,7 +456,7 @@ bool setFailures(uint8_t count) {
 }
 void denyPin() {
   if (!setFailures(failedPins+1)) return;
-  if (failedPins>=5) { pinBlocked=true; blockedSince=millis(); }
+  if (failedPins>=pinFailureLimit) { pinBlocked=true; blockedSince=millis(); }
 }
 int cardIndex(const Card &card) {
   for (int i=0;i<cfg.cardCount;i++)
@@ -477,6 +483,14 @@ void row(int y,const String &value,uint16_t color=WHITE) {
   tft.fillRect(0,y,240,17,BLACK); text(5,y+4,value.substring(0,38),color);
 }
 void button(int x,int y,int w,int h,const String &label,uint16_t color=CYAN) {
+#ifdef CONNECTED_DOOR
+#ifdef FW_DEMO_BLACK_BUTTONS
+  tft.fillRoundRect(x,y,w,h,4,BLACK);
+#else
+  tft.fillRoundRect(x,y,w,h,4,RED);
+#endif
+  color=WHITE;
+#endif
   tft.drawRoundRect(x,y,w,h,4,color);
   int size=label.length()<=3 ? 2 : 1;
   text(x+max(3,(w-int(label.length())*6*size)/2),y+(h-8*size)/2,label,color,size);
@@ -1148,6 +1162,9 @@ void tap(int x,int y) {
     if(!nvs.putBool("reedVerified",true)){storageError();return;}
     sensorCycleVerified=true;
     if (!saveConfig(next)) { storageError(); return; }
+#ifdef CONNECTED_DOOR
+    if(connectedCompleteDoorSetup())return;
+#endif
     beginServoCalibration();
   } else if (screen==MOTOR) {
     if(inside(x,y,8,52,224,26)){beginServoCalibration();return;}
@@ -1222,6 +1239,25 @@ void pollTouch() {
   int y=319-lroundf(cfg.touch.d*p.x+cfg.touch.e*p.y+cfg.touch.f);
   if (x>=0 && x<240 && y>=0 && y<320) tap(x,y);
 }
+void pollDoorAlarm() {
+  uint32_t now=millis();MotorState m=snapshot();
+  bool armed=configured() && !storageFault && !m.calibrating && !m.previewing &&
+    screen!=TOUCH_CAL && screen!=DOOR_CAL && screen!=SERVO_CAL;
+#ifdef CONNECTED_DOOR
+  armed=armed && connectedAccessReady() && !connectedUpdating();
+#endif
+  bool known=m.closedLevel>=0 && m.raw==m.stable && uint32_t(now-m.changedAt)>=40;
+  uint8_t previous=doorAlarm.reason;
+  bool high=DoorAlarm::tick(doorAlarm,now,armed,known,isClosed(m,now),m.heldOpenMs,pinBlocked);
+  if(high!=buzzerHigh){buzzerHigh=high;digitalWrite(BUZZER_GPIO,high?HIGH:LOW);}
+  if(previous!=doorAlarm.reason)Serial.printf("[ALARM] reason=%s pinLimit=%u GPIO=%d\n",DoorAlarm::label(doorAlarm.reason),pinFailureLimit,BUZZER_GPIO);
+}
+void expirePinLockout(uint32_t now) {
+  if (pinBlocked && uint32_t(now-blockedSince)>=DoorAlarm::PIN_LOCKOUT_MS) {
+    if (setFailures(0)) { pinBlocked=false; tell("PIN input available"); }
+    else storageError();
+  }
+}
 void serialStatus() {
   MotorState m=snapshot();
   Serial.printf("[STATUS] configured=%d storage=%s motor=%s raw=%d closedLevel=%d released=%d cards=%u fingers=%u heap=%u commanded=%d\n",
@@ -1233,6 +1269,7 @@ void setup() {
   Serial.setRxBufferSize(8192);
 #endif
   Serial.begin(115200);
+  digitalWrite(BUZZER_GPIO,LOW);pinMode(BUZZER_GPIO,OUTPUT);
   uint32_t start=millis(); while (!Serial && millis()-start<1500) delay(10);
   Serial.println("\nSMART DOOR OFFLINE: h=help, s=status, r=retry sensors");
   insideKeypad.setDebounceTime(30);
@@ -1279,10 +1316,7 @@ void loop() {
   connectedPoll();
 #endif
   uint32_t now=millis();
-  if (pinBlocked && uint32_t(now-blockedSince)>=30000) {
-    if (setFailures(0)) { pinBlocked=false; tell("PIN input available"); }
-    else storageError();
-  }
+  expirePinLockout(now);
   if (adminSession && (uint32_t(now-adminActivity)>=ADMIN_IDLE_MS || uint32_t(now-adminStarted)>=ADMIN_MAX_MS)) {
     endAdmin(); tell("Admin session expired");
   }
@@ -1301,6 +1335,7 @@ void loop() {
 #endif
   if (touchDiagnostics && millis()-touchDiagnosticAt>=5000) touchDiagnostics=false;
   pollPhysicalKeypad(); pollTouch(); pollRfid(); pollFinger();
+  pollDoorAlarm();
   if(screen==SERVO_CAL && millis()-lastServoUiRefresh>=200){
     lastServoUiRefresh=millis();MotorState m=snapshot();
     row(86,m.lastAngle<0?"Last command: unknown":"PWM: "+String(m.lastAngle)+" deg "+ServoSetup::direction(m.previousAngle,m.lastAngle));
@@ -1322,7 +1357,7 @@ void loop() {
     String state=closed?"Door:CLOSED":"Door:OPEN";
     state+=!m.commanded?" | Latch:UNKNOWN":(m.door.released?" | Latch:RELEASE CMD":" | Latch:LOCK CMD");
     row(76,state,closed?GREEN:YELLOW);
-    if (DoorLogic::heldOpen(m.door,millis(),closed,m.heldOpenMs)) row(35,"DOOR HELD OPEN - please close",RED);
+    if (doorAlarm.reason&DoorAlarm::DOOR_OPEN) row(35,"DOOR HELD OPEN - please close",RED);
     else if (!m.door.released && !closed) row(35,"DOOR OPEN / check latch",RED);
   }
   delay(2);
