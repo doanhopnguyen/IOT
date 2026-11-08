@@ -38,3 +38,5 @@ Chạy `python firmware/tests/test_servo_preview.py` để kiểm tra motor task
 `python firmware/tests/test_servo_tft.py` biên dịch mã vẽ màn hình servo thật để kiểm tra thang 0–90°, 181 giá trị cũ, góc nửa độ, nút tăng/giảm và độ dài chữ trên TFT.
 
 Kiểm thử motor trong test_servo_preview.py cũng kiểm tra khóa từ xa về 0° ngay khi cảm biến báo mở, ghi đè lệnh mở đang chờ, lệnh lặp, hủy khóa chờ và giữ nguyên chính sách tự khóa; chặn thao tác khi lỗi/đang căn góc.
+
+Bàn giao nhiều laptop: `python -m unittest discover -s scripts/tests -v` kiểm tra TCP gateway và web proxy (cookie/CSRF/nội dung ảnh), tạo bộ factory/SQL khớp hash và chặn sinh lại bộ đã tồn tại. Kiểm chứng thực tế MySQL/Mosquitto và flash ESP32 ghi ở docs/team-tailscale/KIEM-TRA-BAN-GIAO.md.

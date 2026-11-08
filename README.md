@@ -1,5 +1,7 @@
 # Smart Door — Hệ thống kiểm soát ra vào thông minh (IoT)
 
+**Bàn giao nhóm 4 laptop (08/11/2026):** Cường chạy backend/MQTT/AI, Thủy chạy web/Expo, Bằng quản trị, Hợp giữ ESP32 và edge AI. Bắt đầu tại [thứ tự chạy và file riêng từng người](docs/team-tailscale/00-THU-TU-CHAY.md). Bộ này thay sơ đồ server đặt trên laptop Hợp trong tài liệu cũ.
+
 **Xử lý sai PIN (1.16.0 / 2.0.3-demo):** trên thông báo và danh sách cảnh báo, chọn **Cửa vẫn an toàn** để tắt chuông/cho nhập PIN lại, hoặc **Tạm thời khóa cửa** để tắt chuông/bật tạm khóa. [Hướng dẫn](docs/XU_LY_CANH_BAO_PIN.md).
 
 **Servo cửa demo:** app và màn hình chip (firmware 1.17.0 / 2.0.4-demo) hiển thị góc mở **0–90°**, chỉ theo chiều dương; giữ mốc khóa 0° đang dùng. Mức 180° cũ hiển thị 90°, nút chỉnh vẫn theo bước 5° của thang mới. [Hướng dẫn căn góc](docs/CAN_GOC_SERVO.md).
