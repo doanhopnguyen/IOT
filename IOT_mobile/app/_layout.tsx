@@ -13,6 +13,7 @@ import { Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ConfirmationProvider } from '../src/components/ConfirmationProvider';
 import { EventNotificationProvider } from '../src/components/EventNotificationProvider';
+import { OverlayHost, OverlayProvider } from '../src/components/OverlayProvider';
 
 export default function Layout() {
   useFonts({
@@ -51,11 +52,14 @@ export default function Layout() {
 
   return (
     <SafeAreaProvider>
+      <OverlayProvider>
       <EventNotificationProvider>
         <ConfirmationProvider>
           <Stack screenOptions={{ headerShown: false }} />
+          <OverlayHost />
         </ConfirmationProvider>
       </EventNotificationProvider>
+      </OverlayProvider>
     </SafeAreaProvider>
   );
 }

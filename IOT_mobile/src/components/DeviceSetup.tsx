@@ -328,7 +328,7 @@ function DeviceSetupFlow({
             onPress={() => setView('home')}
           />
         ) : null}
-        <ServoSettings unitId={unitId} online={effective.online} />
+        <ServoSettings key={unitId} unitId={unitId} online={effective.online} />
       </>
     );
 

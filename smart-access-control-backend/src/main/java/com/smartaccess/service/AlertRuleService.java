@@ -153,6 +153,10 @@ public class AlertRuleService {
         LocalDateTime windowStart = now.minusSeconds(windowSec);
         LocalDateTime after = events.findFirstByDevice_DeviceIdAndEventTypeOrderByOccurredAtDesc(device.getDeviceId(), type)
                 .map(Event::getOccurredAt).filter(t -> t.isAfter(windowStart)).orElse(windowStart);
+        if(REPEATED_WRONG_PIN.equals(type)){
+            LocalDateTime handled=events.latestPinResponseAt(device.getDeviceId()).orElse(after);
+            if(handled.isAfter(after))after=handled;
+        }
         Map<AccessMethod, Long> counts = new EnumMap<>(AccessMethod.class);
         for (AccessLog log : accessLogs.findByAccessUnit_UnitIdAndMethodInAndResultAndOccurredAtAfter(
                 device.getAccessUnit().getUnitId(), methods, AccessResult.DENIED, after)) {

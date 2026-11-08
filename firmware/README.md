@@ -59,7 +59,7 @@ Thông tin Wi-Fi được lưu trong namespace NVS `doorwifi`, tách khỏi PIN/
 - Snapshot RFID/vân tay lọc theo cửa, quyền phương thức và tài khoản ACTIVE, lưu NVS cho offline. Mẫu có sẵn trên cảm biến không tự được cấp quyền.
 - PIN dùng salt ngẫu nhiên + SHA-256 trên ESP32; backend BCrypt. Không log/lưu PIN rõ. 5 lần sai khóa nhập 30 giây trong phiên hiện tại. Đây là mã chung của cửa, không định danh người.
 - Lệnh `PIN_SET`, `FP_ENROLL`, `FP_DELETE`, `DOOR_UNLOCK` tương thích backend. Enrollment hai lần quét, timeout 45 giây; đọc bitmap slot trước khi ghi, không đè mẫu cũ.
-- Auto-lock chạy trên task riêng kiểm tra mỗi 10 ms, không phụ thuộc chờ MQTT. Boot đưa servo về góc khóa. Chưa có cảm biến để xác nhận chốt đã khóa vật lý.
+- Auto-lock chạy trên task riêng kiểm tra mỗi 10 ms, không phụ thuộc chờ MQTT. Boot chỉ nạp cấu hình, không tự quay servo. Từ 1.15.0, khóa cố định 0°, góc mở âm/dương theo hành trình 180°; xem [hướng dẫn servo](../docs/CAN_GOC_SERVO.md). Chưa có cảm biến để xác nhận chốt đã khóa vật lý.
 - Snapshot cập nhật mỗi 10 giây. Xóa flash cần manager đặt lại PIN vì không thể khôi phục PIN rõ từ BCrypt.
 - NVS giữ tối đa 63 sự kiện, chỉ xóa sau backend xác nhận đã commit. Hàng đợi đầy/ghi lỗi sẽ chặn mở cục bộ. Giữ 16 kết quả ACK gần nhất, gửi lại tới khi nhận `ack-confirm`; TTL và UUID chống chạy lại lệnh.
 - Mất mạng dùng quyền gần nhất. Thu hồi trên backend chỉ hiệu lực sau đồng bộ; đổi board sang cửa khác cần xóa NVS cũ trước khi cấp lại.
@@ -70,3 +70,7 @@ Thông tin Wi-Fi được lưu trong namespace NVS `doorwifi`, tách khỏi PIN/
 Hiệu chuẩn touch mặc định raw 200–3900, đảo X/Y theo tài liệu cũ; cần kiểm tra lại trên board. Nguồn và loại buzzer cần xác nhận. Cảm biến cửa/chốt, nguồn dự phòng, OTA an toàn và BLE provisioning chưa có trong firmware tích hợp; thuộc phần nâng cấp của mô tả.
 
 Tham khảo: [PubSubClient](https://github.com/knolleary/pubsubclient/tree/v2.8), [Adafruit Fingerprint](https://github.com/adafruit/Adafruit-Fingerprint-Sensor-Library), [PlatformIO ESP32-S3](https://docs.platformio.org/en/latest/boards/espressif32/esp32-s3-devkitc-1.html).
+
+- Từ 1.17.0 / 2.0.4-demo, setup servo trên TFT đồng bộ app: 0–90°, khóa 0°, chỉ dương, tăng/giảm 5° hiển thị = 10 đơn vị lệnh. Giữ PWM/NVS/MQTT và các vị trí đã lưu; 180 cũ hiển thị 90°.
+
+- Từ 1.18.0 / 2.0.5-demo, DOOR_LOCK từ app đưa servo về góc khóa ngay, không chờ cảm biến. Tự khóa và thao tác khóa tại TFT vẫn giữ chính sách hiện tại. Không thay đổi PWM hoặc NVS.

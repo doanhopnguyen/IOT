@@ -61,24 +61,24 @@ class OnboardingServiceTest {
         var status=service.status(2L,7L);assertThat(status.online()).isTrue();assertThat(status.stage()).isEqualTo("TOUCH_3");assertThat(status.ready()).isFalse();
         device.setLastSeenAt(LocalDateTime.now().minusSeconds(100));assertThat(service.status(2L,7L).online()).isFalse();
     }
-    @Test void servoAllowsEqualAnglesAndDispatchesOnlySaveCommand(){
-        assertThat(service.setServoAngles(2L,7L,100,100).status()).isEqualTo(CommandStatus.SENT);
-        assertThat(saved).containsEntry("lockAngle",100).containsEntry("openAngle",100);
-        assertThat(wire).containsExactlyInAnyOrderEntriesOf(Map.of("lockAngle",100,"openAngle",100,"servoRange",180));
+    @Test void servoKeepsLockAtZeroAndDispatchesOnlySaveCommand(){
+        assertThat(service.setServoAngles(2L,7L,0,-15).status()).isEqualTo(CommandStatus.SENT);
+        assertThat(saved).containsEntry("lockAngle",0).containsEntry("openAngle",-15);
+        assertThat(wire).containsExactlyInAnyOrderEntriesOf(Map.of("lockAngle",0,"openAngle",-15,"servoRange",180,"openDirection",-1));
         verify(commands).dispatch(eq(device),eq(2L),eq(OnboardingService.SERVO_SET),anyMap(),anyMap());
         verify(guard).requireManagedUnit(2L,7L);
     }
     @Test void servoRejectsOutOfRangeAndMissingAngles(){
         assertThatThrownBy(()->service.setServoAngles(2L,7L,4,100)).isInstanceOf(RuntimeException.class);
-        assertThatThrownBy(()->service.setServoAngles(2L,7L,100,176)).isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(()->service.setServoAngles(2L,7L,0,181)).isInstanceOf(RuntimeException.class);
         assertThatThrownBy(()->service.setServoAngles(2L,7L,null,100)).isInstanceOf(RuntimeException.class);
         verifyNoInteractions(commands);
     }
     @Test void servoRequiresOwnerAndOnlineController(){
         doThrow(new IllegalStateException("forbidden")).when(guard).requireManagedUnit(9L,7L);
-        assertThatThrownBy(()->service.setServoAngles(9L,7L,90,90)).hasMessage("forbidden");
+        assertThatThrownBy(()->service.setServoAngles(9L,7L,0,90)).hasMessage("forbidden");
         when(guard.requireOnlineController(7L)).thenThrow(new IllegalStateException("offline"));
-        assertThatThrownBy(()->service.setServoAngles(2L,7L,90,90)).hasMessage("offline");
+        assertThatThrownBy(()->service.setServoAngles(2L,7L,0,90)).hasMessage("offline");
         verifyNoInteractions(commands);
     }
     @Test void servoReportsActualTelemetryWithoutInventingDefaults(){
@@ -87,25 +87,25 @@ class OnboardingServiceTest {
         when(telemetry.findFirstByDevice_DeviceIdAndMetricNameOrderByOccurredAtDesc(eq(3L),argThat(name->name.equals("lockAngle")||name.equals("openAngle")))).thenReturn(Optional.of(angle));
         assertThat(service.servoAngles(2L,7L)).isEqualTo(new OnboardingService.ServoAngles(90,90));
     }
-    @Test void servoPreviewDispatchesExactOneDegreeTargetWithoutSavingAngles(){
-        service.previewServo(2L,7L,"LOCK",101);
+    @Test void servoPreviewDispatchesSignedTargetWithoutSavingAngles(){
+        service.previewServo(2L,7L,"OPEN",-15);
         verify(guard).requireManagedUnit(2L,7L);verify(guard).requireOnlineController(7L);
         verify(commands).dispatch(eq(device),eq(2L),eq(OnboardingService.SERVO_PREVIEW),anyMap(),anyMap());
-        assertThat(wire).containsExactlyInAnyOrderEntriesOf(Map.of("target","LOCK","angle",101,"servoRange",180));
+        assertThat(wire).containsExactlyInAnyOrderEntriesOf(Map.of("target","OPEN","angle",-15,"servoRange",180,"openDirection",-1));
         assertThat(saved).doesNotContainKeys("lockAngle","openAngle");
     }
     @Test void servoPreviewRejectsInvalidTargetMissingAngleAndPhysicalOvertravel(){
         assertThatThrownBy(()->service.previewServo(2L,7L,"SPIN",90)).isInstanceOf(RuntimeException.class);
-        for(Integer angle:Arrays.asList(null,-1,4,176,360))
+        for(Integer angle:Arrays.asList(null,-181,181,360))
             assertThatThrownBy(()->service.previewServo(2L,7L,"OPEN",angle)).isInstanceOf(RuntimeException.class);
         verifyNoInteractions(commands);
     }
     @Test void previewAndStopRequireOwnerAndAnOnlineController(){
         doThrow(new IllegalStateException("forbidden")).when(guard).requireManagedUnit(9L,7L);
-        assertThatThrownBy(()->service.previewServo(9L,7L,"LOCK",90)).hasMessage("forbidden");
+        assertThatThrownBy(()->service.previewServo(9L,7L,"LOCK",0)).hasMessage("forbidden");
         assertThatThrownBy(()->service.stopServoPreview(9L,7L)).hasMessage("forbidden");
         when(guard.requireOnlineController(7L)).thenThrow(new IllegalStateException("offline"));
-        assertThatThrownBy(()->service.previewServo(2L,7L,"LOCK",90)).hasMessage("offline");
+        assertThatThrownBy(()->service.previewServo(2L,7L,"LOCK",0)).hasMessage("offline");
         assertThatThrownBy(()->service.stopServoPreview(2L,7L)).hasMessage("offline");
         verifyNoInteractions(commands);
     }
@@ -114,13 +114,29 @@ class OnboardingServiceTest {
         verify(commands).dispatch(eq(device),eq(2L),eq(OnboardingService.SERVO_PREVIEW_STOP),anyMap(),anyMap());
         assertThat(wire).isEmpty();
     }
-    @Test void positional360ServoKeepsOneDegreePrecisionAndRejectsItsStops(){
-        service.setServoAngles(2L,7L,201,179,360);
-        assertThat(wire).containsEntry("lockAngle",201).containsEntry("openAngle",179).containsEntry("servoRange",360);
-        service.previewServo(2L,7L,"OPEN",181,360);
-        assertThat(wire).containsEntry("angle",181).containsEntry("servoRange",360);
-        assertThatThrownBy(()->service.previewServo(2L,7L,"OPEN",356,360)).isInstanceOf(RuntimeException.class);
-        assertThatThrownBy(()->service.setServoAngles(2L,7L,201,179,270)).isInstanceOf(RuntimeException.class);
-        assertThatThrownBy(()->service.setServoAngles(2L,7L,201,179,180)).isInstanceOf(RuntimeException.class);
+    @Test void servoRejects360NonzeroLockAndDirectionMismatches(){
+        assertThatThrownBy(()->service.setServoAngles(2L,7L,0,30,360)).isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(()->service.setServoAngles(2L,7L,5,30,180)).isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(()->service.setServoAngles(2L,7L,0,-15,180,1)).isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(()->service.previewServo(2L,7L,"LOCK",5,180,1)).isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(()->service.previewServo(2L,7L,"OPEN",5,180,-1)).isInstanceOf(RuntimeException.class);
+        verifyNoInteractions(commands);
+    }
+    @Test void zeroKeepsExplicitNegativeEndStopAndEndpointsAreAccepted(){
+        service.setServoAngles(2L,7L,0,0,180,-1);
+        assertThat(wire).containsEntry("lockAngle",0).containsEntry("openAngle",0).containsEntry("openDirection",-1);
+        service.previewServo(2L,7L,"LOCK",0,180,-1);
+        assertThat(wire).containsEntry("angle",0).containsEntry("openDirection",-1);
+        for(int open:List.of(-180,-15,-10,-5,0,5,10,15,180)){
+            service.setServoAngles(2L,7L,0,open);
+            assertThat(wire).containsEntry("openAngle",open);
+        }
+    }
+    @Test void reportsSignedOpeningAndNegativeZeroDirectionFromTelemetry(){
+        for(var entry:Map.of("lockAngle","0","openAngle","0","openDirection","-1").entrySet()){
+            Telemetry point=new Telemetry();point.setMetricValue(entry.getValue());
+            when(telemetry.findFirstByDevice_DeviceIdAndMetricNameOrderByOccurredAtDesc(3L,entry.getKey())).thenReturn(Optional.of(point));
+        }
+        assertThat(service.servoAngles(2L,7L)).isEqualTo(new OnboardingService.ServoAngles(0,0,180,-1));
     }
 }

@@ -32,10 +32,13 @@ public class CommandAckService {
     private final AccessLogRepository accessLogs;
     private final AuditLogRepository audits;
     private final com.smartaccess.repository.DeviceRepository devices;
+    private final com.smartaccess.repository.EventRepository events;
+    private final com.smartaccess.repository.DeviceInventoryRepository inventory;
 
     public CommandAckService(CommandRepository commands, AccessUnitRepository units,
             AccountRepository accounts, CredentialRepository credentials,
-            AccessLogRepository accessLogs, AuditLogRepository audits, com.smartaccess.repository.DeviceRepository devices) {
+            AccessLogRepository accessLogs, AuditLogRepository audits, com.smartaccess.repository.DeviceRepository devices,
+            com.smartaccess.repository.EventRepository events,com.smartaccess.repository.DeviceInventoryRepository inventory) {
         this.commands = commands;
         this.units = units;
         this.accounts = accounts;
@@ -43,6 +46,7 @@ public class CommandAckService {
         this.accessLogs = accessLogs;
         this.audits = audits;
         this.devices = devices;
+        this.events=events;this.inventory=inventory;
     }
 
     @Transactional
@@ -80,6 +84,11 @@ public class CommandAckService {
         String entityType = "CREDENTIAL";
         Long entityId = null;
         switch (command.getCommandType()) {
+            case PinAlertResponseService.SAFE,PinAlertResponseService.LOCKDOWN -> {
+                entityId=applyPinAlertResponse(command,message);
+                if(entityId==null){command.setStatus(CommandStatus.FAILED);command.setResultMessage("PIN_RESPONSE_NOT_CONFIRMED");return;}
+                entityType="EVENT";
+            }
             case PinService.PIN_SET, PinService.ADMIN_PIN_SET, OnboardingService.SETUP_CREDENTIALS -> {
                 entityType = "ACCESS_UNIT";
                 entityId = applyPin(command);
@@ -114,6 +123,20 @@ public class CommandAckService {
         }
         command.setStatus(CommandStatus.ACKNOWLEDGED);
         audit(command, entityType, entityId);
+    }
+    private Long applyPinAlertResponse(Command command,String message){
+        if(!(command.getCommandType()+"_APPLIED").equals(message) || command.getPayload()==null ||
+                !(command.getPayload().get("pinAlertId") instanceof Number id) ||
+                !(command.getPayload().get("generation") instanceof Number generation))return null;
+        long currentGeneration=inventory.findById(command.getDevice().getDeviceId()).map(com.smartaccess.model.DeviceInventory::getGeneration).orElse(0L);
+        if(generation.longValue()!=currentGeneration)return null;
+        var alert=events.findById(id.longValue()).orElse(null);
+        if(alert==null || !AlertRuleService.REPEATED_WRONG_PIN.equals(alert.getEventType()) ||
+                !alert.getDevice().getDeviceId().equals(command.getDevice().getDeviceId()) ||
+                alert.getDevice().getAccessUnit()==null || alert.getDevice().getAccessUnit().getManager()==null ||
+                command.getRequestedBy()==null || !command.getRequestedBy().getAccountId().equals(alert.getDevice().getAccessUnit().getManager().getAccountId()))return null;
+        alert.setAlertStatus(com.smartaccess.model.enumtype.AlertStatus.RESOLVED);
+        return alert.getEventId();
     }
 
     private Long applyPin(Command command) {

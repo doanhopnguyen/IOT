@@ -131,7 +131,7 @@ public class MqttDeviceGateway implements DeviceGateway {
         if(deployment!=null) {long generation=deployment.generation(deviceUid);if(generation>0)wire.put("generation",generation);}
         body.put("data", wire);
         body.put("issuedAt", java.time.Instant.now().getEpochSecond());
-        body.put("ttlSec", commandType.startsWith("SERVO_") ? 3 : (RemoteUnlockService.DOOR_UNLOCK.equals(commandType) || RemoteUnlockService.DOOR_LOCK.equals(commandType))
+        body.put("ttlSec", commandType.startsWith("SERVO_") || commandType.startsWith("PIN_ALERT_") ? 3 : (RemoteUnlockService.DOOR_UNLOCK.equals(commandType) || RemoteUnlockService.DOOR_LOCK.equals(commandType))
                 ? RemoteUnlockService.UNLOCK_TTL_SEC : COMMAND_TTL_SEC);
         try {
             MqttMessage message = new MqttMessage(json.writeValueAsBytes(body));

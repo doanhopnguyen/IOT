@@ -9,6 +9,7 @@ import { colors, fonts, radius } from '../theme/tokens';
 import { managerService } from '../services/api/managerService';
 import { lockdownCopy } from '../utils/lockdown';
 import {
+  autoLockSettings,
   DailyAccessDto,
   statsService,
   TelemetryPointDto,
@@ -38,6 +39,7 @@ export function DoorDashboard({
   const [rssi, setRssi] = useState<TelemetryPointDto[]>([]);
   const [settings, setSettings] = useState<UnitSettingsDto>();
   const [unlock, setUnlock] = useState('');
+  const [waitForClose, setWaitForClose] = useState(true);
   const [openLimit, setOpenLimit] = useState('');
   const [pinLimit, setPinLimit] = useState('5');
   const [message, setMessage] = useState('');
@@ -61,6 +63,7 @@ export function DoorDashboard({
     setDays(d);
     setRssi(r.slice(-24));
     setSettings(st);
+    setWaitForClose(st.autoLockWaitForClose !== false);
     setUnlock(String(st.unlockDurationSec));
     setOpenLimit(String(st.doorOpenTimeoutSec));
     setPinLimit(String(st.pinFailureLimit ?? 5));
@@ -131,6 +134,7 @@ export function DoorDashboard({
     try {
       const st = await statsService.updateSettings(unitId, patch);
       setSettings(st);
+      setWaitForClose(st.autoLockWaitForClose !== false);
       setUnlock(String(st.unlockDurationSec));
       setOpenLimit(String(st.doorOpenTimeoutSec));
       setPinLimit(String(st.pinFailureLimit ?? 5));
@@ -188,14 +192,6 @@ export function DoorDashboard({
     bg: string;
   }[] = [
     {
-      key: 'autoLockWaitForClose',
-      label: 'Chờ cánh cửa đóng trước khi khóa',
-      subtitle: 'Tránh bung chốt khi cánh cửa vẫn còn đang mở',
-      icon: 'shield-checkmark-outline',
-      tone: colors.teal,
-      bg: colors.tealSoft,
-    },
-    {
       key: 'remoteUnlockEnabled',
       label: 'Cho phép mở cửa từ xa',
       subtitle: 'Mở/khóa qua ứng dụng di động khi cửa trực tuyến',
@@ -226,10 +222,17 @@ export function DoorDashboard({
   const showAccessMethods = section === 'all' || section === 'access-methods';
   const showLockdown = section === 'all' || section === 'lockdown';
 
+  const timingChanged = settings && (
+    waitForClose !== (settings.autoLockWaitForClose !== false) ||
+    (!waitForClose && Number(unlock) !== settings.unlockDurationSec) ||
+    Number(openLimit) !== settings.doorOpenTimeoutSec ||
+    Number(pinLimit) !== (settings.pinFailureLimit ?? 5)
+  );
+
   const synced =
     reportedTiming &&
     settings &&
-    reportedTiming.seconds === settings.unlockDurationSec &&
+    (settings.autoLockWaitForClose !== false || reportedTiming.seconds === settings.unlockDurationSec) &&
     reportedTiming.waitForClose === (settings.autoLockWaitForClose !== false) &&
     reportedTiming.openLimit === settings.doorOpenTimeoutSec &&
     reportedTiming.pinLimit === (settings.pinFailureLimit ?? 5);
@@ -357,22 +360,47 @@ export function DoorDashboard({
               <Ionicons name="timer-outline" size={20} color={colors.primary} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={s.heading}>Hẹn giờ tự khóa & Cảnh báo</Text>
+              <Text style={s.heading}>Chế độ tự khóa & Cảnh báo</Text>
               <Text style={s.caption}>Đồng bộ trực tiếp xuống bộ điều khiển</Text>
             </View>
             <Badge
-              label={synced ? 'Đã đồng bộ' : 'Chờ xác nhận'}
-              tone={synced ? 'success' : 'warning'}
+              label={timingChanged ? 'Chưa lưu' : synced ? 'Đã đồng bộ' : 'Chờ xác nhận'}
+              tone={!timingChanged && synced ? 'success' : 'warning'}
             />
           </View>
 
-          <Input
-            label="Tự về góc khóa sau (1–30 giây)"
-            value={unlock}
-            onChangeText={setUnlock}
-            keyboardType="numeric"
-            placeholder="5"
-          />
+          <View accessibilityRole="radiogroup" accessibilityLabel="Chế độ tự khóa" style={{ gap: 10 }}>
+            {[
+              { wait: false, title: 'Tự quay về góc khóa', description: 'Servo tự về góc khóa sau số giây đã chọn, kể cả khi cánh cửa còn mở.' },
+              { wait: true, title: 'Chờ cửa đóng rồi khóa', description: 'Chờ cảm biến xác nhận cửa đã đóng trước khi servo về góc khóa.' },
+            ].map((mode) => (
+              <Pressable
+                key={String(mode.wait)}
+                accessibilityRole="radio"
+                aria-checked={waitForClose === mode.wait}
+                accessibilityLabel={mode.title}
+                accessibilityState={{ checked: waitForClose === mode.wait, disabled: busy || !settings }}
+                disabled={busy || !settings}
+                onPress={() => setWaitForClose(mode.wait)}
+                style={[dStyles.lockMode, waitForClose === mode.wait && dStyles.lockModeSelected]}
+              >
+                <Ionicons name={waitForClose === mode.wait ? 'radio-button-on' : 'radio-button-off'} size={22} color={waitForClose === mode.wait ? colors.primary : colors.muted} />
+                <View style={{ flex: 1, gap: 4 }}>
+                  <Text style={dStyles.toggleTitle}>{mode.title}</Text>
+                  <Text style={s.caption}>{mode.description}</Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+          {!waitForClose ? (
+            <Input
+              label="Tự về góc khóa sau (1–30 giây)"
+              value={unlock}
+              onChangeText={setUnlock}
+              keyboardType="numeric"
+              placeholder="5"
+            />
+          ) : null}
           <Input
             label="Cảnh báo khi cửa mở quá (10–600 giây)"
             value={openLimit}
@@ -394,7 +422,7 @@ export function DoorDashboard({
             disabled={busy || !settings}
             onPress={() => {
               void save({
-                unlockDurationSec: Number(unlock),
+                ...autoLockSettings(waitForClose, unlock),
                 doorOpenTimeoutSec: Number(openLimit),
                 pinFailureLimit: Number(pinLimit),
               });
@@ -402,8 +430,8 @@ export function DoorDashboard({
           />
           <Text style={s.caption}>
             {synced && reportedTiming
-              ? `Đã xác nhận trên cửa: tự khóa ${reportedTiming.seconds}s, cảnh báo mở cửa ${reportedTiming.openLimit}s, sai PIN ${reportedTiming.pinLimit} lần.`
-              : 'Đang chờ cửa xác nhận thời gian và ngưỡng cảnh báo. Cửa cần firmware từ 1.14.0 hoặc demo 2.0.1.'}
+              ? `Đã xác nhận trên cửa: ${reportedTiming.waitForClose ? 'chờ cảm biến cửa đóng rồi khóa' : `tự quay về góc khóa sau ${reportedTiming.seconds}s`}, cảnh báo mở cửa ${reportedTiming.openLimit}s, sai PIN ${reportedTiming.pinLimit} lần.`
+              : 'Đang chờ cửa xác nhận chế độ khóa và ngưỡng cảnh báo. Cửa cần firmware từ 1.14.0 hoặc demo 2.0.1.'}
           </Text>
         </Card>
       ) : null}
@@ -438,11 +466,7 @@ export function DoorDashboard({
                   </View>
                   <Switch
                     accessibilityLabel={item.label}
-                    value={
-                      item.key === 'autoLockWaitForClose'
-                        ? settings[item.key] !== false
-                        : Boolean(settings[item.key])
-                    }
+                    value={Boolean(settings[item.key])}
                     disabled={busy}
                     trackColor={{ true: colors.primary, false: colors.borderStrong }}
                     thumbColor="#fff"
@@ -530,6 +554,19 @@ export function DoorDashboard({
 }
 
 const dStyles = StyleSheet.create({
+  lockMode: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  lockModeSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+  },
   statSummaryRow: {
     flexDirection: 'row',
     gap: 12,

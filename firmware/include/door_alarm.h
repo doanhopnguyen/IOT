@@ -19,7 +19,9 @@ struct State {
   bool trackingOpen=false;
   uint32_t openedAt=0,patternAt=0;
   uint8_t reason=NONE;
+  uint8_t muted=NONE;
 };
+inline void silence(State &s){s.muted|=s.reason;}
 // A stable closed reed ends the open interval. Brief unsettled readings do not
 // discard a tracked interval or authorize an alarm on their own.
 inline bool tick(State &s,uint32_t now,bool armed,bool doorKnown,bool closed,
@@ -32,9 +34,12 @@ inline bool tick(State &s,uint32_t now,bool armed,bool doorKnown,bool closed,
   bool openAlarm=doorKnown && !closed && s.trackingOpen && openLimitMs>=10000 &&
     uint32_t(now-s.openedAt)>=openLimitMs;
   uint8_t reason=(pinBlocked?WRONG_PIN:0)|(openAlarm?DOOR_OPEN:0);
+  if(!pinBlocked)s.muted&=~WRONG_PIN;
+  if(doorKnown && closed)s.muted&=~DOOR_OPEN; // Unsettled reed readings do not end a silenced open interval.
   if(reason!=s.reason){s.reason=reason;s.patternAt=now;}
-  if(reason&WRONG_PIN){uint32_t phase=uint32_t(now-s.patternAt)%1000;return phase<150 || (phase>=300 && phase<450);}
-  return reason&DOOR_OPEN && uint32_t(now-s.patternAt)%1500<300;
+  uint8_t audible=reason&~s.muted;
+  if(audible&WRONG_PIN){uint32_t phase=uint32_t(now-s.patternAt)%1000;return phase<150 || (phase>=300 && phase<450);}
+  return audible&DOOR_OPEN && uint32_t(now-s.patternAt)%1500<300;
 }
 inline const char *label(uint8_t reason){
   return reason==(WRONG_PIN|DOOR_OPEN)?"PIN_AND_DOOR":reason==WRONG_PIN?"PIN_FAILURE":reason==DOOR_OPEN?"DOOR_OPEN":"NONE";

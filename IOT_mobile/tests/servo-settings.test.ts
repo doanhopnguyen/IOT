@@ -1,38 +1,33 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { convertServoRange, displayServoAngle, parseServoAngle, stepServoAngle, validateServoAngles } from '../src/services/api/servoService';
+import { parseServoAngle, stepServoAngle, validateServoAngles, servoDirection, servoService } from '../src/services/api/servoService';
 import { ServoPreviewQueue, type ServoJog } from '../src/services/api/servoPreview';
-test('servo allows equal angles and crossing them while adjusting', () => {
-  for (const pair of [[105, 100], [100, 100], [95, 100], [5, 5], [175, 175]]) {
-    assert.equal(validateServoAngles(pair[0], pair[1]), null);
+test('lock stays zero and both opening directions support five-degree steps', () => {
+  for (const open of [-180, -15, -10, -5, 0, 5, 10, 15, 180]) {
+    assert.equal(validateServoAngles(0, open), null);
+    assert.equal(parseServoAngle(String(open)), open);
+    assert.ok(validateServoAngles(5, open));
   }
-  assert.equal(stepServoAngle('105', -5), '100');
-  assert.equal(stepServoAngle('100', -5), '95');
-});
-test('centered negative angles preserve physical positions and clamp instead of wrapping', () => {
-  for (let angle = 5; angle <= 175; angle++) {
-    assert.equal(parseServoAngle(displayServoAngle(angle, true), true), angle);
-    assert.equal(validateServoAngles(angle, 101), null);
+  let negative = '0', positive = '0';
+  for (let i = 1; i <= 3; i++) {
+    negative = stepServoAngle(negative, -5); positive = stepServoAngle(positive, 5);
+    assert.equal(negative, String(-5 * i)); assert.equal(positive, String(5 * i));
   }
-  assert.equal(parseServoAngle('-1', true), 89);
-  assert.equal(parseServoAngle('+1', true), 91);
-  assert.equal(stepServoAngle('0', -1, true), '-1');
-  assert.equal(stepServoAngle('-85', -1, true), '-85');
-  assert.equal(stepServoAngle('85', 1, true), '85');
-  assert.equal(stepServoAngle('101', 1), '102');
-  for (const value of ['', '-', '1.5', '-86', '86', '360', 'Infinity']) assert.equal(parseServoAngle(value, true), null);
+  assert.equal(stepServoAngle('-180', -5), '-180');
+  assert.equal(stepServoAngle('180', 5), '180');
+  assert.equal(stepServoAngle('-5', 5), '0');
+  assert.equal(stepServoAngle('0', 5), '5');
 });
-test('positional 360 profile has distinct 1-degree steps, signed coordinates and matching saved angles', () => {
-  for (let angle = 5; angle <= 355; angle++) assert.equal(parseServoAngle(displayServoAngle(angle, true, 360), true, 360), angle);
-  assert.equal(parseServoAngle('-1', true, 360), 179);
-  assert.equal(stepServoAngle('0', -1, true, 360), '-1');
-  assert.equal(stepServoAngle('355', 1, false, 360), '355');
-  assert.equal(stepServoAngle('-175', -1, true, 360), '-175');
-  assert.equal(validateServoAngles(201, 179, 360), null);
-  assert.ok(validateServoAngles(356, 179, 360));
-  assert.equal(convertServoRange(100, 180, 360), 200);
-  assert.equal(convertServoRange(30, 180, 360), 60);
-  assert.equal(convertServoRange(201, 360, 180), 101);
+
+test('zero retains the selected opening direction; mismatched signs and 360 are rejected', () => {
+  assert.equal(servoDirection(0, -1), -1);
+  assert.equal(servoDirection(0, 1), 1);
+  assert.equal(validateServoAngles(0, 0, 180, -1), null);
+  assert.ok(validateServoAngles(0, -5, 180, 1));
+  assert.ok(validateServoAngles(0, 5, 180, -1));
+  assert.ok(validateServoAngles(0, 30, 360));
+  assert.throws(() => servoService.preview(7, 'LOCK', 5));
+  assert.throws(() => servoService.set(7, 5, -30));
 });
 const deferred = () => {
   let resolve!: () => void;
@@ -70,8 +65,8 @@ test('a failed jog discards queued work and permits a fresh explicit retry', asy
   gate.resolve(); await queue.flush(); assert.equal(errors.length, 1); assert.deepEqual(sent, [89]);
   queue.submit({ target: 'OPEN', angle: 87 }); await queue.flush(); assert.deepEqual(sent, [89, 87]);
 });
-test('servo rejects fractions, nonnumbers and angles outside device limits', () => {
-  for (const pair of [[4, 90], [90, 176], [90.5, 90], [NaN, 90]]) assert.ok(validateServoAngles(pair[0], pair[1]));
-  assert.equal(stepServoAngle('5', -5), '5'); assert.equal(stepServoAngle('175', 5), '175');
+test('servo rejects fractions, nonnumbers and overtravel', () => {
+  for (const value of ['', '-', '+', '1.5', '-181', '181', '360', 'Infinity']) assert.equal(parseServoAngle(value), null);
+  for (const angle of [-181, 181, 90.5, NaN]) assert.ok(validateServoAngles(0, angle));
   assert.equal(stepServoAngle('', 5), '');
 });

@@ -1,5 +1,9 @@
 # Smart Door — Hệ thống kiểm soát ra vào thông minh (IoT)
 
+**Xử lý sai PIN (1.16.0 / 2.0.3-demo):** trên thông báo và danh sách cảnh báo, chọn **Cửa vẫn an toàn** để tắt chuông/cho nhập PIN lại, hoặc **Tạm thời khóa cửa** để tắt chuông/bật tạm khóa. [Hướng dẫn](docs/XU_LY_CANH_BAO_PIN.md).
+
+**Servo cửa demo:** app và màn hình chip (firmware 1.17.0 / 2.0.4-demo) hiển thị góc mở **0–90°**, chỉ theo chiều dương; giữ mốc khóa 0° đang dùng. Mức 180° cũ hiển thị 90°, nút chỉnh vẫn theo bước 5° của thang mới. [Hướng dẫn căn góc](docs/CAN_GOC_SERVO.md).
+
 **Demo OTA v2.0 và bàn giao có sẵn QR:** làm theo [hướng dẫn admin phát hành → chủ cửa nhận cập nhật](docs/DEMO_CAP_NHAT_FIRMWARE_TU_XA.md). Admin đã bỏ giao diện đăng ký chip/QR; cấp phát sản phẩm dùng công cụ kỹ thuật CLI.
 
 **Còi cảnh báo GPIO5:** bản chính **1.14.0** và demo **2.0.1-demo** báo sai PIN đủ ngưỡng và cửa mở lâu; chỉnh ngưỡng trong app tại **Cài đặt thiết bị → Hẹn giờ**. [Chi tiết và kiểm thử](docs/COI_CANH_BAO.md).

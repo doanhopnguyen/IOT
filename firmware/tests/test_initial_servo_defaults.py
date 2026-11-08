@@ -13,7 +13,7 @@ source = r'''
 #include <cassert>
 #include <string>
 struct Pin { bool valid=true; };
-struct Config { Pin admin,user,touch; int closedLevel=0,lockAngle=203,openAngle=179,servoRange=360; } cfg;
+struct Config { Pin admin,user,touch; int closedLevel=0,lockAngle=0,openAngle=-15,servoRange=180,openDirection=-1; } cfg;
 bool claimed=true,appPinsReady=true,resetPending=false,storageFault=false;
 bool sensorCycleVerified=true,servoCycleVerified=false,adminSession=true;
 int configuredCount=0,homeCount=0,errorCount=0;
@@ -32,7 +32,7 @@ void reset(){cfg=Config{};claimed=appPinsReady=sensorCycleVerified=adminSession=
 int main(){
  reset();assert(connectedCompleteDoorSetup());assert(servoCycleVerified && nvs.value);
  assert(nvs.writes==1 && configuredCount==1 && homeCount==1 && !adminSession);
- assert(cfg.lockAngle==203 && cfg.openAngle==179 && cfg.servoRange==360);
+ assert(cfg.lockAngle==0 && cfg.openAngle==-15 && cfg.servoRange==180 && cfg.openDirection==-1);
  assert(connectedCompleteDoorSetup());assert(nvs.writes==1 && configuredCount==1);
  for(int mode=0;mode<2;mode++){reset();nvs.failWrite=mode==0;nvs.failRead=mode==1;
   assert(connectedCompleteDoorSetup());assert(!servoCycleVerified && storageFault);

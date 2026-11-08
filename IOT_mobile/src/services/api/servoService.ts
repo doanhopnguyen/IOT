@@ -1,42 +1,41 @@
 import { request } from './client';
 import type { CommandDto } from './managerService';
 export type ServoRange = 180 | 360;
-export interface ServoAngles { lockAngle: number | null; openAngle: number | null; servoRange?: ServoRange; }
+export type ServoDirection = -1 | 1;
+export interface ServoAngles { lockAngle: number | null; openAngle: number | null; servoRange?: ServoRange; openDirection?: ServoDirection; }
 export type ServoTarget = 'LOCK' | 'OPEN';
-export function parseServoAngle(value: string, centered = false, range: ServoRange = 180): number | null {
+export function parseServoAngle(value: string): number | null {
   if (!/^[+-]?\d+$/.test(value)) return null;
-  const angle = Number(value) + (centered ? range / 2 : 0);
-  return Number.isInteger(angle) && angle >= 5 && angle <= range - 5 ? angle : null;
+  const angle = Number(value);
+  return Number.isInteger(angle) && angle >= -180 && angle <= 180 ? angle : null;
 }
-export function displayServoAngle(angle: number, centered = false, range: ServoRange = 180): string {
-  return String(angle - (centered ? range / 2 : 0));
+export function servoDirection(angle: number, current: ServoDirection = 1): ServoDirection {
+  return angle === 0 ? current : angle < 0 ? -1 : 1;
 }
-export function convertServoRange(angle: number, from: ServoRange, to: ServoRange): number {
-  return Math.max(5, Math.min(to - 5, Math.round(angle * to / from)));
+export function validateServoAngles(lockAngle: number, openAngle: number, range: ServoRange = 180, direction: ServoDirection = servoDirection(openAngle)): string | null {
+  return range === 180 && lockAngle === 0 && Number.isInteger(openAngle) && openAngle >= -180 && openAngle <= 180 &&
+    (direction === 1 || direction === -1) && servoDirection(openAngle, direction) === direction
+    ? null : 'Khóa cố định 0°. Góc mở từ −180° đến +180° và phải đúng chiều đã chọn.';
 }
-export function validateServoAngles(lockAngle: number, openAngle: number, range: ServoRange = 180): string | null {
-  return [lockAngle, openAngle].every(value => Number.isInteger(value) && value >= 5 && value <= range - 5)
-    ? null : `Mỗi góc cần là số nguyên từ 5° đến ${range - 5}°.`;
-}
-export function stepServoAngle(value: string, delta: number, centered = false, range: ServoRange = 180): string {
-  const physical = parseServoAngle(value, centered, range);
-  if (physical == null || !Number.isInteger(delta)) return value;
-  return displayServoAngle(Math.max(5, Math.min(range - 5, physical + delta)), centered, range);
+export function stepServoAngle(value: string, delta: number): string {
+  const angle = parseServoAngle(value);
+  if (angle == null || !Number.isInteger(delta)) return value;
+  return String(Math.max(-180, Math.min(180, angle + delta)));
 }
 export const servoService = {
   get(unitId: number) { return request<ServoAngles>(`/api/manager/units/${unitId}/servo`); },
-  set(unitId: number, lockAngle: number, openAngle: number, servoRange: ServoRange = 180) {
-    const error = validateServoAngles(lockAngle, openAngle, servoRange);
+  set(unitId: number, lockAngle: number, openAngle: number, servoRange: ServoRange = 180, openDirection: ServoDirection = servoDirection(openAngle)) {
+    const error = validateServoAngles(lockAngle, openAngle, servoRange, openDirection);
     if (error) throw new Error(error);
     return request<CommandDto>(`/api/manager/units/${unitId}/servo`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lockAngle, openAngle, servoRange }),
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lockAngle, openAngle, servoRange, openDirection }),
     });
   },
-  preview(unitId: number, target: ServoTarget, angle: number, servoRange: ServoRange = 180) {
-    const error = validateServoAngles(angle, angle, servoRange);
-    if (error) throw new Error(error);
+  preview(unitId: number, target: ServoTarget, angle: number, servoRange: ServoRange = 180, openDirection: ServoDirection = servoDirection(angle)) {
+    const error = validateServoAngles(0, angle, servoRange, openDirection);
+    if (error || (target === 'LOCK' && angle !== 0)) throw new Error(error || 'Góc khóa luôn là 0°.');
     return request<CommandDto>(`/api/manager/units/${unitId}/servo/preview`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target, angle, servoRange }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target, angle, servoRange, openDirection }),
     });
   },
   stopPreview(unitId: number) {

@@ -36,6 +36,11 @@ public interface EventRepository extends JpaRepository<Event, Long>, org.springf
     java.util.List<com.smartaccess.model.Account> findAlertUsers(Long managerId);
 
     java.util.Optional<Event> findByEventUuid(String eventUuid);
+    @org.springframework.data.jpa.repository.Query("""
+            select max(c.acknowledgedAt) from Command c where c.device.deviceId = :deviceId
+            and c.commandType in ('PIN_ALERT_SAFE','PIN_ALERT_LOCKDOWN') and c.status = 'ACKNOWLEDGED'
+            """)
+    java.util.Optional<java.time.LocalDateTime> latestPinResponseAt(Long deviceId);
 
     /** Cảnh báo cùng loại của thiết bị đang mở (OPEN/ACKNOWLEDGED), dùng để không sinh trùng. */
     java.util.Optional<Event> findFirstByDevice_DeviceIdAndEventTypeAndAlertStatusIn(

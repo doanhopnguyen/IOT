@@ -32,7 +32,7 @@ struct Finger {
   int getTemplateCount(){return fail?1:0;}
 } finger;
 struct Servo {int detaches=0;void detach(){++detaches;}} servo;
-struct Config {int magic=42,version=3,servoRange=360,closedLevel=0,lockAngle=205,openAngle=100;bool credentials=true;} cfg;
+struct Config {int magic=42,version=4,openDirection=1,servoRange=180,closedLevel=0,lockAngle=205,openAngle=100;bool credentials=true;} cfg;
 struct Motor {bool enabled=true,pending=true,calibrating=true,pulsing=true;} motor;
 struct Card {};struct Calibration {};
 Card selectedCard;Calibration pendingCal;
@@ -69,7 +69,7 @@ int main(){
   assert(ackSuccess && lastAck=="RESET_EMPTY_VERIFIED" && finger.templateCount==0);
   assert(nvs.data.empty() && eventPrefs.data.empty() && !networkPrefs.data.empty());
   assert(!appPinsReady && !sensorCycleVerified && !servoCycleVerified && !adminSession);
-  assert(cfg.closedLevel==-1 && cfg.lockAngle==100 && cfg.openAngle==30 && cfg.servoRange==180 && cfg.version==3);
+  assert(cfg.closedLevel==-1 && cfg.lockAngle==0 && cfg.openAngle==30 && cfg.servoRange==180 && cfg.version==4);
   assert(digits.empty() && firstPin.empty() && queueHead==0 && queueTail==0);
   assert(factoryPrefs.getString("resetAck","")==uuid && factoryPrefs.getString("config","")=="factory identity");
   assert(!finishResetCommit()); // Cannot discard the recovery network before server acknowledgement.

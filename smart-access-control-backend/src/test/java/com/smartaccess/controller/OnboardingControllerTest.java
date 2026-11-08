@@ -43,12 +43,12 @@ class OnboardingControllerTest {
         session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,context);
         sessions.registerNewSession(session.getId(),principal);
     }
-    @Test void previewUsesSessionOwnerAndKeepsExact360DegreeTarget() throws Exception {
-        when(service.previewServo(1L,7L,"OPEN",181,360)).thenReturn(new CommandResponse("jog",CommandStatus.SENT,null));
+    @Test void previewUsesSessionOwnerAndKeepsNegativeOpeningAndDirection() throws Exception {
+        when(service.previewServo(1L,7L,"OPEN",-15,180,-1)).thenReturn(new CommandResponse("jog",CommandStatus.SENT,null));
         mvc.perform(post("/api/manager/units/7/servo/preview").session(session).with(csrf())
-                .contentType("application/json").content("{\"target\":\"OPEN\",\"angle\":181,\"servoRange\":360,\"actor\":999}"))
+                .contentType("application/json").content("{\"target\":\"OPEN\",\"angle\":-15,\"servoRange\":180,\"openDirection\":-1,\"actor\":999}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("SENT"));
-        verify(service).previewServo(1L,7L,"OPEN",181,360);
+        verify(service).previewServo(1L,7L,"OPEN",-15,180,-1);
     }
     @Test void fractionalAndStringAnglesAreRejectedWithoutTruncationOrCommands() throws Exception {
         for(String angle:java.util.List.of("90.9","\"90\"","9999999999999")){

@@ -201,6 +201,21 @@ bool savePinAccess(bool enabled) {
 }
 // Chặn cả lệnh mở từ menu quản trị khi admin tạm ngưng hoặc đã thu hồi; tạm khóa của chủ cửa không chặn ở đây.
 bool connectedOpenBlocked(){return connectedUpdating() || restriction==DoorRestriction::SUSPENDED || restriction==DoorRestriction::RETIRED;}
+const char *applyPinAlertResponse(bool lockdown,uint64_t sequence){
+  if(!connectedAccessReady() || storageFault)return "NOT_READY";
+  if(restriction==DoorRestriction::SUSPENDED || restriction==DoorRestriction::RETIRED)return "DEVICE_SUSPENDED";
+  if(!lockdown && restriction==DoorRestriction::LOCKDOWN)return "PIN_ALERT_ALREADY_LOCKED";
+  uint64_t previous=nvs.getULong64("pinResponseSeq",0);
+  if(!sequence || sequence<=previous)return "STALE_PIN_RESPONSE";
+  if(nvs.putULong64("pinResponseSeq",sequence)!=sizeof(sequence) || nvs.getULong64("pinResponseSeq",0)!=sequence){storageFault=true;return "STORAGE_ERROR";}
+  if(!acknowledgePinAlarm())return "STORAGE_ERROR";
+  if(lockdown)setRestriction(DoorRestriction::LOCKDOWN);
+  if(storageFault)return "STORAGE_ERROR";
+  clearPinEntry();if(screen==HOME)drawDigits();
+  pollDoorAlarm(); // Clears the muted PIN condition; a later incident can ring again.
+  if(screen==HOME)tell(lockdown?"Door temporarily locked by owner":"Door safe - PIN input available");
+  return lockdown?"PIN_ALERT_LOCKDOWN_APPLIED":"PIN_ALERT_SAFE_APPLIED";
+}
 void saveOwners(JsonArrayConst cards,JsonArrayConst fingers){
   String c=",",f=",";
   for(JsonVariantConst v:cards){String uid=v.as<String>();uid.replace(":","");uid.toUpperCase();if(uid.length()>=8&&uid.length()<=20)c+=uid+",";}
@@ -533,7 +548,7 @@ void executeReset(const String &uuid,uint32_t nextGeneration) {
   // reconnect and resend the erase receipt. Commit then wipes Wi-Fi as well.
   if(!nvs.clear() || !eventPrefs.clear()) {sendAck(uuid,false,"RESET_STORAGE_FAILED",false);return;}
   queueHead=queueTail=0;droppedEvents=0;
-  cfg={};cfg.magic=CONFIG_MAGIC;cfg.version=3;cfg.servoRange=180;cfg.closedLevel=-1;cfg.lockAngle=100;cfg.openAngle=30;
+  cfg={};cfg.magic=CONFIG_MAGIC;cfg.version=4;cfg.servoRange=180;cfg.openDirection=1;cfg.closedLevel=-1;cfg.lockAngle=0;cfg.openAngle=30;
   appPinsReady=false;sensorCycleVerified=false;servoCycleVerified=false;
   digits="";firstPin="";notice="";enrollStage=0;enrollSlot=0;
   selectedCard=Card{};selectedFinger=0;pendingCal=Calibration{};
@@ -649,6 +664,11 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
     sendAck(uuid,saved,saved?"ACTIVATION_QR_SAVED":result==ProductActivation::STALE?"STALE_ACTIVATION_CODE":result==ProductActivation::INVALID?"INVALID_ACTIVATION_CODE":"ACTIVATION_QR_STORAGE_FAILED");return;
   }
   if(!claimed || resetPending){sendAck(uuid,false,"NOT_READY");return;}
+  if(type=="PIN_ALERT_SAFE" || type=="PIN_ALERT_LOCKDOWN"){
+    const char *result=applyPinAlertResponse(type=="PIN_ALERT_LOCKDOWN",doc["data"]["pinResponseSeq"]|uint64_t(0));
+    bool ok=!strcmp(result,"PIN_ALERT_SAFE_APPLIED") || !strcmp(result,"PIN_ALERT_LOCKDOWN_APPLIED");
+    lastStatusAt=millis()-5001;sendAck(uuid,ok,result);return;
+  }
   if(type=="DOOR_LOCKDOWN" || type=="DOOR_RELEASE") {
     if(restriction==DoorRestriction::SUSPENDED){sendAck(uuid,false,"DEVICE_SUSPENDED");return;}
     bool on=type=="DOOR_LOCKDOWN";setRestriction(on?DoorRestriction::LOCKDOWN:DoorRestriction::NORMAL);
@@ -691,7 +711,10 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
     String target=doc["data"]["target"]|"";
     if((doc["data"]["servoRange"]|180)!=cfg.servoRange){sendAck(uuid,false,"SERVO_RANGE_MISMATCH");return;}
     if((target!="LOCK" && target!="OPEN") || !doc["data"]["angle"].is<int>()) {sendAck(uuid,false,"INVALID_SERVO_ANGLES");return;}
-    bool ok=requestServoPreview(doc["data"]["angle"].as<int>(),target=="LOCK");
+    int angle=doc["data"]["angle"].as<int>();
+    int direction=doc["data"]["openDirection"]|(angle<0?-1:angle>0?1:cfg.openDirection);
+    if(!validServoAngles(0,angle,180,direction) || (target=="LOCK" && angle!=0)){sendAck(uuid,false,"INVALID_SERVO_ANGLES");return;}
+    bool ok=requestServoPreview(angle,target=="LOCK",direction);
     sendAck(uuid,ok,ok?"SERVO_PREVIEW_ACCEPTED":"SERVO_BUSY_OR_DOOR_OPEN");return;
   }
   if(type=="SERVO_SET") {
@@ -700,8 +723,10 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
     if(!doc["data"]["lockAngle"].is<int>() || !doc["data"]["openAngle"].is<int>()) {sendAck(uuid,false,"INVALID_SERVO_ANGLES");return;}
     int lockAngle=doc["data"]["lockAngle"].as<int>(),openAngle=doc["data"]["openAngle"].as<int>();
     int range=doc["data"]["servoRange"]|cfg.servoRange;
-    if(!validServoAngles(lockAngle,openAngle,range)){sendAck(uuid,false,"INVALID_SERVO_ANGLES");return;}
-    Config next=cfg;next.lockAngle=lockAngle;next.openAngle=openAngle;next.servoRange=range;
+    int direction=doc["data"]["openDirection"]|(openAngle<0?-1:openAngle>0?1:cfg.openDirection);
+    if(!validServoAngles(lockAngle,openAngle,range,direction)){sendAck(uuid,false,"INVALID_SERVO_ANGLES");return;}
+    if(direction!=cfg.openDirection && !isClosed(state,millis())){sendAck(uuid,false,"SERVO_BUSY_OR_DOOR_OPEN");return;}
+    Config next=cfg;next.lockAngle=0;next.openAngle=openAngle;next.servoRange=180;next.openDirection=direction;
     stopServoPreview();
     // Saving changes the next command's angles; it never requests a servo move.
     bool saved=saveConfig(next);lastStatusAt=millis()-5001;sendAck(uuid,saved,saved?"SERVO_ANGLES_SAVED":"SERVO_STORAGE_FAILED");return;
@@ -718,8 +743,8 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
     lastStatusAt=millis()-5001;sendAck(uuid,accepted,accepted?"UNLOCK_COMMAND":"DEVICE_BUSY_OR_NOT_READY");return;
   }
   if(type=="DOOR_LOCK"){
-    bool accepted=requestLock();lastStatusAt=millis()-5001;
-    sendAck(uuid,accepted,!accepted?"DEVICE_BUSY_OR_NOT_READY":snapshot().door.lockPending?"LOCK_WAITING_FOR_DOOR":"LOCK_COMMAND");return;
+    bool accepted=requestLock(true);lastStatusAt=millis()-5001;
+    sendAck(uuid,accepted,accepted?"LOCK_COMMAND":"DEVICE_BUSY_OR_NOT_READY");return;
   }
   if(type=="PIN_SET") {
     String pin=doc["data"]["pin"]|"";if(pin.length()!=6){sendAck(uuid,false,"INVALID_PIN");return;}
@@ -815,7 +840,7 @@ void handleFactorySerial() {
       Serial.println("FACTORY_INFO mac="+factoryMac()+" uid="+deviceUid+" firmware="+String(FIRMWARE_VERSION)+" gen="+String(generation)+" wifi="+String(WiFi.status())+" mqtt="+String(broker.connected())+
         " fingerReady="+String(fingerReady)+" authenticated="+String(authenticated)+" parameters="+String(parameterStatus)+" capacity="+String(finger.capacity)+" bitmapOK="+String(bitmapOk)+" slot1empty="+String(bitmapOk&&!(bitmap[0]&2))+" templates="+String(countOk?int(finger.templateCount):-1)+
         " storageFault="+String(storageFault)+" configBytes="+String(nvs.getBytesLength("config"))+" freeEntries="+String(nvs.freeEntries())+" savedWifi="+String(savedWifiCount)+" claimed="+String(claimed)+" cards="+String(cfg.cardCount)+" fingers="+String(cfg.fingerCount)+
-        " motorEnabled="+String(state.enabled)+" motorFault="+String(state.fault)+" motorCommanded="+String(state.commanded)+" lockAngle="+String(cfg.lockAngle)+" openAngle="+String(cfg.openAngle)+" lastServoAngle="+String(state.lastAngle)+" servoReady="+String(servoCycleVerified)+" released="+String(state.door.released)+" lockPending="+String(state.door.lockPending)+" unlockSec="+String(state.unlockMs/1000)+" reedVerified="+String(sensorCycleVerified)+" appPins="+String(appPinsReady)+" offlineReady="+String(connectedAccessReady())+" ui="+String(screen==HOME?"KEYPAD":screen==SERVO_CAL?"SERVO_GUIDE":networkPage?"WIFI_SETUP":"SETUP")+" wifiBars="+String(WiFi.status()==WL_CONNECTED?SetupLogic::signalBars(WiFi.RSSI()):0)+" setupStage="+setupStage()+" productPrepared="+String(!deviceUid.isEmpty()&&activationCode.length()>=24&&setupPassword.length()>=8)+" pinFailureLimit="+String(pinFailureLimit)+" buzzerAlarm="+String(DoorAlarm::label(doorAlarm.reason))+" buzzerOn="+String(buzzerHigh));
+        " motorEnabled="+String(state.enabled)+" motorFault="+String(state.fault)+" motorCommanded="+String(state.commanded)+" lockAngle="+String(cfg.lockAngle)+" openAngle="+String(cfg.openAngle)+" openDirection="+String(cfg.openDirection)+" configVersion="+String(cfg.version)+" lastServoAngle="+String(state.lastAngle)+" servoReady="+String(servoCycleVerified)+" released="+String(state.door.released)+" lockPending="+String(state.door.lockPending)+" unlockSec="+String(state.unlockMs/1000)+" reedVerified="+String(sensorCycleVerified)+" appPins="+String(appPinsReady)+" offlineReady="+String(connectedAccessReady())+" ui="+String(screen==HOME?"KEYPAD":screen==SERVO_CAL?"SERVO_GUIDE":networkPage?"WIFI_SETUP":"SETUP")+" wifiBars="+String(WiFi.status()==WL_CONNECTED?SetupLogic::signalBars(WiFi.RSSI()):0)+" setupStage="+setupStage()+" productPrepared="+String(!deviceUid.isEmpty()&&activationCode.length()>=24&&setupPassword.length()>=8)+" pinFailureLimit="+String(pinFailureLimit)+" buzzerAlarm="+String(DoorAlarm::label(doorAlarm.reason))+" buzzerOn="+String(buzzerHigh));
     }
     serialLine="";
   }
@@ -866,7 +891,7 @@ void connectedPoll() {
   if(wifiPermitUntil && int32_t(wifiPermitUntil-millis())<=0)wifiPermitUntil=0;
   if(!resetReceipt.isEmpty()&&millis()-lastStatusAt>3000){lastStatusAt=millis();sendAck(resetReceipt,true,"RESET_EMPTY_VERIFIED",false);return;}
   // Publish state transitions promptly so a short unlock is visible between heartbeats.
-  static int previousLeaf=-2,previousLatch=-2,previousLock=-1,previousOpen=-1,previousRange=0;
+  static int previousLeaf=-2,previousLatch=-2,previousLock=-1,previousOpen=-1000,previousRange=0,previousDirection=0;
   static bool previousLockPending=false,previousWaitForClose=true;
   static uint32_t previousTiming=0,previousSequence=0;
   MotorState current=snapshot();
@@ -874,7 +899,7 @@ void connectedPoll() {
   int currentLatch=DoorLogic::reportedLatch(current.commanded&&!current.pending&&!current.pulsing&&!current.calibrating&&!current.fault,
       current.lastAngle,current.lockAngle,current.openAngle,current.door);
   bool changed=leaf!=previousLeaf || currentLatch!=previousLatch || current.door.lockPending!=previousLockPending ||
-    cfg.lockAngle!=previousLock || cfg.openAngle!=previousOpen || cfg.servoRange!=previousRange ||
+    cfg.lockAngle!=previousLock || cfg.openAngle!=previousOpen || cfg.servoRange!=previousRange || cfg.openDirection!=previousDirection ||
     current.unlockMs!=previousTiming || current.commandSequence!=previousSequence || current.waitForClose!=previousWaitForClose;
   if(millis()-lastStatusAt>5000 || (changed && millis()-lastStatusAt>=100)){
     lastStatusAt=millis();requestNonce=randomId();MotorState state=current;DynamicJsonDocument status(2048);
@@ -882,12 +907,13 @@ void connectedPoll() {
     status["adminPinSet"]=appPinsReady && cfg.admin.valid;status["touchCalibrated"]=bool(cfg.touch.valid);
     status["doorCalibrated"]=sensorCycleVerified;status["setupStage"]=setupStage();status["wifiSsid"]=wifiSsid;
     status["lockAngle"]=cfg.lockAngle;status["openAngle"]=cfg.openAngle;status["servoRange"]=cfg.servoRange;
+    status["openDirection"]=cfg.openDirection;
     status["lockPending"]=state.door.lockPending;status["unlockDurationSec"]=state.unlockMs/1000;
     status["doorOpenTimeoutSec"]=state.heldOpenMs/1000;
     status["pinFailureLimit"]=pinFailureLimit;status["buzzerAlarm"]=DoorAlarm::label(doorAlarm.reason);status["buzzerOn"]=buzzerHigh;
     status["autoLockWaitForClose"]=state.waitForClose;
     status["servoCalibrated"]=servoCycleVerified;
-    if(state.lastAngle>=0)status["servoCommandAngle"]=state.lastAngle;else status["servoCommandAngle"]=nullptr;
+    if(state.commandSequence>0)status["servoCommandAngle"]=state.lastAngle;else status["servoCommandAngle"]=nullptr;
     status["servoDirection"]=ServoSetup::direction(state.previousAngle,state.lastAngle);
     if(sensorCycleVerified)status["doorClosed"]=isClosed(state,millis());else status["doorClosed"]=nullptr;
     int latch=DoorLogic::reportedLatch(state.commanded&&!state.pending&&!state.pulsing&&!state.calibrating&&!state.fault,
@@ -902,6 +928,7 @@ void connectedPoll() {
     if(publishDocument("status",status)) {
       previousLeaf=leaf;previousLatch=currentLatch;previousLockPending=state.door.lockPending;
       previousLock=cfg.lockAngle;previousOpen=cfg.openAngle;previousRange=cfg.servoRange;
+      previousDirection=cfg.openDirection;
       previousTiming=state.unlockMs;previousSequence=state.commandSequence;previousWaitForClose=state.waitForClose;
     }
     for(int i=0;i<16;i++){DynamicJsonDocument saved(512);if(!deserializeJson(saved,eventPrefs.getString(("ack"+String(i)).c_str(),"")))publishDocument("ack",saved);}

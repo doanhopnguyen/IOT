@@ -6,6 +6,8 @@ sketch=(ROOT/'offline_door/offline_door.ino').read_text(encoding='utf-8')
 def section(start,end):return start+sketch.split(start,1)[1].split(end,1)[0]
 failure=section('bool setFailures(uint8_t count)', 'int cardIndex(')
 poll=section('void pollDoorAlarm()', 'void serialStatus()')
+network=(ROOT/'connected_door/network.h').read_text(encoding='utf-8')
+response='const char *applyPinAlertResponse('+network.split('const char *applyPinAlertResponse(',1)[1].split('void saveOwners(',1)[0]
 source=r'''
 #include <cassert>
 #include <cstdint>
@@ -14,6 +16,8 @@ source=r'''
 #include <string>
 #include <initializer_list>
 #include "door_alarm.h"
+#include "door_restriction.h"
+#include <cstring>
 #define CONNECTED_DOOR 1
 constexpr int HIGH=1,LOW=0,BUZZER_GPIO=5;
 enum Screen{HOME,TOUCH_CAL,DOOR_CAL,SERVO_CAL};Screen screen=HOME;
@@ -22,7 +26,9 @@ bool ready=true,updating=false,storageFault=false,pinBlocked=false,buzzerHigh=fa
 uint8_t failedPins=0,pinFailureLimit=5;
 DoorAlarm::State doorAlarm;
 struct Store {
- std::map<std::string,uint8_t> values;bool fail=false,lie=false;unsigned puts=0;
+ std::map<std::string,uint8_t> values;std::map<std::string,uint64_t> sequences;bool fail=false,lie=false;unsigned puts=0;
+ uint64_t getULong64(const char *key,uint64_t fallback){auto p=sequences.find(key);return p==sequences.end()?fallback:p->second;}
+ size_t putULong64(const char *key,uint64_t value){if(fail)return 0;if(!lie)sequences[key]=value;return sizeof(value);}
  uint8_t getUChar(const char *key,uint8_t fallback){auto p=values.find(key);return p==values.end()?fallback:p->second;}
  size_t putUChar(const char *key,uint8_t value){++puts;if(fail)return 0;if(!lie)values[key]=value;return 1;}
 } nvs;
@@ -38,8 +44,12 @@ void storageError(){storageFault=true;pinBlocked=false;}
 void tell(const char *){}
 struct SerialFake{template<class... Args> void printf(const char *,Args...){}} Serial;
 ''' + failure + poll + r'''
+DoorRestriction::Mode restriction=DoorRestriction::NORMAL;
+void clearPinEntry(){} void drawDigits(){}
+void setRestriction(DoorRestriction::Mode mode){restriction=mode;if(nvs.putUChar("restrict",mode)!=1)storageFault=true;}
+''' + response + r'''
 void seed(){clockNow=100;blockedSince=0;ready=true;updating=storageFault=pinBlocked=buzzerHigh=false;failedPins=0;pinFailureLimit=5;
- doorAlarm={};motor={};nvs={};screen=HOME;output=0;writes=0;}
+ doorAlarm={};motor={};nvs={};screen=HOME;output=0;writes=0;restriction=DoorRestriction::NORMAL;}
 void open(){motor.raw=motor.stable=1;motor.changedAt=clockNow-40;}
 int main(){
  // Settings survive reboot, avoid repeated flash writes and reject failed persistence.
@@ -85,6 +95,31 @@ int main(){
  seed();clockNow=0xfffffff0u;open();pollDoorAlarm();clockNow+=10000;pollDoorAlarm();assert(output);
  seed();clockNow=0xfffffff0u;for(int i=0;i<5;i++)denyPin();clockNow+=30000;expirePinLockout(clockNow);pollDoorAlarm();assert(!pinBlocked && !output);
  seed();nvs.fail=true;denyPin();pollDoorAlarm();assert(storageFault && !output);
+ // SAFE releases the timed PIN block, persists a clean counter and never enables lockdown.
+ seed();for(int i=0;i<5;i++)denyPin();pollDoorAlarm();assert(output && pinBlocked);
+ assert(!strcmp(applyPinAlertResponse(false,10),"PIN_ALERT_SAFE_APPLIED"));
+ assert(!output && !buzzerHigh && !pinBlocked && failedPins==0 && nvs.getUChar("badpin",255)==0);
+ assert(restriction==DoorRestriction::NORMAL && DoorRestriction::allowLocal(restriction,false));
+ assert(!strcmp(applyPinAlertResponse(false,9),"STALE_PIN_RESPONSE"));
+ for(int i=0;i<5;i++)denyPin();pollDoorAlarm();assert(output && pinBlocked); // New incident is audible.
+ assert(!strcmp(applyPinAlertResponse(true,11),"PIN_ALERT_LOCKDOWN_APPLIED"));
+ assert(!output && !pinBlocked && !failedPins && restriction==DoorRestriction::LOCKDOWN);
+ assert(!DoorRestriction::allowLocal(restriction,false) && DoorRestriction::allowLocal(restriction,true));
+ assert(DoorRestriction::decode(nvs.getUChar("restrict",0))==DoorRestriction::LOCKDOWN); // Reboot keeps lockdown.
+ assert(!strcmp(applyPinAlertResponse(false,12),"PIN_ALERT_ALREADY_LOCKED"));
+ // Both actions also silence the currently sounding open-door alarm, until it closes.
+ seed();open();pollDoorAlarm();clockNow+=10000;for(int i=0;i<5;i++)denyPin();pollDoorAlarm();assert(output && doorAlarm.reason==3);
+ assert(!strcmp(applyPinAlertResponse(false,1),"PIN_ALERT_SAFE_APPLIED"));
+ clockNow+=6000;pollDoorAlarm();assert(!output && doorAlarm.reason==DoorAlarm::DOOR_OPEN);
+ motor.raw=0;pollDoorAlarm();motor.raw=1;pollDoorAlarm();assert(!output); // Reed bounce cannot restart a silenced incident.
+ motor.raw=motor.stable=0;pollDoorAlarm();open();pollDoorAlarm();clockNow+=10000;pollDoorAlarm();assert(output);
+ // No acknowledgement on failed writes/readback, no silent enabling of a suspended door.
+ seed();for(int i=0;i<5;i++)denyPin();nvs.fail=true;
+ assert(!strcmp(applyPinAlertResponse(false,1),"STORAGE_ERROR") && pinBlocked && storageFault);
+ seed();nvs.lie=true;assert(!strcmp(applyPinAlertResponse(false,1),"STORAGE_ERROR"));
+ seed();restriction=DoorRestriction::SUSPENDED;assert(!strcmp(applyPinAlertResponse(false,1),"DEVICE_SUSPENDED"));
+ seed();ready=false;assert(!strcmp(applyPinAlertResponse(true,1),"NOT_READY"));
+
 }
 '''
 compiler=shutil.which('g++')
@@ -93,4 +128,4 @@ with tempfile.TemporaryDirectory(prefix='door-alarm-') as folder:
  folder=Path(folder);cpp=folder/'test.cpp';exe=folder/'test.exe';cpp.write_text(source,encoding='utf-8')
  subprocess.run([compiler,'-std=c++11','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-static-libgcc','-static-libstdc++','-I',str(ROOT/'include'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)
-print('PASS: production PIN limit/lockout + GPIO5 alarm, open/close and live thresholds, persistence/faults/setup/OTA/rollover')
+print('PASS: production PIN alert SAFE/LOCKDOWN responses, mute/rearm, persistence/stale/write failures + GPIO5 alarm, open/close and live thresholds, persistence/faults/setup/OTA/rollover')

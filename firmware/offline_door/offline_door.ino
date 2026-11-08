@@ -140,7 +140,10 @@ struct Config {
   Calibration touch;
   int8_t closedLevel;
   uint8_t cardCount, fingerCount;
-  uint16_t lockAngle, openAngle, servoRange;
+  int8_t openDirection; // Occupies v3's padding byte; version distinguishes the layouts.
+  uint16_t lockAngle;
+  int16_t openAngle;
+  uint16_t servoRange;
   Card cards[MAX_CARDS];
   uint16_t fingers[MAX_FINGERS];
   uint8_t checksum[32];
@@ -174,12 +177,13 @@ struct MotorState {
   int raw=HIGH, stable=HIGH, closedLevel=-1;
   uint32_t changedAt=0;
   bool enabled=false, pending=false, fault=false, commanded=false,calibrating=false,pulsing=false;
-  int target=100, lockAngle=100, openAngle=30;
+  int target=0, lockAngle=0, openAngle=30;
+  int openDirection=1,previewDirection=1;
   int servoRange=180;
   uint32_t unlockMs=5000;
   uint32_t heldOpenMs=20000;
   bool waitForClose=true;
-  int lastAngle=-1,previousAngle=-1;
+  int lastAngle=-1000,previousAngle=-1000;
   uint32_t commandSequence=0;
   bool previewing=false,previewLock=false;
   uint32_t previewAt=0;
@@ -242,9 +246,7 @@ MotorState snapshot() {
 }
 // BEGIN HOST-TESTED SERVO PREVIEW
 void setMotorServoRange(int range) {
-  motor.lastAngle=ServoSetup::scaleAngle(motor.lastAngle,motor.servoRange,range);
-  motor.previousAngle=ServoSetup::scaleAngle(motor.previousAngle,motor.servoRange,range);
-  motor.servoRange=range;
+  (void)range;motor.servoRange=180;
 }
 // Caller holds motorMutex. Stop PWM without guessing the physical latch state.
 void clearServoPreview() {
@@ -256,14 +258,15 @@ void expireServoPreview(uint32_t now,bool closed) {
   if(motor.previewing && (uint32_t(now-motor.previewAt)>=5000 ||
       (motor.previewLock && !closed) || motor.fault || !motor.enabled))clearServoPreview();
 }
-bool requestServoPreview(int angle,bool lock) {
-  if(angle<5 || storageFault || !actuatorReady || !configured())return false;
+bool requestServoPreview(int angle,bool lock,int direction=1) {
+  if(!ServoSetup::validAngles(0,angle,180,direction) || (lock && angle!=0) || storageFault || !actuatorReady || !configured())return false;
   xSemaphoreTake(motorMutex,portMAX_DELAY);
-  bool ok=angle<=motor.servoRange-5 && motor.enabled && !motor.fault && !motor.door.released &&
+  bool needsClosed=lock || angle==0 || direction!=(motor.previewing?motor.previewDirection:motor.openDirection);
+  bool ok=motor.enabled && !motor.fault && !motor.door.released &&
     (motor.previewing || (!motor.calibrating && !motor.pending && !motor.pulsing)) &&
-    (!lock || isClosed(motor,millis()));
+    (!needsClosed || isClosed(motor,millis()));
   if(ok){
-    motor.previewing=true;motor.previewLock=lock;motor.previewAt=millis();
+    motor.previewing=true;motor.previewLock=needsClosed;motor.previewDirection=direction;motor.previewAt=millis();
     motor.calibrating=true;motor.commanded=false;motor.target=angle;motor.pending=true;
   }
   xSemaphoreGive(motorMutex);return ok;
@@ -293,7 +296,7 @@ void motorTask(void *) {
       motor.pending=false;
       if (!servo.attached()) servo.attach(SERVO_PIN,1000,2000);
       if (servo.attached()) {
-        servo.writeMicroseconds(ServoSetup::pulseWidth(motor.target,motor.servoRange)); motor.previousAngle=motor.lastAngle;motor.lastAngle=motor.target;motor.commandSequence++;
+        servo.writeMicroseconds(ServoSetup::pulseWidth(motor.target,motor.servoRange,motor.calibrating?motor.previewDirection:motor.openDirection)); motor.previousAngle=motor.lastAngle;motor.lastAngle=motor.target;motor.commandSequence++;
         motor.commanded=true; pulseAt=now; motor.pulsing=true;
       } else motor.fault=true;
     }
@@ -309,6 +312,8 @@ void applyMotorConfig() {
   setMotorServoRange(cfg.servoRange);
   motor.closedLevel=cfg.closedLevel;
   motor.lockAngle=cfg.lockAngle; motor.openAngle=cfg.openAngle;
+  if(motor.openDirection!=cfg.openDirection){motor.commanded=false;motor.door=DoorLogic::State{};}
+  motor.openDirection=cfg.openDirection;
   motor.enabled=configured();
   if (!motor.enabled || !wasEnabled) {
     // Boot/setup only arms the controller. A door sensor is not authorization
@@ -332,7 +337,8 @@ bool requestOpen(uint32_t durationMs=0) {
   xSemaphoreGive(motorMutex);
   return ok;
 }
-bool requestLock() {
+// An explicit remote lock returns immediately; automatic/local locking keeps its policy.
+bool requestLock(bool returnImmediately=false) {
 #ifdef CONNECTED_DOOR
   if (!connectedAccessReady()) return false;
 #endif
@@ -340,7 +346,7 @@ bool requestLock() {
   xSemaphoreTake(motorMutex,portMAX_DELAY);
   bool ok=motor.enabled && !motor.fault && !motor.calibrating;
   if (ok) {
-    if(!motor.waitForClose || isClosed(motor,millis())) {
+    if(returnImmediately || !motor.waitForClose || isClosed(motor,millis())) {
       motor.door.released=false;motor.door.lockPending=false;motor.target=motor.lockAngle;motor.pending=true;
     } else {motor.door.lockPending=true;motor.door.waitForClose=true;}
   }
@@ -382,13 +388,17 @@ Calibration halfTurnCalibration(Calibration c) {
   c.d=-c.d; c.e=-c.e; c.f=319-c.f;
   return c;
 }
-bool validServoAngles(int lockAngle,int openAngle,int range=180) {
+bool validServoAngles(int lockAngle,int openAngle,int range=180,int direction=1) {
+  return ServoSetup::validAngles(lockAngle,openAngle,range,direction);
+}
+bool validLegacyServoAngles(int lockAngle,int openAngle,int range=180) {
   return (range==180 || range==360) && lockAngle>=5 && lockAngle<=range-5 && openAngle>=5 && openAngle<=range-5;
 }
 bool validConfig(const Config &c) {
-  if (c.magic!=CONFIG_MAGIC || c.version!=3 || c.admin.valid>1 || c.user.valid>1 ||
+  if (c.magic!=CONFIG_MAGIC || (c.version!=3 && c.version!=4) || c.admin.valid>1 || c.user.valid>1 ||
       c.cardCount>MAX_CARDS || c.fingerCount>MAX_FINGERS ||
-      c.closedLevel < -1 || c.closedLevel>1 || !validServoAngles(c.lockAngle,c.openAngle,c.servoRange) ||
+      c.closedLevel < -1 || c.closedLevel>1 ||
+      !(c.version==3?validLegacyServoAngles(c.lockAngle,c.openAngle,c.servoRange):validServoAngles(c.lockAngle,c.openAngle,c.servoRange,c.openDirection)) ||
       c.touch.valid>1 || (c.touch.valid && !validCal(c.touch))) return false;
   for (int i=0;i<c.cardCount;i++)
     if (c.cards[i].size!=4 && c.cards[i].size!=7 && c.cards[i].size!=10) return false;
@@ -399,20 +409,25 @@ bool validConfig(const Config &c) {
   uint8_t hash[32]; sha((const uint8_t*)&c,offsetof(Config,checksum),hash);
   return memcmp(hash,c.checksum,32)==0;
 }
+void normalizeServoConfig(Config &c) {
+  c.openAngle=ServoSetup::scaleAngle(c.openAngle,c.servoRange,180);
+  c.lockAngle=0;c.servoRange=180;c.openDirection=1;c.version=4;
+  sha((const uint8_t*)&c,offsetof(Config,checksum),c.checksum);
+}
 bool upgradeLegacyConfig(const LegacyConfig &old,Config &next) {
   uint8_t hash[32];sha((const uint8_t*)&old,offsetof(LegacyConfig,checksum),hash);
-  if((old.version!=1 && old.version!=2) || !validServoAngles(old.lockAngle,old.openAngle) || memcmp(hash,old.checksum,32)!=0)return false;
+  if((old.version!=1 && old.version!=2) || !validLegacyServoAngles(old.lockAngle,old.openAngle) || memcmp(hash,old.checksum,32)!=0)return false;
   next={};next.magic=old.magic;next.version=3;
   next.admin=old.admin;next.user=old.user;next.touch=old.touch;next.closedLevel=old.closedLevel;
   next.lockAngle=old.version==1?100:old.lockAngle;next.openAngle=old.version==1?30:old.openAngle;next.servoRange=180;
   next.cardCount=old.cardCount;next.fingerCount=old.fingerCount;
   memcpy(next.cards,old.cards,sizeof(next.cards));memcpy(next.fingers,old.fingers,sizeof(next.fingers));
-  sha((const uint8_t*)&next,offsetof(Config,checksum),next.checksum);return validConfig(next);
+  normalizeServoConfig(next);return validConfig(next);
 }
 bool saveConfig(Config next) {
   if (storageFault) { Serial.println("[STORAGE] save blocked by previous fault"); return false; }
   sha((uint8_t*)&next,offsetof(Config,checksum),next.checksum);
-  if (!validConfig(next)) {
+  if (next.version!=4 || !validConfig(next)) {
     Serial.println("[STORAGE] config validation failed");
     storageFault=true; return false;
   }
@@ -423,8 +438,8 @@ bool saveConfig(Config next) {
   cfg=next; applyMotorConfig(); return true;
 }
 void loadConfig() {
-  cfg={}; cfg.magic=CONFIG_MAGIC; cfg.version=3;cfg.servoRange=180;
-  cfg.closedLevel=-1; cfg.lockAngle=100; cfg.openAngle=30;
+  cfg={}; cfg.magic=CONFIG_MAGIC; cfg.version=4;cfg.servoRange=180;cfg.openDirection=1;
+  cfg.closedLevel=-1; cfg.lockAngle=0; cfg.openAngle=30;
   if (!nvs.begin("offlinedoor",false)) { storageFault=true; return; }
   sensorCycleVerified=nvs.getBool("reedVerified",false);
   size_t size=nvs.getBytesLength("config");
@@ -436,7 +451,8 @@ void loadConfig() {
       if(!saveConfig(stored))return;
     }else{
       if(size!=sizeof(stored) || nvs.getBytes("config",&stored,sizeof(stored))!=sizeof(stored) || !validConfig(stored)) {storageFault=true;return;}
-      cfg=stored;
+      if(stored.version==3){normalizeServoConfig(stored);if(!saveConfig(stored))return;}
+      else cfg=stored;
     }
   }
   failedPins=nvs.getUChar("badpin",0);
@@ -453,6 +469,13 @@ void loadConfig() {
 bool setFailures(uint8_t count) {
   if (storageFault || nvs.putUChar("badpin",count)!=1) { storageFault=true; return false; }
   failedPins=count; return true;
+}
+bool acknowledgePinAlarm() {
+  if(!setFailures(0) || nvs.getUChar("badpin",255)!=0){storageFault=true;return false;}
+  pinBlocked=false;blockedSince=0;
+  DoorAlarm::silence(doorAlarm);
+  buzzerHigh=false;digitalWrite(BUZZER_GPIO,LOW);
+  return true;
 }
 void denyPin() {
   if (!setFailures(failedPins+1)) return;
@@ -478,6 +501,10 @@ String cardName(const Card &card) {
 
 void text(int x,int y,const String &value,uint16_t color=WHITE,int size=1) {
   tft.setCursor(x,y); tft.setTextColor(color); tft.setTextSize(size); tft.print(value);
+}
+String servoDisplayAngle(int command) {
+  if(!ServoSetup::validDemoCommand(command))return "--";
+  return String(command/2)+(command%2?".5":"");
 }
 void row(int y,const String &value,uint16_t color=WHITE) {
   tft.fillRect(0,y,240,17,BLACK); text(5,y+4,value.substring(0,38),color);
@@ -528,7 +555,7 @@ void drawStatus() {
   row(140,"Cards: "+String(cfg.cardCount)+"/32");
   row(165,"Fingers: "+String(cfg.fingerCount)+"/32");
   row(190,"Door GPIO6 raw: "+String(m.raw));
-  row(215,"Lock/Open: "+String(cfg.lockAngle)+" / "+String(cfg.openAngle));
+  row(215,"Lock/Open: "+servoDisplayAngle(cfg.lockAngle)+" / "+servoDisplayAngle(cfg.openAngle)+" deg");
   button(8,242,224,30,"RETRY MODULES");
   button(8,280,224,32,"BACK");
 }
@@ -545,14 +572,13 @@ void drawCalibration() {
 void drawServoCalibration() {
   title(servoSetup.step==0?"SERVO LOCK":"SERVO OPEN");
   row(35,servoSetup.step==0?"CLOSE door before LOCK test":"Adjust OPEN, test, then confirm",YELLOW);
-  row(62,"LOCK: "+String(servoSetup.lockAngle)+" deg / OPEN: "+String(servoSetup.openAngle)+" deg");
+  row(62,"LOCK: 0 deg / OPEN: "+servoDisplayAngle(servoSetup.openAngle)+" deg");
   MotorState m=snapshot();
-  row(86,m.lastAngle<0?"Last command: unknown":"Last command: "+String(m.lastAngle)+" deg");
-  int delta=servoSetup.openAngle-servoSetup.lockAngle;
-  button(8,110,224,25,"RANGE "+String(servoSetup.range)+" deg / CHANGE");
-  row(135,"Open delta: "+String(delta>0?"+":"")+String(delta)+" deg",CYAN);
-  button(8,153,52,36,"-5");button(65,153,52,36,"-1");
-  button(122,153,52,36,"+1");button(179,153,52,36,"+5");
+  row(86,m.commandSequence==0?"Last command: unknown":"Last command: "+servoDisplayAngle(m.lastAngle)+" deg");
+  row(112,"OPEN: POSITIVE ONLY / 0-90 DEG",CYAN);
+  row(131,m.pending||m.pulsing?"Servo test running - wait":servoSetup.tested?"Inspect latch, then CONFIRM":"Press TEST before confirmation",YELLOW);
+  if(servoSetup.step!=0){button(8,153,105,36,"DECREASE 5");button(127,153,105,36,"INCREASE 5");}
+  else row(165,"LOCK FIXED AT 0 DEG",CYAN);
   button(8,199,224,38,servoSetup.step==0?"TEST LOCK POSITION":"TEST OPEN POSITION");
   button(8,249,224,38,servoSetup.step==0?"CONFIRM LOCK":"CONFIRM OPEN / FINISH");
   if(servoSetup.step>0 || servoPreviouslyVerified)button(8,292,224,25,servoSetup.step>0?"BACK TO LOCK":"CANCEL");
@@ -564,7 +590,8 @@ void beginServoCalibration() {
   servoPreviouslyVerified=servoCycleVerified;
   if(!nvs.putBool("servoVerified",false)){storageError();return;}
   servoCycleVerified=false;applyMotorConfig();
-  servoSetup=ServoSetup::State{};servoSetup.lockAngle=cfg.lockAngle;servoSetup.openAngle=cfg.openAngle;servoSetup.range=cfg.servoRange;
+  servoSetup=ServoSetup::State{};
+  servoSetup.openAngle=ServoSetup::validDemoCommand(cfg.openAngle) && cfg.openDirection==1?cfg.openAngle:0;
   go(SERVO_CAL);
 }
 void cancelServoCalibration() {
@@ -577,11 +604,12 @@ void cancelServoCalibration() {
   }
 }
 bool testServoCalibration() {
-  if(!adminSession || storageFault || !actuatorReady)return false;
+  if(!adminSession || storageFault || !actuatorReady || !ServoSetup::validDemoCommand(servoSetup.openAngle) || servoSetup.openDirection!=1)return false;
   xSemaphoreTake(motorMutex,portMAX_DELAY);
-  bool ok=!motor.fault && !motor.previewing &&
-    (servoSetup.step!=0 || isClosed(motor,millis()));
-  if(ok){setMotorServoRange(servoSetup.range);motor.previewLock=servoSetup.step==0;servoTestSequence=motor.commandSequence;motor.calibrating=true;motor.target=ServoSetup::angle(servoSetup);motor.pending=true;servoSetup.tested=true;}
+  bool needsClosed=servoSetup.step==0 || ServoSetup::angle(servoSetup)==0 ||
+    servoSetup.openDirection!=(motor.calibrating?motor.previewDirection:motor.openDirection);
+  bool ok=!motor.fault && !motor.previewing && (!needsClosed || isClosed(motor,millis()));
+  if(ok){setMotorServoRange(180);motor.previewLock=needsClosed;motor.previewDirection=servoSetup.openDirection;servoTestSequence=motor.commandSequence;motor.calibrating=true;motor.target=ServoSetup::angle(servoSetup);motor.pending=true;servoSetup.tested=true;}
   xSemaphoreGive(motorMutex);return ok;
 }
 void confirmServoCalibration() {
@@ -590,7 +618,7 @@ void confirmServoCalibration() {
     tell(servoSetup.step==0?"Close door; TEST LOCK, then confirm":"TEST OPEN, wait, then confirm");return;
   }
   if(servoSetup.step==0){servoSetup.step=1;servoSetup.tested=false;drawServoCalibration();return;}
-  Config next=cfg;next.lockAngle=servoSetup.lockAngle;next.openAngle=servoSetup.openAngle;next.servoRange=servoSetup.range;
+  Config next=cfg;next.lockAngle=0;next.openAngle=servoSetup.openAngle;next.servoRange=180;next.openDirection=servoSetup.openDirection;
   if(!saveConfig(next) || !nvs.putBool("servoVerified",true)){storageError();return;}
   servoCycleVerified=true;
   xSemaphoreTake(motorMutex,portMAX_DELAY);motor.calibrating=false;motor.pending=false;xSemaphoreGive(motorMutex);
@@ -663,12 +691,13 @@ void draw() {
     for (int i=0;i<10;i++) button(5+(i%2)*118,55+(i/2)*46,112,40,labels[i]);
     button(5,289,230,28,"EXIT ADMIN");
   } else if (screen==MOTOR) {
-    title("SERVO "+String(cfg.servoRange)+" DEG");
+    title("SERVO 0-90 DEG");
     button(8,52,224,26,"GUIDED LOCK / OPEN SETUP");
-    row(86,"LOCK ANGLE: "+String(cfg.lockAngle));
-    button(8,110,52,38,"-5");button(65,110,52,38,"-1");button(122,110,52,38,"+1");button(179,110,52,38,"+5");
-    row(162,"OPEN ANGLE: "+String(cfg.openAngle));
-    button(8,185,52,38,"-5");button(65,185,52,38,"-1");button(122,185,52,38,"+1");button(179,185,52,38,"+5");
+    row(86,"LOCK FIXED: 0 DEG");
+    row(114,"OPEN: POSITIVE ONLY / 0-90 DEG",CYAN);
+    if(cfg.openDirection!=1 || !ServoSetup::validDemoCommand(cfg.openAngle))row(138,"Use guided setup for this profile",YELLOW);
+    row(162,"OPEN ANGLE: "+servoDisplayAngle(cfg.openAngle)+" DEG");
+    button(8,185,105,38,"DECREASE 5");button(127,185,105,38,"INCREASE 5");
     button(8,236,105,36,"TEST OPEN"); button(127,236,105,36,"LOCK NOW");
     button(8,282,224,30,"BACK");
   } else if (screen==DOOR_CAL) {
@@ -814,6 +843,13 @@ void handlePinKey(char key,bool physical) {
 #endif
   }
   if (key!='*' && key!='#' && (key<'0' || key>'9')) return;
+#ifdef CONNECTED_DOOR
+  if(screen==HOME && !connectedAllowsPin()){
+    clearPinEntry();drawDigits();
+    const char *reason=connectedRestrictionNotice();
+    tell(reason?reason:"Door PIN disabled by owner");return;
+  }
+#endif
   // Starting on the other device discards the previous device's partial entry.
   if (physicalPinInput!=physical) clearPinEntry();
   physicalPinInput=physical;
@@ -1063,16 +1099,11 @@ void tap(int x,int y) {
   if(screen==SERVO_CAL){
     if(!adminSession || storageFault){tell("Calibration session not ready");return;}
     MotorState m=snapshot();
-    if(inside(x,y,8,110,224,25)){
-      if(m.pending || m.pulsing){tell("Wait for servo to finish");return;}
-      int range=servoSetup.range==180?360:180;
-      servoSetup.lockAngle=constrain(ServoSetup::scaleAngle(servoSetup.lockAngle,servoSetup.range,range),5,range-5);
-      servoSetup.openAngle=constrain(ServoSetup::scaleAngle(servoSetup.openAngle,servoSetup.range,range),5,range-5);
-      servoSetup.range=range;servoSetup.tested=false;drawServoCalibration();return;
-    }
-    const int steps[4]={-5,-1,1,5};
-    for(int i=0;i<4;i++)if(inside(x,y,8+i*57,153,52,36)){
+    const int steps[2]={-5,5};
+    for(int i=0;i<2;i++)if(servoSetup.step!=0 && inside(x,y,8+i*119,153,105,36)){
+      int previous=servoSetup.openAngle;
       ServoSetup::adjust(servoSetup,steps[i]);
+      if(previous==servoSetup.openAngle)return;
       bool moved=testServoCalibration();drawServoCalibration();
       tell(moved?"Moving - inspect latch":"Close door before LOCK adjustment");return;
     }
@@ -1168,14 +1199,19 @@ void tap(int x,int y) {
     beginServoCalibration();
   } else if (screen==MOTOR) {
     if(inside(x,y,8,52,224,26)){beginServoCalibration();return;}
-    Config next=cfg; bool changed=false,lock=true;
-    const int steps[4]={-5,-1,1,5};
-    for(int i=0;i<4;i++){
-      if(inside(x,y,8+i*57,110,52,38)){next.lockAngle=constrain(int(cfg.lockAngle)+steps[i],5,int(cfg.servoRange)-5);changed=true;}
-      if(inside(x,y,8+i*57,185,52,38)){next.openAngle=constrain(int(cfg.openAngle)+steps[i],5,int(cfg.servoRange)-5);changed=true;lock=false;}
+    Config next=cfg; bool changed=false;
+    const int steps[2]={-5,5};
+    for(int i=0;i<2;i++){
+      if(inside(x,y,8+i*119,185,105,38)){
+        if(cfg.openDirection!=1 || !ServoSetup::validDemoCommand(cfg.openAngle)){tell("Use guided setup for this profile");return;}
+        next.openAngle=ServoSetup::stepDemoCommand(cfg.openAngle,steps[i]);
+        next.openDirection=1;
+        if(next.openAngle==cfg.openAngle)return;
+        changed=true;
+      }
     }
     if (changed) {
-      if (!requestServoPreview(lock?next.lockAngle:next.openAngle,lock)) { tell("Close door / finish setup first"); return; }
+      if (!requestServoPreview(next.openAngle,false,next.openDirection)) { tell("Close door / finish setup first"); return; }
       if (!saveConfig(next)) { storageError(); return; }
       draw(); tell("Moving to saved angle - inspect latch"); return;
     }
@@ -1338,7 +1374,7 @@ void loop() {
   pollDoorAlarm();
   if(screen==SERVO_CAL && millis()-lastServoUiRefresh>=200){
     lastServoUiRefresh=millis();MotorState m=snapshot();
-    row(86,m.lastAngle<0?"Last command: unknown":"PWM: "+String(m.lastAngle)+" deg "+ServoSetup::direction(m.previousAngle,m.lastAngle));
+    row(86,m.commandSequence==0?"Last command: unknown":"Command: "+servoDisplayAngle(m.lastAngle)+" deg "+ServoSetup::direction(m.previousAngle,m.lastAngle));
     row(131,m.pending||m.pulsing?"Servo test running - wait":servoSetup.tested?"Inspect latch, then CONFIRM":"Press TEST before confirmation",YELLOW);
   }
 #ifdef CONNECTED_DOOR

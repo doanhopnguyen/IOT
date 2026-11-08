@@ -41,7 +41,7 @@ const sectionMeta: Record<
     title: 'Thống kê & Báo cáo',
   },
   'remote-config': {
-    title: 'Hẹn giờ tự khóa',
+    title: 'Chế độ tự khóa',
   },
   'access-methods': {
     title: 'Phương thức mở cửa',
@@ -59,7 +59,7 @@ const sectionMeta: Record<
     title: 'Mã PIN Admin',
   },
   servo: {
-    title: 'Góc khóa Servo',
+    title: 'Góc mở Servo',
   },
   calibrate: {
     title: 'Hiệu chỉnh thiết bị',
@@ -412,7 +412,7 @@ export function OwnerDeviceSettings({
                 <FeatureTile
                   icon="timer-outline"
                   tone="teal"
-                  title="Hẹn giờ"
+                  title="Tự khóa"
                   onPress={() => setSection('remote-config')}
                 />
               </View>

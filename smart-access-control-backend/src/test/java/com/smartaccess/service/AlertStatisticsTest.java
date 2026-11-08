@@ -78,6 +78,7 @@ class AlertStatisticsTest {
 
     @Test void acknowledgeOnlyMarksReadAndManualResolutionUpdatesStatistics() {
         var alert = event(door, EventSeverity.CRITICAL, AlertStatus.OPEN, today);
+        alert.setEventType("REPEATED_AUTH_FAILED");
         service.updateStatus(alert.getEventId(), AlertStatus.ACKNOWLEDGED);
         assertThat(service.statistics(7).unread()).isZero();
         assertThat(service.statistics(7).urgentUnresolved()).isEqualTo(1);
@@ -88,7 +89,7 @@ class AlertStatisticsTest {
     }
 
     @Test void physicalFaultsCannotBeResolvedManuallyButCanBeRead() {
-        for (String type : new String[]{"DEVICE_OFFLINE", "DOOR_LEFT_OPEN", "SENSOR_FAULT"}) {
+        for (String type : new String[]{"DEVICE_OFFLINE", "DOOR_LEFT_OPEN", "SENSOR_FAULT", "REPEATED_WRONG_PIN"}) {
             var alert = event(door, EventSeverity.CRITICAL, AlertStatus.OPEN, today);
             alert.setEventType(type);
             assertThat(service.updateStatus(alert.getEventId(), AlertStatus.ACKNOWLEDGED).status())

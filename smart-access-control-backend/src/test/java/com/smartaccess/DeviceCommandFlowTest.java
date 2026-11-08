@@ -60,6 +60,9 @@ class DeviceCommandFlowTest {
     @Autowired RecordingGateway gateway;
     @Autowired PinService pinService;
     @Autowired OnboardingService onboardingService;
+    @Autowired PinAlertResponseService pinResponses;
+    @Autowired EventRepository events;
+    @Autowired LockdownService lockdownService;
     @Autowired FingerprintService fingerprintService;
     @Autowired RemoteUnlockService unlockService;
     @Autowired CommandAckService ackService;
@@ -124,10 +127,56 @@ class DeviceCommandFlowTest {
     }
 
     CommandStatus status(String uuid) { return commands.findByCommandUuid(uuid).orElseThrow().getStatus(); }
+    Long pinAlert(){
+        return tx.execute(s->{
+            Event alert=new Event();alert.setEventUuid(java.util.UUID.randomUUID().toString());
+            alert.setDevice(devices.findByDeviceUid(uid).orElseThrow());alert.setEventType(AlertRuleService.REPEATED_WRONG_PIN);
+            alert.setSeverity(EventSeverity.CRITICAL);alert.setAlertStatus(AlertStatus.OPEN);alert.setOccurredAt(LocalDateTime.now());
+            return events.saveAndFlush(alert).getEventId();
+        });
+    }
+    void ownerSession(){
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+            org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated(
+                new com.smartaccess.security.AccountPrincipal(managerId),null,java.util.List.of()));
+    }
+    @org.junit.jupiter.api.AfterEach void clearSession(){org.springframework.security.core.context.SecurityContextHolder.clearContext();}
+    @Test void pinSafeWaitsForCorrectDeviceAckAndResolvesOnlyAfterApplied(){
+        Long id=pinAlert();ownerSession();var response=pinResponses.respond(id,PinAlertResponseService.Action.SAFE);
+        assertThat(events.findById(id).orElseThrow().getAlertStatus()).isEqualTo(AlertStatus.OPEN);
+        assertThat(gateway.sent.get(0).data()).containsKey("pinResponseSeq");
+        ackService.handleAck("FOREIGN",response.commandUuid(),true,"PIN_ALERT_SAFE_APPLIED");
+        assertThat(events.findById(id).orElseThrow().getAlertStatus()).isEqualTo(AlertStatus.OPEN);
+        ackService.handleAck(uid,response.commandUuid(),true,"PIN_ALERT_SAFE_APPLIED");
+        assertThat(status(response.commandUuid())).isEqualTo(CommandStatus.ACKNOWLEDGED);
+        assertThat(events.findById(id).orElseThrow().getAlertStatus()).isEqualTo(AlertStatus.RESOLVED);
+        assertThat(events.latestPinResponseAt(devices.findByDeviceUid(uid).orElseThrow().getDeviceId())).isPresent();
+        assertThat(lockdownService.isLockedDown(unitId)).isFalse();
+    }
+    @Test void pinLockdownParticipatesInNormalLockdownAndReleaseFlow(){
+        Long id=pinAlert();ownerSession();var response=pinResponses.respond(id,PinAlertResponseService.Action.LOCKDOWN);
+        assertThat(lockdownService.isLockedDown(unitId)).isTrue();
+        ackService.handleAck(uid,response.commandUuid(),true,"PIN_ALERT_LOCKDOWN_APPLIED");
+        assertThat(events.findById(id).orElseThrow().getAlertStatus()).isEqualTo(AlertStatus.RESOLVED);
+        assertThat(lockdownService.isLockedDown(unitId)).isTrue();
+        var release=lockdownService.release(managerId,unitId);
+        ackService.handleAck(uid,release.commandUuid(),true,"LOCKDOWN_OFF");
+        assertThat(lockdownService.isLockedDown(unitId)).isFalse();
+    }
+    @Test void pinResponseFailureOrWrongAcknowledgementDoesNotResolve(){
+        Long id=pinAlert();ownerSession();var failed=pinResponses.respond(id,PinAlertResponseService.Action.SAFE);
+        ackService.handleAck(uid,failed.commandUuid(),false,"STORAGE_ERROR");
+        assertThat(status(failed.commandUuid())).isEqualTo(CommandStatus.FAILED);
+        assertThat(events.findById(id).orElseThrow().getAlertStatus()).isEqualTo(AlertStatus.OPEN);
+        var wrong=pinResponses.respond(id,PinAlertResponseService.Action.SAFE);
+        ackService.handleAck(uid,wrong.commandUuid(),true,"OK");
+        assertThat(status(wrong.commandUuid())).isEqualTo(CommandStatus.FAILED);
+        assertThat(events.findById(id).orElseThrow().getAlertStatus()).isEqualTo(AlertStatus.OPEN);
+    }
 
     @Test void servoPreviewSaveAndStopHaveOrderedSequencesAndWaitForAuthenticatedAcks() {
-        var preview=onboardingService.previewServo(managerId,unitId,"LOCK",101);
-        var save=onboardingService.setServoAngles(managerId,unitId,101,89);
+        var preview=onboardingService.previewServo(managerId,unitId,"OPEN",-15);
+        var save=onboardingService.setServoAngles(managerId,unitId,0,-15);
         var stop=onboardingService.stopServoPreview(managerId,unitId);
         long previous=0;
         for(Sent sent:gateway.sent){
@@ -139,7 +188,8 @@ class DeviceCommandFlowTest {
             assertThat(status(sent.commandUuid())).isEqualTo(CommandStatus.ACKNOWLEDGED);
         }
         assertThat(gateway.sent).extracting(Sent::commandUuid).containsExactly(preview.commandUuid(),save.commandUuid(),stop.commandUuid());
-        assertThat(gateway.sent.get(0).data()).containsEntry("angle",101).doesNotContainKeys("lockAngle","openAngle");
+        assertThat(gateway.sent.get(0).data()).containsEntry("angle",-15).containsEntry("openDirection",-1).doesNotContainKeys("lockAngle","openAngle");
+        assertThat(gateway.sent.get(1).data()).containsEntry("lockAngle",0).containsEntry("openAngle",-15).containsEntry("openDirection",-1);
         assertThat(gateway.sent.get(2).data()).doesNotContainKeys("angle","target");
     }
 

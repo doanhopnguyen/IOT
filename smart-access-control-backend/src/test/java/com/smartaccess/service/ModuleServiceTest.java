@@ -107,7 +107,7 @@ class ModuleServiceTest {
         EventRepository repository = mock(EventRepository.class);
         AuditLogRepository audits = mock(AuditLogRepository.class);
         Event event = new Event();
-        event.setDevice(device); event.setEventId(1L); event.setEventType("REPEATED_WRONG_PIN");
+        event.setDevice(device); event.setEventId(1L); event.setEventType("REPEATED_AUTH_FAILED");
         event.setSeverity(EventSeverity.WARNING); event.setAlertStatus(AlertStatus.OPEN);
         when(repository.findById(1L)).thenReturn(Optional.of(event));
         var service = new AlertService(repository, mock(DeviceRepository.class), current, audits, mock(org.springframework.context.ApplicationEventPublisher.class));

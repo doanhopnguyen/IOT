@@ -57,6 +57,10 @@ public class DeviceCommandService {
             wireData = new java.util.LinkedHashMap<>(wireData);
             wireData.put("servoSeq", command.getCommandId());
         }
+        if (type.startsWith("PIN_ALERT_")) {
+            wireData = new java.util.LinkedHashMap<>(wireData);
+            wireData.put("pinResponseSeq", command.getCommandId());
+        }
         if (DeploymentService.SYNC_ACTIVATION.equals(type)) {
             wireData = new java.util.LinkedHashMap<>(wireData);
             wireData.put("activationSequence", command.getCommandId());

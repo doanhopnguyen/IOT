@@ -134,7 +134,7 @@ int main(){
   seed();ready=false;enter("123456#");assert(!openCalls && events.empty());
   seed();resetting=true;enter("123456#");assert(!openCalls && events.empty());
   for(auto mode:{DoorRestriction::LOCKDOWN,DoorRestriction::SUSPENDED,DoorRestriction::RETIRED}){
-    seed();restriction=mode;enter("123456#");assert(!openCalls && !failedPins && events.empty());
+    seed();restriction=mode;enter("123");assert(digits.empty());enter("123456#");assert(!openCalls && !failedPins && events.empty());
     enter("111111#");assert(!failedPins && events.empty());
   }
   seed();pinAccessEnabled=false;enter("123456#");assert(!openCalls && !failedPins && events.empty());

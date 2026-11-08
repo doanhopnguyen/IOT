@@ -1,6 +1,6 @@
-import type { ServoRange, ServoTarget } from './servoService';
+import type { ServoRange, ServoTarget, ServoDirection } from './servoService';
 
-export interface ServoJog { target: ServoTarget; angle: number; servoRange?: ServoRange; }
+export interface ServoJog { target: ServoTarget; angle: number; servoRange?: ServoRange; openDirection?: ServoDirection; }
 // One request at a time. Fast taps replace the unsent target, avoiding a long
 // replay of obsolete positions on a slow connection.
 export class ServoPreviewQueue {

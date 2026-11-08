@@ -1,10 +1,10 @@
-# Còi cảnh báo GPIO5 — firmware 1.14.0 / 2.0.1-demo
+# Còi cảnh báo GPIO5 — firmware 1.16.0 / 2.0.3-demo
 
 ## Chức năng
 
 | Điều kiện | Nhịp còi | Dừng khi |
 |---|---|---|
-| Sai PIN đủ ngưỡng, mặc định **lần thứ 5** | Hai bíp ngắn mỗi giây | Hết khóa nhập PIN 30 giây |
+| Sai PIN đủ ngưỡng, mặc định **lần thứ 5** | Hai bíp ngắn mỗi giây | Hết khóa nhập PIN 30 giây hoặc chủ cửa chọn xử lý trên app |
 | Cảm biến xác nhận cửa mở liên tục đủ thời gian cài đặt | Một bíp nhắc mỗi 1,5 giây | Cảm biến xác nhận cửa đóng |
 
 PIN trên TFT và bàn phím HX-543 dùng cùng bộ đếm. Chỉ một lượt gửi PIN đủ 6 số mới được xác thực; nhập đúng trước khi bị khóa sẽ xóa số lần sai liên tiếp. PIN quản trị cũng dùng cơ chế giới hạn thử sai hiện có. Cảnh báo bắt đầu **ngay khi chạm ngưỡng**, không đợi lần thứ 6 ở cấu hình mặc định 5.
@@ -24,7 +24,7 @@ Mở **cửa đang sở hữu → Cài đặt thiết bị → Hẹn giờ**:
 
 Ngưỡng được lưu trên chip để dùng khi mất Wi-Fi/MQTT. Lần thay đổi mới trong app cần thiết bị nối lại để nhận cấu hình. Hạ ngưỡng khi số lần sai hiện tại đã đủ ngưỡng mới sẽ kích hoạt khóa/còi; tăng ngưỡng không hủy một phiên khóa 30 giây đang diễn ra.
 
-Còi không chạy khi chip chưa nhận chủ/chưa hoàn tất thiết lập, đang hiệu chỉnh phần cứng, reset, OTA hoặc có lỗi bộ nhớ. Việc đánh dấu cảnh báo trên app là thao tác xử lý lịch sử; cơ chế còi cục bộ vẫn theo trạng thái cửa và thời gian khóa PIN.
+Còi không chạy khi chip chưa nhận chủ/chưa hoàn tất thiết lập, đang hiệu chỉnh phần cứng, reset, OTA hoặc có lỗi bộ nhớ. Từ 1.16.0 / 2.0.3-demo, cảnh báo sai PIN trên app có **Cửa vẫn an toàn** và **Tạm thời khóa cửa**: cả hai tắt chuông, lựa chọn đầu cho nhập PIN lại, lựa chọn sau bật tạm khóa. Chỉ chuyển Đã xử lý sau ACK từ chip. Xem [luồng xử lý cảnh báo PIN](XU_LY_CANH_BAO_PIN.md). Các nút Đã xem/Đã xử lý của cảnh báo khác không gửi lệnh tắt còi.
 
 Backend dùng cùng ngưỡng `pinFailureLimit` cho cảnh báo sai PIN trên app. Cảnh báo lịch sử backend giữ quy tắc đếm trong 5 phút; bộ đếm khóa/còi trên cửa dùng số lần sai liên tiếp. Đây là hai khoảng theo dõi khác nhau, không phải lệnh app trực tiếp bật còi.
 
@@ -34,7 +34,7 @@ Backend dùng cùng ngưỡng `pinFailureLimit` cho cảnh báo sai PIN trên ap
 
 Ở lượt thử bàn, người dùng xác nhận nối **còi (+) → GPIO5, còi (−) → GND** và đã nghe tiếng còi. GPIO này vẫn chỉ cung cấp mức 3.3V; lượt thử không đo dòng tiêu thụ hoặc xác nhận khả năng chịu tải lâu dài. Với còi dùng nguồn 5V qua driver, GPIO5 là tín hiệu điều khiển, nguồn driver và ESP32 dùng GND chung; xem [sơ đồ tích hợp](integration.md).
 
-## Phiên bản và các tệp
+## Bản phát hành còi ban đầu (lịch sử)
 
 - Bản chính, nền nút đỏ: **1.14.0**, [firmware-base-1.14.0.bin](../.local/releases/firmware-base-1.14.0.bin).
 - Bản demo, nền nút đen: **2.0.1-demo**, [firmware-v2.0.1-demo.bin](../.local/releases/firmware-v2.0.1-demo.bin).

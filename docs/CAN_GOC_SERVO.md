@@ -1,58 +1,43 @@
-# Căn góc khóa/mở servo
+# Servo cửa demo: hiển thị 0–90°, chỉ mở theo chiều dương
 
-Áp dụng từ firmware **1.6.0**, cùng bản backend và mobile có chế độ quay thử trực tiếp.
+Thang góc trên **app và màn hình TFT của chip** được chỉnh theo quan sát thực tế của cửa demo: mức 180° cũ tương ứng khoảng 90° hành trình, nên app hiển thị tối đa **90°**. Giữ nguyên vị trí khóa **0° ở giữa** đang dùng và cách điều khiển hiện tại; không đổi xung PWM hoặc tự quay servo khi nâng giao diện.
 
-## Chọn đúng hành trình
+## Dùng trong app
 
-Phần mềm hỗ trợ **servo vị trí** hành trình 180° hoặc 360°. Với servo bạn mô tả có điểm chặn và dừng tại từng vị trí, chọn 360° nếu đó là hành trình thực tế. Nhãn SG90 có nhiều biến thể; riêng tên SG90 chưa xác định được hành trình hay dải xung của chiếc đang lắp. Nhà sản xuất cũng có [SG90 bản quay liên tục](https://towerpro.com.tw/product/sg90-360-degree-continuous-rotation-servo/); loại đó điều khiển tốc độ/chiều và không dùng cấu hình góc vị trí này.
+1. Reload app, vào cửa → **Cài đặt thiết bị → Góc Servo**.
+2. App hiển thị **Góc mở servo 0–90°**, không còn chọn chiều âm hay nhập góc âm.
+3. Nhập góc mở trong 0–90°, hoặc dùng **Giảm 5° / Tăng 5°**. Giảm chỉ đưa góc về gần 0°, không vượt sang giá trị âm. Tăng dừng tại 90°.
+4. Để **Quay trực tiếp: BẬT** thì nhích góc gửi lệnh ngay; nhập số gửi sau 350 ms. **Thử khóa 0° / Thử góc mở** thử lại vị trí đang chọn.
+5. Bấm **Lưu góc mở**, chờ chip xác nhận. **Dừng quay thử** kết thúc phiên; rời màn hình hoặc chuyển nền cũng kết thúc phiên theo cơ chế hiện có.
 
-Góc trên giao diện là góc điều khiển theo hành trình đã chọn. Firmware quy đổi ra xung **1000–2000 µs**, mỗi bước 1° là một giá trị xung riêng, kể cả chế độ 360°. Hành trình và độ chính xác cơ khí thực tế phụ thuộc biến thể servo; quan sát chốt khi căn, đối chiếu thông số servo trước khi mở rộng dải xung. Chưa có cảm biến vị trí chốt nên ACK không phải phép đo góc thực.
+Đóng cửa ổn định trước khi thử khóa hoặc đưa góc mở về 0°. Giá trị đã lưu không đổi khi chỉ mở giao diện. Mức 180 cũ hiển thị 90°, mức 90 cũ hiển thị 45°, mức 135 cũ hiển thị 67.5°. App cho nhập bước 0.5° để giữ nguyên các mức lệnh lẻ đã lưu; nút nhích vẫn là 5°.
 
-## Chỉnh từ app
+## Quy đổi và tương thích
 
-1. Reload app, chọn cửa do mình quản lý, mở **Thiết lập cửa → Góc servo**. Hoàn tất hiệu chỉnh ban đầu trên chip nếu cửa chưa sẵn sàng.
-2. Nếu là servo vị trí 360°, bấm **Đổi hành trình và lưu: 360°**. App quy đổi hai góc hiện có và chờ chip xác nhận lưu. Thao tác đổi hành trình không yêu cầu servo quay.
-3. Muốn nhập góc âm, bấm **Dùng góc âm/dương quanh mốc giữa**. Với 360°, `0°` là giữa hành trình (góc điều khiển 180°), `−1°` là 179°, `+1°` là 181°. Với 180°, mốc giữa là 90°. Đổi cách hiển thị không làm servo quay.
-4. Để **Quay trực tiếp: BẬT**, nhích `−1°`, `+1°`, `−5°`, `+5°`, hoặc nhập góc nguyên bất kỳ. Nút nhích gửi lệnh ngay; nhập số chờ 350 ms sau ký tự cuối. Khi bấm nhanh, app giữ góc mới nhất chưa gửi, không phát lại toàn bộ các góc cũ. Độ trễ vẫn phụ thuộc kết nối điện thoại → backend → MQTT → ESP32.
-5. Đóng cánh cửa trước khi chỉnh/thử **góc khóa**. Quan sát chốt; chỉnh riêng góc khóa và góc mở. Có thể dùng **Thử góc khóa/mở tại góc này** để thử lại mà không thay đổi số.
-6. Bấm **Lưu hai góc servo**, đợi chip xác nhận. Các lần mở/khóa tiếp theo dùng hai góc đã lưu, kể cả sau khi khởi động lại. Quay thử trên app chỉ thay đổi bản nháp cho đến khi lưu.
-7. Bấm **Dừng quay thử** khi cần. App cũng kết thúc phiên khi rời màn hình hoặc chuyển nền. Nếu mất liên lạc, ESP32 tự kết thúc phiên sau 5 giây không có lệnh; không tự quay về góc cũ. PWM tự ngắt 900 ms sau lệnh gần nhất. Kiểm tra chốt thực tế trước khi dùng lại.
+| Góc trên app | Giá trị gửi/lưu theo thang lệnh hiện có |
+|---|---|
+| 0° | 0 |
+| 5° | 10 |
+| 45° | 90 |
+| 67.5° | 135 |
+| 90° | 180 |
 
-Giới hạn: 180° dùng 5–175° (mốc giữa −85…+85°); 360° dùng 5–355° (mốc giữa −175…+175°). Không quay vòng từ đầu này sang đầu kia qua điểm chặn. Chỉ hỗ trợ góc nguyên, bước nhỏ nhất 1°. Hai góc có thể bằng nhau hoặc đảo thứ tự để phù hợp chiều lắp.
+App nhân đôi góc hiển thị trước khi quay thử/lưu và chia đôi giá trị thiết bị báo khi hiển thị. Luôn gửi chiều dương `openDirection=1`; khóa vẫn gửi `lockAngle=0`, profile lệnh vẫn `servoRange=180`. Backend và firmware giữ nguyên giao thức, NVS và PWM; Từ firmware 1.17.0 / 2.0.4-demo, màn hình TFT cũng chia đôi giá trị lệnh để hiển thị 0–90°, với mỗi lần tăng/giảm 5° tương ứng 10 đơn vị lệnh. Cấu hình cũ không bị ghi lại khi chỉ mở màn hình.
 
-## Chỉnh trực tiếp trên ESP32
+Nếu cửa từng lưu chiều khác, app yêu cầu đóng cửa, nhập góc dương mới rồi lưu. Không tự đổi cấu hình chỉ vì mở màn hình. Wi-Fi, PIN, thẻ, vân tay, thông báo popup và chế độ tạm khóa giữ nguyên.
 
-- Trong hiệu chỉnh ban đầu, hoặc **ADMIN → SERVO SETUP → GUIDED LOCK / OPEN SETUP**, chọn `RANGE 180/360` theo đúng servo. Đổi hành trình tự quy đổi hai góc, không tự quay.
-- Nhích `±1`/`±5` để servo quay ngay; có thể nhích tiếp khi đang quay, đích mới nhất sẽ thay đích cũ. `TEST ... POSITION` thử lại góc hiện tại.
-- Đóng cửa, kiểm tra vị trí LOCK rồi chờ hết xung trước khi bấm `CONFIRM LOCK`; chỉnh OPEN, kiểm tra rồi `CONFIRM OPEN / FINISH`. Chip lưu cả hành trình và hai góc sau khi hoàn tất.
-- Ở màn hình ADMIN → SERVO SETUP thông thường, các nút nhích cũng quay ngay và lưu từng góc. `TEST OPEN`/`LOCK NOW` kết thúc phiên căn rồi dùng thao tác cửa thông thường.
+## Kiểm tra ngày 08/11/2026
 
-## Cập nhật phần mềm
+- **95/95** bài mobile đạt; typecheck đạt; lint 0 lỗi, 12 cảnh báo có sẵn.
+- Kiểm tra quy đổi đủ mọi giá trị lệnh 0–180, kể cả giá trị lẻ, để xem/lưu lại không làm lệch vị trí cũ.
+- Giao diện 360/390/768 px: đọc mức 180 thành 90 mà không phát lệnh; giới hạn 0/90, chặn góc âm/ngoài khoảng, bước 5° mới gửi mức 10 cũ; thử khóa gửi đúng 0; lưu 67.5° giữ giá trị 135; chỉ gửi chiều dương.
+- API kiểm thử giao diện được giả lập, không phát lệnh quay lên cửa thật. Ảnh, JSON lệnh và log nằm tại `.local/servo-demo90-20261108/`.
+## Setup trực tiếp trên chip
 
-```powershell
-cd D:\DEV\IOT\smart-access-control-backend
-mvn package
-cd D:\DEV\IOT\firmware
-pio run -c platformio.connected.ini -t upload
-cd D:\DEV\IOT
-powershell -ExecutionPolicy Bypass -File scripts/start-local.ps1 -Component backend
-```
+Vào ADMIN → SERVO SETUP: tiêu đề `SERVO 0-90 DEG`, khóa cố định 0°, góc mở chỉ dương. `DECREASE 5` / `INCREASE 5` giảm/tăng 5° và dừng tại 0°/90°. Giảm là quay về mốc khóa, không chọn góc âm. `GUIDED LOCK / OPEN SETUP` vẫn yêu cầu TEST rồi CONFIRM riêng cho khóa và mở; góc trên màn hình căn chỉnh, lệnh vừa chạy và trang STATUS dùng cùng thang với app. Giá trị lẻ cũ như 135 hiển thị 67.5°.
 
-Dừng backend cũ trước khi chạy lại cổng 8080; broker và Metro có thể giữ nguyên. Nếu `pio` không có trong PATH, dùng `C:\Users\ACER\.platformio\penv\Scripts\platformio.exe`. Reload Expo app để nhận giao diện mới.
+Cấu hình âm cũ được đánh dấu `--`, yêu cầu căn chỉnh lại bằng guided setup; không tự đổi chiều hoặc ghi đè khi xem. PWM, giao thức MQTT và NVS v4 giữ nguyên. Góc hiển thị theo profile cửa demo, không phải số đo từ cảm biến vị trí servo.
 
-Firmware nâng cấu hình NVS v1/v2 sang v3 để lưu góc 360° bằng số 16 bit. Giữ PIN, thẻ, danh sách vân tay, hiệu chỉnh cảm ứng/cảm biến và hai góc hiện có; cấu hình cũ mặc định hành trình 180° cho đến khi bạn chọn lại. Không cần erase flash hay reset dữ liệu. Lệnh quay thử quá 3 giây bị bỏ qua; các lệnh servo có thứ tự để lệnh cũ đến muộn không ghi đè góc mới.
+Kiểm thử bổ sung: 19 bộ native firmware, gồm mã vẽ TFT thật với toàn bộ 181 giá trị lệnh, kiểm tra nút và độ dài chữ; motor task thật xác nhận bước 5° mới tương ứng 10 đơn vị lệnh và giữ các liên động cửa.
 
-## Kết quả kiểm tra ngày 07/11/2026
-
-- Backend `mvn package`: 284 bài, 274 đạt, 10 bài MySQL tùy chọn bỏ qua; không lỗi. Có kiểm thử API/CSRF, góc nguyên 360°, thứ tự lệnh và ACK.
-- Mobile: typecheck đạt, 51/51 bài đạt; lint không lỗi, 13 cảnh báo cũ. Bundle Android biên dịch thành công.
-- Cả 5 bộ native firmware đạt: offline, setup, factory reset, xóa thành viên, quay thử servo. Kiểm tra cả chuyển cấu hình cũ và xung riêng cho 179°/180°/181° ở hành trình 360°.
-- Build connected và offline đạt. Chỉ nạp bản **connected 1.6.0** vào `ESP32-80B54EC8149C` qua COM5; flash được kiểm tra hash.
-- Đọc INFO sau nạp: `firmware=1.6.0`, `gen=2`, `wifi=3`, `mqtt=1`, `storageFault=0`, `motorFault=0`, `motorCommanded=0`, `lastServoAngle=-1`. Chip đang `CLAIM`, chưa có PIN/hiệu chỉnh, vì vậy chưa thử mở cửa hay xác nhận hành trình cơ khí trên phần cứng này. Hoàn tất [đăng ký và thiết lập ban đầu](CHAY_TU_DAU_TAILSCALE.md) rồi căn theo hướng dẫn trên.
-- Backend đã chạy lại và health báo `READY`; kiểm tra đăng nhập admin, inventory và trang quản trị thành công. Không reset hay xóa dữ liệu cho lần cập nhật này.
-
-Log tại `.local/servo-backend-full.log`, `.local/servo-mobile-tests.log`, `.local/servo-typecheck.log`, `.local/servo-lint.log`, `.local/servo-upload.log`, `.local/servo-offline-build.log`; log backend đang chạy tại `.local/servo-adjustment-20261107/`.
-
-## Khóa từ xa và hẹn giờ
-
-Firmware 1.8.0 dùng các góc đã lưu cho mở, khóa từ xa và tự khóa. App đồng bộ góc hai chiều và giữ riêng bản nháp. Chủ cửa chỉnh thời gian 1–30 giây, chọn chờ cửa đóng hoặc quay về đúng hẹn theo [hướng dẫn khóa và tự động](KHOA_TU_XA_VA_TU_DONG.md).
+Đã build connected 1.17.0, demo 2.0.4-demo và offline; nạp demo qua COM5 ngày 08/11/2026. INFO sau nạp xác nhận firmware 2.0.4-demo, Wi-Fi/MQTT kết nối, giữ openAngle=180 (hiển thị 90°), lockAngle=0, direction=1, NVS v4, 2 vân tay và PIN; không lỗi motor/storage. Boot không phát lệnh servo. Log và bản sao NVS trước nạp ở `.local/servo-tft90-20261108/`; binary và manifest ở `.local/releases/`.

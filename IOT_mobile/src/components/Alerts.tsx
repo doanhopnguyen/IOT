@@ -10,7 +10,8 @@ import {
   PageHeader,
   styles as s,
 } from './ui';
-import { alertService, AlertDto, type AlertStatistics as Statistics } from '../services/api/alertService';
+import { alertService, AlertDto, isPinAlertActionable, type AlertStatistics as Statistics } from '../services/api/alertService';
+import { PinAlertActions } from './PinAlertActions';
 import { colors } from '../theme/tokens';
 import { subscribeUpdates } from '../services/api/realtime';
 import { useConfirm } from './ConfirmationProvider';
@@ -226,7 +227,8 @@ export function Alerts({ back }: { back: () => void }) {
               ? ` · ${item.relatedUsers.map((user) => user.name).join(', ')}`
               : ''}
           </Text>
-          {(item.status === 'OPEN' || item.status === 'ACKNOWLEDGED') &&
+          {isPinAlertActionable(item) ? <PinAlertActions key={item.id} alert={item} onResolved={() => setRetry(value => value + 1)} /> : null}
+          {item.eventType !== 'REPEATED_WRONG_PIN' && (item.status === 'OPEN' || item.status === 'ACKNOWLEDGED') &&
           !automaticTypes.has(item.eventType) ? (
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 2 }}>
               {item.status === 'OPEN' ? (
@@ -251,7 +253,7 @@ export function Alerts({ back }: { back: () => void }) {
                 />
               </View>
             </View>
-          ) : item.status === 'OPEN' ? (
+          ) : item.status === 'OPEN' && item.eventType !== 'REPEATED_WRONG_PIN' ? (
             <Button
               title="Đã xem"
               variant="ghost"

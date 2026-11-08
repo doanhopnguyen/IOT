@@ -44,6 +44,7 @@ public class TelemetryService {
         m.put("setupStage","state"); m.put("wifiSsid","text");
         m.put("lockAngle","deg"); m.put("openAngle","deg");
         m.put("servoRange","deg");
+        m.put("openDirection","sign");
         m.put("lockPending","bool");m.put("unlockDurationSec","s");m.put("doorOpenTimeoutSec","s");
         m.put("autoLockWaitForClose","bool");
         m.put("pinFailureLimit","count");m.put("buzzerAlarm","state");m.put("buzzerOn","bool");
@@ -96,8 +97,10 @@ public class TelemetryService {
             case "wifiSsid" -> node.isTextual() && node.asText().length()<=32 ? node.asText() : null;
             case "rssi" -> inRange(node, -120, 0);
             case "servoRange" -> node.isIntegralNumber() && (node.asInt()==180 || node.asInt()==360) ? node.asText() : null;
-            case "lockAngle", "openAngle" -> inRange(node, 5, status.path("servoRange").asInt(180)==360?355:175);
-            case "servoCommandAngle" -> node.isNull()?"unknown":inRange(node,5,status.path("servoRange").asInt(180)==360?355:175);
+            case "openDirection" -> node.isIntegralNumber() && (node.asInt()==-1 || node.asInt()==1)?node.asText():null;
+            case "lockAngle" -> inRange(node,0,status.path("servoRange").asInt(180)==360?355:180);
+            case "openAngle" -> inRange(node,-180,status.path("servoRange").asInt(180)==360?355:180);
+            case "servoCommandAngle" -> node.isNull()?"unknown":inRange(node,-180,status.path("servoRange").asInt(180)==360?355:180);
             case "freeHeap" -> inRange(node, 0, 16_777_216);
             case "droppedEvents", "uptime" -> inRange(node, 0, Long.MAX_VALUE);
             default -> null;

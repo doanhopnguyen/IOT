@@ -3,7 +3,6 @@ import { ReactNode, type ComponentRef, useEffect, useRef, useState } from 'react
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -17,6 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fonts, radius } from '../theme/tokens';
+import { AppOverlay } from './OverlayProvider';
 
 export type IconName = keyof typeof Ionicons.glyphMap;
 export type ToneName =
@@ -416,7 +416,7 @@ export function AppModal({
     scroll.current?.scrollTo({ y: 0, animated: false });
   }, [scrollKey]);
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <AppOverlay visible={visible} onClose={onClose}>
       <KeyboardAvoidingView
         style={styles.overlay}
         behavior={
@@ -447,7 +447,7 @@ export function AppModal({
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+    </AppOverlay>
   );
 }
 

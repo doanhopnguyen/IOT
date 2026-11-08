@@ -36,3 +36,10 @@ test('a stale heartbeat cannot undo an acknowledged servo save before device con
   assert.equal(servoSyncDecision(angles, false, confirmation, 200), 'FOLLOW');
   assert.equal(servoSyncDecision(old, false, confirmation, 1000), 'CONFLICT');
 });
+
+test('servo confirmation distinguishes the two end stops even at zero opening', () => {
+  const negative = { lockAngle: 0, openAngle: 0, servoRange: 180 as const, openDirection: -1 as const };
+  const positive = { ...negative, openDirection: 1 as const };
+  assert.equal(sameServoAngles(negative, positive), false);
+  assert.equal(servoSyncDecision(positive, false, { angles: negative, expiresAt: 1000 }, 100), 'WAIT');
+});

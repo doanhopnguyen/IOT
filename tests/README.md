@@ -21,7 +21,7 @@ Sau build firmware, chạy `python firmware/tests/test_member_removal.py` để 
 
 `python firmware/tests/test_wifi_storage.py` chạy các hàm lưu/đọc mạng Wi-Fi thật với NVS giả: mạng mở không bị báo nhầm lỗi khi mật khẩu rỗng, giữ đúng mạng qua reboot, xóa mật khẩu cũ khi chuyển sang mạng mở, và không xác nhận lưu khi ghi/xóa/đọc lại thất bại.
 
-Chạy `python firmware/tests/test_servo_preview.py` để kiểm tra motor task thật: bước 1°, hành trình 180/360, xung PWM, gộp lệnh nhích, dừng/hết phiên và chặn khóa khi cánh cửa mở. `test_offline_door.py` còn kiểm tra nâng cấu hình NVS v1/v2 lên v3, giữ PIN/thẻ/vân tay và góc nguyên trên 255°.
+Chạy `python firmware/tests/test_servo_preview.py` để kiểm tra motor task thật: khóa cố định 0°, mở âm/dương theo hành trình 180°, bước TFT 5° hiển thị = 10 đơn vị lệnh, xung PWM hai chiều, gộp lệnh nhích, dừng/hết phiên và chặn khóa/đổi chiều khi cánh cửa mở. `test_offline_door.py` kiểm tra nâng NVS v1/v2/v3 lên v4, giữ PIN/thẻ/vân tay, góc mở có dấu và chiều mở khi góc bằng 0°.
 
 `test_product_qr.py` kiểm tra QR Wi-Fi kèm mã nhận cửa. Sau build, `test_activation_qr_sync.py` kiểm tra cập nhật mã sau reset theo thứ tự/generation, đọc lại NVS và giữ nguyên thông tin nhận dạng/Wi-Fi. Các bài laptop AI nằm trong `face-node/tests/test_desktop_setup.py`; không mở camera hoặc gửi lệnh mở cửa khi chạy test.
 
@@ -34,3 +34,7 @@ Chạy `python firmware/tests/test_servo_preview.py` để kiểm tra motor task
 ## Kiểm tra xóa Wi-Fi trên chip chưa nhận
 
 `python firmware/tests/test_unclaimed_wifi_reset.py` chạy hàm firmware thực với trạng thái sở hữu, cấu hình người dùng và lỗi xóa/đọc lại bộ nhớ. Kiểm tra từ chối chip đã nhận hoặc đã cấu hình, không báo thành công khi xóa thất bại, giữ nguyên mã QR và danh tính sản phẩm. Cần `g++` như các bộ host test firmware khác.
+
+`python firmware/tests/test_servo_tft.py` biên dịch mã vẽ màn hình servo thật để kiểm tra thang 0–90°, 181 giá trị cũ, góc nửa độ, nút tăng/giảm và độ dài chữ trên TFT.
+
+Kiểm thử motor trong test_servo_preview.py cũng kiểm tra khóa từ xa về 0° ngay khi cảm biến báo mở, ghi đè lệnh mở đang chờ, lệnh lặp, hủy khóa chờ và giữ nguyên chính sách tự khóa; chặn thao tác khi lỗi/đang căn góc.

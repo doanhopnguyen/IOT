@@ -46,3 +46,11 @@ export function validateSettings(patch: Partial<UnitSettingsDto>): string | null
   if (p !== undefined && (!Number.isInteger(p) || p < 1 || p > 10)) return 'Ngưỡng sai PIN phải từ 1 đến 10 lần.';
   return null;
 }
+
+/** Sensor mode preserves the saved timer; only timed return submits seconds. */
+export function autoLockSettings(waitForClose: boolean, seconds: string): Partial<UnitSettingsDto> {
+  return {
+    autoLockWaitForClose: waitForClose,
+    ...(!waitForClose ? { unlockDurationSec: Number(seconds) } : {}),
+  };
+}

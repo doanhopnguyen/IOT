@@ -50,7 +50,7 @@ class LockdownServiceTest {
 
     void latest(Command c) {
         when(commands.findFirstByDevice_DeviceIdAndCommandTypeInAndStatusInOrderByCommandIdDesc(eq(9L),
-                eq(List.of(LockdownService.DOOR_LOCKDOWN, LockdownService.DOOR_RELEASE)),
+                eq(List.of(LockdownService.DOOR_LOCKDOWN, LockdownService.DOOR_RELEASE, PinAlertResponseService.LOCKDOWN)),
                 eq(List.of(CommandStatus.ACKNOWLEDGED, CommandStatus.PENDING, CommandStatus.SENT))))
                 .thenReturn(Optional.ofNullable(c));
     }
@@ -94,6 +94,10 @@ class LockdownServiceTest {
     @Test void notLockedAfterRelease() {
         latest(acked("DOOR_RELEASE", 4));
         assertThat(service.isLockedDown(door)).isFalse();
+    }
+    @Test void pinAlertLockdownKeepsTheNormalLockdownPolicy(){
+        latest(acked(PinAlertResponseService.LOCKDOWN,4));
+        assertThat(service.isLockedDown(door)).isTrue();
     }
 
     @Test void notLockedAfterResetToNewGeneration() {

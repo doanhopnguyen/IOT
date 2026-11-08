@@ -108,6 +108,8 @@ public class AlertService {
         Event event = events.findById(id).orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Alert not found"));
         requireManager(event.getDevice(), actor.getAccountId());
         AlertStatus from = event.getAlertStatus();
+        if(target==AlertStatus.RESOLVED && AlertRuleService.REPEATED_WRONG_PIN.equals(event.getEventType()))
+            throw new ResponseStatusException(CONFLICT,"Chọn Cửa vẫn an toàn hoặc Tạm thời khóa cửa để gửi lệnh xuống thiết bị");
         if (target == AlertStatus.RESOLVED && java.util.Set.of(
                 AlertRuleService.DEVICE_OFFLINE, AlertRuleService.DOOR_LEFT_OPEN, AlertRuleService.SENSOR_FAULT)
                 .contains(event.getEventType()))

@@ -3,7 +3,7 @@
 #define CONNECTED_DOOR 1
 // Gửi trong heartbeat để backend theo dõi phiên bản phần cứng/firmware của thiết bị.
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "1.14.0"
+#define FIRMWARE_VERSION "1.18.0"
 #endif
 #define FIRMWARE_IDENTITY "SMARTDOOR_OTA_V1|" FIRMWARE_VERSION
 #define HARDWARE_VERSION "esp32s3-n16r8"

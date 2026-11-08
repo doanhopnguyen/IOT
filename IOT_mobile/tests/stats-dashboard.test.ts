@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { barHeights, rssiStrength } from '../src/components/chartMath';
 import { setApiBaseUrl } from '../src/services/api/client';
-import { statsService, validateSettings } from '../src/services/api/statsService';
+import { autoLockSettings, statsService, validateSettings } from '../src/services/api/statsService';
 import { alertService } from '../src/services/api/alertService';
 
 test('cột cao nhất bằng 100% chiều cao, toàn 0 không chia cho 0', () => {
@@ -64,4 +64,20 @@ test('cập nhật cài đặt và cảnh báo dùng PATCH với body JSON', asy
     assert.equal(r.calls[1].init.body, JSON.stringify({ status: 'RESOLVED' }));
     assert.equal(new Headers(r.calls[1].init.headers).get('X-CSRF-TOKEN'), 't');
   } finally { globalThis.fetch = realFetch; }
+});
+
+test('sensor mode omits hidden timer and timed mode validates selected seconds', () => {
+  for (const hidden of ['', '0', '31', 'abc', '7']) {
+    const patch = autoLockSettings(true, hidden);
+    assert.deepEqual(patch, { autoLockWaitForClose: true });
+    assert.equal(validateSettings(patch), null);
+  }
+  for (const seconds of ['1', '5', '30']) {
+    const patch = autoLockSettings(false, seconds);
+    assert.deepEqual(patch, { autoLockWaitForClose: false, unlockDurationSec: Number(seconds) });
+    assert.equal(validateSettings(patch), null);
+  }
+  for (const invalid of ['', '0', '31', '1.5', 'abc']) {
+    assert.notEqual(validateSettings(autoLockSettings(false, invalid)), null);
+  }
 });

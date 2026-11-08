@@ -26,22 +26,36 @@ int main(){
   assert(!localAccessAllowed(true,true,false,false));assert(!localAccessAllowed(true,true,true,true));
   assert(signalBars(-40)==4 && signalBars(-60)==3 && signalBars(-70)==2 && signalBars(-80)==1 && signalBars(-95)==0);
   ServoSetup::State servo;
-  servo.lockAngle=105;servo.openAngle=100;
-  assert(!ServoSetup::canConfirm(servo,105,false,false,true)); // A draft alone is not a test.
+  servo.lockAngle=0;servo.openAngle=100;
+  assert(!ServoSetup::canConfirm(servo,0,false,false,true)); // A draft alone is not a test.
   servo.tested=true;
-  assert(!ServoSetup::canConfirm(servo,105,true,false,true));
-  assert(!ServoSetup::canConfirm(servo,105,false,true,true));
-  assert(!ServoSetup::canConfirm(servo,105,false,false,true,true)); // Servo driver failure.
-  assert(!ServoSetup::canConfirm(servo,105,false,false,true,false,false)); // Canceled queued test is not evidence.
-  assert(!ServoSetup::canConfirm(servo,105,false,false,false)); // LOCK requires a closed leaf.
-  assert(ServoSetup::canConfirm(servo,105,false,false,true));
-  ServoSetup::adjust(servo,-5);assert(servo.lockAngle==100 && !servo.tested);
+  assert(!ServoSetup::canConfirm(servo,0,true,false,true));
+  assert(!ServoSetup::canConfirm(servo,0,false,true,true));
+  assert(!ServoSetup::canConfirm(servo,0,false,false,true,true)); // Servo driver failure.
+  assert(!ServoSetup::canConfirm(servo,0,false,false,true,false,false)); // Canceled queued test is not evidence.
+  assert(!ServoSetup::canConfirm(servo,0,false,false,false)); // LOCK requires a closed leaf.
+  assert(ServoSetup::canConfirm(servo,0,false,false,true));
+  ServoSetup::adjust(servo,-5);assert(servo.lockAngle==0 && servo.tested);
   servo.step=1;servo.tested=true;
   assert(ServoSetup::canConfirm(servo,100,false,false,false)); // OPEN may be checked with the leaf open.
   assert(!strcmp(ServoSetup::direction(105,100),"DECREASE"));
   assert(!strcmp(ServoSetup::direction(100,105),"INCREASE"));
   assert(!strcmp(ServoSetup::direction(100,100),"HOLD"));
-  assert(!strcmp(ServoSetup::direction(-1,100),"UNKNOWN"));
+  assert(!strcmp(ServoSetup::direction(-1000,100),"UNKNOWN"));
+  // Every saved raw angle retains its half-degree display, with 5 displayed
+  // degrees advancing 10 commands and clamping at the demo limits.
+  for(int raw=0;raw<=180;raw++){
+    assert(ServoSetup::validDemoCommand(raw));
+    assert(ServoSetup::stepDemoCommand(raw,0)==raw);
+    int up=raw+10>180?180:raw+10,down=raw-10<0?0:raw-10;
+    assert(ServoSetup::stepDemoCommand(raw,5)==up);
+    assert(ServoSetup::stepDemoCommand(raw,-5)==down);
+  }
+  assert(!ServoSetup::validDemoCommand(-1) && !ServoSetup::validDemoCommand(181));
+  servo.openAngle=135;ServoSetup::adjust(servo,5);assert(servo.openAngle==145 && !servo.tested && servo.openDirection==1);
+  servo.openAngle=0;servo.tested=true;ServoSetup::adjust(servo,-5);assert(servo.openAngle==0 && servo.tested);
+  servo.openAngle=180;ServoSetup::adjust(servo,5);assert(servo.openAngle==180);
+  servo.openAngle=-30;servo.openDirection=-1;ServoSetup::adjust(servo,-5);assert(servo.openAngle==0 && servo.openDirection==1);
   assert(wifiAllowed(false,0,100)); // Initial provisioning only selects Wi-Fi.
   assert(!wifiAllowed(true,0,100)); // An owned door requires owner authorization.
   assert(wifiAllowed(true,200,100));assert(!wifiAllowed(true,200,200));

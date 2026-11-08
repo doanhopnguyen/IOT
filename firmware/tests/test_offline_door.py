@@ -71,8 +71,8 @@ int main() {
   assert(validConfig(equal)); // Equal angles must also load after a reboot.
   equal.lockAngle=4; sha((const uint8_t*)&equal,offsetof(Config,checksum),equal.checksum);
   assert(!validConfig(equal));
-  assert(validServoAngles(105,100) && validServoAngles(100,100) && validServoAngles(95,100));
-  assert(validServoAngles(5,5) && validServoAngles(175,175));
+  assert(validServoAngles(0,0) && validServoAngles(0,180) && validServoAngles(0,-180,180,-1));
+  assert(!validServoAngles(5,5) && !validServoAngles(175,175));
   assert(!validServoAngles(4,90) && !validServoAngles(90,176));
   static_assert(sizeof(Config)!=sizeof(LegacyConfig),"Legacy config must be distinguishable by size");
   LegacyConfig old{}; old.magic=CONFIG_MAGIC;old.version=1; old.lockAngle=30; old.openAngle=100;
@@ -81,19 +81,27 @@ int main() {
   old.fingerCount=2;old.fingers[0]=7;old.fingers[1]=255;old.touch.c=123;old.closedLevel=0;
   sha((const uint8_t*)&old,offsetof(LegacyConfig,checksum),old.checksum);
   Config upgraded{};assert(upgradeLegacyConfig(old,upgraded));
-  assert(upgraded.version==3 && upgraded.servoRange==180 && upgraded.lockAngle==100 && upgraded.openAngle==30);
+  assert(upgraded.version==4 && upgraded.servoRange==180 && upgraded.lockAngle==0 && upgraded.openAngle==30);
   assert(upgraded.admin.valid==1 && upgraded.cards[0].size==4 && upgraded.touch.c==123 && upgraded.closedLevel==0);
   assert(upgraded.admin.salt[0]==42 && upgraded.user.hash[31]==89 && upgraded.cardCount==1 && upgraded.cards[0].bytes[0]==55);
   assert(upgraded.fingerCount==2 && upgraded.fingers[0]==7 && upgraded.fingers[1]==255);
   old.version=2;old.lockAngle=110;old.openAngle=25;
   sha((const uint8_t*)&old,offsetof(LegacyConfig,checksum),old.checksum);
   Config again{};assert(upgradeLegacyConfig(old,again));
-  assert(again.lockAngle==110 && again.openAngle==25); // Preserve later user edits.
+  assert(again.lockAngle==0 && again.openAngle==25); // Preserve later user edits.
   old.checksum[0]^=1;assert(!upgradeLegacyConfig(old,again)); // Corruption fails closed.
-  Config wide=upgraded;wide.servoRange=360;wide.lockAngle=201;wide.openAngle=179;
+  Config wide=upgraded;wide.version=3;wide.servoRange=360;wide.lockAngle=201;wide.openAngle=179;
   sha((const uint8_t*)&wide,offsetof(Config,checksum),wide.checksum);assert(validConfig(wide));
   Config reloaded{};memcpy(&reloaded,&wide,sizeof(wide));assert(validConfig(reloaded) && reloaded.lockAngle==201);
   wide.servoRange=180;sha((const uint8_t*)&wide,offsetof(Config,checksum),wide.checksum);assert(!validConfig(wide));
+  wide.servoRange=360;normalizeServoConfig(wide);
+  assert(wide.version==4 && wide.lockAngle==0 && wide.openAngle==90 && wide.servoRange==180 && wide.openDirection==1);
+  assert(validConfig(wide));
+  wide.openDirection=-1;wide.openAngle=-15;
+  sha((const uint8_t*)&wide,offsetof(Config,checksum),wide.checksum);assert(validConfig(wide));
+  reloaded=wide;assert(validConfig(reloaded) && reloaded.openAngle==-15 && reloaded.openDirection==-1);
+  wide.openAngle=0;sha((const uint8_t*)&wide,offsetof(Config,checksum),wide.checksum);assert(validConfig(wide));
+  wide.openDirection=0;sha((const uint8_t*)&wide,offsetof(Config,checksum),wide.checksum);assert(!validConfig(wide));
   cfg.servoRange=180;cfg.closedLevel=0; cfg.lockAngle=100; cfg.openAngle=30;
   for (int raw=0;raw<=1;raw++) {
     motor=MotorState{}; motor.raw=motor.stable=raw;

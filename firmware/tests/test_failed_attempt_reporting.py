@@ -47,7 +47,7 @@ def unknown_finger_reports_denied():
 
 
 def firmware_version_bumped():
-    assert '#define FIRMWARE_VERSION "1.14.0"' in MAIN
+    assert '#define FIRMWARE_VERSION "1.18.0"' in MAIN
 
 
 for check in (wrong_pin_reports_denied, blocked_keypad_does_not_report, unknown_finger_reports_denied,

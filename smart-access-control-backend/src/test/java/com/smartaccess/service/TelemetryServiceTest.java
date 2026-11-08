@@ -89,6 +89,14 @@ class TelemetryServiceTest {
         assertThat(saved("servoDirection").getMetricValue()).isEqualTo("DECREASE");
         assertThat(saved("servoCalibrated").getMetricValue()).isEqualTo("false");
     }
+    @Test void signedServoTelemetryIncludesZeroEndStopAndNegativeOpening() {
+        service.record(door,status().put("servoRange",180).put("lockAngle",0).put("openAngle",-15)
+                .put("openDirection",-1).put("servoCommandAngle",-15),requestId);
+        assertThat(saved("lockAngle").getMetricValue()).isEqualTo("0");
+        assertThat(saved("openAngle").getMetricValue()).isEqualTo("-15");
+        assertThat(saved("openDirection").getMetricValue()).isEqualTo("-1");
+        assertThat(saved("servoCommandAngle").getMetricValue()).isEqualTo("-15");
+    }
     @Test void missingServoPositionRemainsUnknown() {
         service.record(door,status().putNull("servoCommandAngle").put("servoDirection","UNKNOWN"),requestId);
         assertThat(saved("servoCommandAngle").getMetricValue()).isEqualTo("unknown");

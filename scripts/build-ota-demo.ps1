@@ -5,8 +5,8 @@ if (-not (Test-Path -LiteralPath $pio)) { throw 'Install PlatformIO before build
 $releases = Join-Path $projectRoot '.local\releases'
 New-Item -ItemType Directory -Path $releases -Force | Out-Null
 $builds = @(
-    @{ Environment='esp32-s3-connected'; Version='1.14.0'; File='firmware-base-1.14.0.bin' },
-    @{ Environment='esp32-s3-ota-demo'; Version='2.0.1-demo'; File='firmware-v2.0.1-demo.bin' }
+    @{ Environment='esp32-s3-connected'; Version='1.18.0'; File='firmware-base-1.18.0.bin' },
+    @{ Environment='esp32-s3-ota-demo'; Version='2.0.5-demo'; File='firmware-v2.0.5-demo.bin' }
 )
 $manifest = @()
 Push-Location (Join-Path $projectRoot 'firmware')
@@ -25,4 +25,4 @@ try {
 } finally { Pop-Location }
 [IO.File]::WriteAllText((Join-Path $releases 'firmware-manifest.json'), ($manifest | ConvertTo-Json -Depth 3), [Text.UTF8Encoding]::new($false))
 Write-Host "OTA binaries and SHA-256 manifest: $releases"
-Write-Host 'Upload firmware-v2.0.1-demo.bin through admin > Cap nhat firmware. This script does not flash USB or modify device data.'
+Write-Host 'Upload firmware-v2.0.5-demo.bin through admin > Cap nhat firmware. This script does not flash USB or modify device data.'

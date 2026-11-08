@@ -24,7 +24,7 @@ import java.util.Map;
 public class LockdownService {
     public static final String DOOR_LOCKDOWN = "DOOR_LOCKDOWN";
     public static final String DOOR_RELEASE = "DOOR_RELEASE";
-    private static final List<String> TYPES = List.of(DOOR_LOCKDOWN, DOOR_RELEASE);
+    private static final List<String> TYPES = List.of(DOOR_LOCKDOWN, DOOR_RELEASE, PinAlertResponseService.LOCKDOWN);
     private static final List<CommandStatus> EFFECTIVE = List.of(CommandStatus.ACKNOWLEDGED, CommandStatus.PENDING, CommandStatus.SENT);
 
     private final ManagerAccessGuard guard;
@@ -63,7 +63,7 @@ public class LockdownService {
         // Lệnh đang chờ ACK là trạng thái mong muốn: heartbeat có thể tới trước ACK. Lệnh FAILED/TIMEOUT bị bỏ qua.
         return commands.findFirstByDevice_DeviceIdAndCommandTypeInAndStatusInOrderByCommandIdDesc(
                         device.getDeviceId(), TYPES, EFFECTIVE)
-                .filter(c -> DOOR_LOCKDOWN.equals(c.getCommandType()))
+                .filter(c -> DOOR_LOCKDOWN.equals(c.getCommandType()) || PinAlertResponseService.LOCKDOWN.equals(c.getCommandType()))
                 .filter(c -> c.getPayload() != null && c.getPayload().get("generation") instanceof Number n
                         && n.longValue() == generation)
                 .isPresent();
@@ -72,10 +72,14 @@ public class LockdownService {
     private CommandResponse send(Long managerId, Long unitId, String type) {
         guard.requireManagedUnit(managerId, unitId);
         Device device = guard.requireOnlineController(unitId);
+        devices.findByDeviceUidForUpdate(device.getDeviceUid());
         for (String pending : TYPES)
             if (commands.existsByDevice_DeviceIdAndCommandTypeAndStatusIn(device.getDeviceId(), pending,
                     List.of(CommandStatus.PENDING, CommandStatus.SENT)))
                 throw new BusinessException(HttpStatus.CONFLICT, "Cửa đang xử lý lệnh khóa trước đó");
+        if(commands.existsByDevice_DeviceIdAndCommandTypeAndStatusIn(device.getDeviceId(),PinAlertResponseService.SAFE,
+                List.of(CommandStatus.PENDING,CommandStatus.SENT)))
+            throw new BusinessException(HttpStatus.CONFLICT,"Cửa đang xử lý cảnh báo PIN");
         Map<String, Object> payload = Map.of("unitId", unitId, "generation", generation(device));
         return CommandResponse.from(dispatcher.dispatch(device, managerId, type, payload, Map.of()));
     }

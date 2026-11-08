@@ -99,6 +99,12 @@ class AlertRuleServiceTest {
         door.setLastSeenAt(null);
         assertThat(service.evaluate(now)).isZero();
     }
+    @Test void pinFailuresBeforeOwnerResponseCannotImmediatelyReopenTheAlert(){
+        LocalDateTime handled=now.minusSeconds(20);
+        when(events.latestPinResponseAt(7L)).thenReturn(Optional.of(handled));
+        service.evaluate(now);
+        assertThat(askedAfter.get(Set.of(AccessMethod.PIN))).isEqualTo(handled);
+    }
 
     @Test void openAlertIsNotDuplicated() {
         door.setLastSeenAt(now.minusSeconds(600));
