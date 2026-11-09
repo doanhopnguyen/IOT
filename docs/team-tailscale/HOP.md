@@ -1,87 +1,188 @@
-# Hợp — ESP32, người dùng và edge AI
+# Hợp — ESP32, app người dùng và Edge AI
 
-IP Tailscale của bạn: **100.111.90.116**. Laptop này không chạy backend Java, MySQL, face processor server :8091 hoặc MQTT broker. Bạn giữ thiết bị và chạy camera edge tại cửa.
+Bản cập nhật 09/11/2026, thay cho HOP.md trong `hop.zip`.
 
-Chip được nạp lại firmware **2.0.5-demo**, xóa flash cũ và kho vân tay, rồi cấp lại danh tính nhà máy. Sau bàn giao chỉ có QR/SSID/mật khẩu AP xuất xưởng: chưa chọn Wi-Fi, chưa có PIN, thẻ, vân tay hoặc chủ cửa. UID giữ theo phần cứng: `ESP32-80B54EC8149C`; mã kích hoạt và secret là bộ mới, khớp SQL gửi Cường. Không nhận cửa trên backend cũ.
+IP Tailscale của bạn: **100.111.90.116**. Bạn giữ ESP32, dùng app với vai trò chủ cửa và chạy camera Edge AI tại cửa. Laptop này **không** chạy backend, MySQL, MQTT broker hay gateway.
 
-## Trước khi bắt đầu
+## Thay đổi so với bản cũ
 
-Gửi **cuong.zip** + gói model cho Cường, **thuy.zip** cho Thủy, **bang.zip** cho Bằng. Mỗi người có source mới nhất. Giữ hop.zip trên máy mình. Gói riêng có secret, không đưa lên Git. Chờ Cường hoàn tất SQL và Thủy bật web/Expo.
+ESP32 không còn đi nhờ qua laptop của bạn. Chip kết nối **thẳng tới broker của Cường qua Internet** bằng một tên miền cố định:
 
-Không chạy `scripts/start-local.ps1 -Component backend/broker/face-api` nữa. Nếu dịch vụ cũ đang giữ port 8080/1884, dừng đúng cửa sổ cũ bằng Ctrl+C trước khi bật gateway. Dịch vụ MySQL hệ thống có thể vẫn cài nhưng không phục vụ demo này; không cần xóa database cũ.
-
-Cài Python 3.11, Tailscale, dependency và model nếu máy mới; máy hiện tại đã có môi trường AI:
-
-```powershell
-cd D:\DEV\IOT
-# Chỉ khi chưa có .local/venv:
-# py -3.11 -m venv .local/venv
-# .\.local\venv\Scripts\python.exe -m pip install -r scripts/requirements-local.txt -r face-node/requirements.txt
-.\.local\venv\Scripts\python.exe scripts/team_handoff.py install --role hop --bundle .local/received/hop
+```
+Trước: ESP32 ──LAN──▶ laptop Hợp (gateway 10.18.0.194) ──Tailscale──▶ broker Cường
+Nay:   ESP32 ──Internet, TLS──▶ desktop-s2r046u.tailad91e1.ts.net:8443 ──▶ broker Cường
 ```
 
-Nếu chưa giải nén hop.zip, giải nén sao cho role.json nằm trong `.local/received/hop`. Các file FACTORY/connection chỉ dùng khi bảo trì USB, không chạy provision lần nữa trên chip đang cấp phát.
+| Bản cũ | Bản mới |
+|---|---|
+| Chạy `mqtt-gateway` và `ota-gateway` | **Bỏ**, không chạy nữa |
+| ESP32 phải cùng Wi-Fi với laptop Hợp | ESP32 dùng Wi-Fi nào có Internet cũng được |
+| Laptop Hợp phải bật để chip online | Chỉ cần máy Cường bật |
+| Đổi mạng phải sửa role.json, firewall, backend.env, chip | Không phải sửa gì |
+| OTA tải qua `http://10.18.0.194:8080` | OTA tải qua `https://desktop-s2r046u.tailad91e1.ts.net` |
 
-## Cầu nối cho chip — chạy trước khi chọn Wi-Fi
+UID `ESP32-80B54EC8149C`, secret, mã QR và mật khẩu MQTT của chip **giữ nguyên**. DB trên máy Cường không phải sửa.
 
-IP Wi-Fi Hợp lúc bàn giao: **10.18.0.194**. Kiểm tra IP này vẫn nằm trên card Wi-Fi đang cùng mạng với ESP32:
+Để chuyển, bạn phải nạp lại chip qua USB **một lần** (phần A). Làm trước khi quét QR nhận cửa.
 
-```powershell
-Get-NetIPAddress -AddressFamily IPv4 | Select-Object InterfaceAlias,IPAddress
-Test-NetConnection 100.95.248.100 -Port 1884
-Test-NetConnection 100.95.248.100 -Port 8080
+## Cần chuẩn bị
+
+- Source mới nhất của repo, ví dụ `D:\DEV\IOT`. Mọi lệnh dưới đây chạy tại thư mục gốc repo.
+- Gói `hop.zip` cũ. Trong đó có **factory JSON** (danh tính chip) và **connection JSON** (cấu hình broker).
+- File **`ts-ca.pem`** do Cường gửi. File này chứa chứng chỉ gốc ISRG Root X1 và X2 của Let's Encrypt, là chứng chỉ công khai, không phải bí mật.
+- ESP32 cắm USB (mặc định `COM5`), PlatformIO, Python 3.11 với `.local/venv` đã cài `scripts/requirements-local.txt` và `face-node/requirements.txt`.
+- Tailscale đã vào tailnet chung của nhóm, đúng IP `100.111.90.116`.
+
+Đặt file riêng vào một thư mục, **không đưa vào Git**:
+
+```
+.local\received\hop\factory.json      ← factory JSON trong hop.zip
+.local\received\hop\connection.json   ← connection JSON trong hop.zip
+.local\received\hop\ts-ca.pem         ← Cường gửi
 ```
 
-Không dùng IP VMware 192.168.40.1/192.168.80.1 hoặc IP Tailscale làm gateway LAN cho chip. Hai laptop ở Wi-Fi khác nhau không sao; chip chỉ cần cùng LAN với laptop Hợp. Mạng guest/client-isolation sẽ chặn đường này.
+Đổi tên file trong các lệnh nếu file của bạn tên khác.
 
-PowerShell Run as Administrator một lần:
+Nếu máy còn chạy gateway cũ (`mqtt-gateway`, `ota-gateway`), dừng cửa sổ đó bằng Ctrl+C.
 
-```powershell
-cd D:\DEV\IOT
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/team-firewall.ps1 -Role hop -HopLan 10.18.0.194
-```
+---
 
-Hai cửa sổ riêng tại gốc repo:
+## A. Nạp lại ESP32 (một lần)
 
-```powershell
-# A: chuyển tiếp MQTT, không phải một MQTT broker khác
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-team.ps1 -Service mqtt-gateway
-```
+### A1. Kiểm tra máy chủ của Cường
+
+Máy Cường phải đang bật. **Tắt Tailscale** trên laptop để thử đúng như ESP32 (đi qua Internet), rồi chạy:
 
 ```powershell
-# B: chuyển tiếp HTTP cho ESP32 tải firmware OTA
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-team.ps1 -Service ota-gateway
+Test-NetConnection desktop-s2r046u.tailad91e1.ts.net -Port 8443
+Test-NetConnection desktop-s2r046u.tailad91e1.ts.net -Port 443
 ```
 
-A: `10.18.0.194:1884 → 100.95.248.100:1884`. B: `10.18.0.194:8080 → 100.95.248.100:8080`. Chỉ hai relay TCP, không có Java/DB/Mosquitto trên máy bạn.
+Cả hai phải ra `TcpTestSucceeded : True`. Nếu ra `False`, báo Cường và dừng ở đây.
 
-## App người dùng và nhận cửa từ QR
+Bật lại Tailscale sau khi kiểm tra.
 
-1. Trên điện thoại bật Tailscale cùng tailnet; dùng Expo Go tương thích SDK 58 và mở **exp://100.109.158.8:8081**. Có thể dùng web mobile **http://100.109.158.8:8081** để thử khi không dùng camera quét QR.
-2. Tự đăng ký tài khoản người dùng Hợp, đăng nhập tài khoản đó; không dùng tài khoản admin hệ thống của Bằng làm chủ cửa demo.
-3. Quét QR hiện trên chip. Nếu hệ điều hành chỉ hiểu phần Wi-Fi, mở luồng quét QR sản phẩm trong app; QR sản phẩm và QR Expo là hai mã khác nhau.
-4. Kết nối AP SmartDoor-C8149C theo QR, mở **http://192.168.4.1** để chọn Wi-Fi 2.4 GHz của mạng cùng LAN laptop Hợp. Không cài cố định mật khẩu Wi-Fi trong source. Khi nối AP chip có thể tạm mất đường tới backend; chọn Wi-Fi rồi trở lại mạng bình thường/Tailscale để hoàn tất nhận cửa.
-5. App dùng mã activation trong QR để nhận cửa trên DB Cường. Hoàn tất PIN mở cửa và PIN admin khác nhau, hiệu chỉnh cảm ứng/cảm biến theo hướng dẫn. Góc servo chỉnh riêng, app/TFT hiển thị 0–90°.
-6. Chờ chip báo READY, MQTT online và Bằng thấy thiết bị được nhận. Chỉ sau đó thử mở/khóa. Khóa từ xa quay servo về 0° ngay; tự khóa vẫn theo chế độ đã chọn.
+### A2. Tạo connection JSON mới
 
-Không cần Cường có thiết bị USB: SQL đã tạo đúng inventory và hash; chip xác thực khi tới được broker. Nếu báo mã đã dùng/không tồn tại, dừng và đối chiếu đúng bộ SQL/QR, không tạo mã mới tùy tiện.
+Lệnh dưới đây đọc connection JSON cũ, đổi địa chỉ broker sang tên miền mới, bật TLS và gắn chứng chỉ. `mqttUser` và `mqttPassword` giữ nguyên, không in ra màn hình.
 
-## Edge AI tại cửa — sau khi setup READY
+```powershell
+@'
+import json, pathlib
+d = pathlib.Path(".local/received/hop")
+c = json.loads((d/"connection.json").read_text(encoding="utf-8-sig"))
+c.update(mqttHost="desktop-s2r046u.tailad91e1.ts.net", mqttPort=8443, mqttTls=True,
+         mqttCa=(d/"ts-ca.pem").read_text(encoding="utf-8-sig").strip() + "\n")
+c.pop("allowLocalPlaintext", None)
+(d/"connection-funnel.json").write_text(json.dumps(c, indent=2), encoding="utf-8")
+print("OK:", {k: c[k] for k in ("mqttHost", "mqttPort", "mqttTls")})
+'@ | .\.local\venv\Scripts\python.exe -
+```
+
+Kết quả đúng:
+
+```
+OK: {'mqttHost': 'desktop-s2r046u.tailad91e1.ts.net', 'mqttPort': 8443, 'mqttTls': True}
+```
+
+### A3. Xóa flash và nạp lại firmware
+
+Firmware chỉ nhận cấu hình mới khi chip **chưa có danh tính**, nên phải xóa flash trước. Thao tác này xóa Wi-Fi và cấu hình lưu trên chip. Kho vân tay nằm trong cảm biến, không bị ảnh hưởng.
+
+Đóng Serial Monitor và mọi chương trình đang giữ cổng COM, rồi chạy:
+
+```powershell
+cd firmware
+pio run -c platformio.connected.ini -t erase  --upload-port COM5
+pio run -c platformio.connected.ini -e esp32-s3-ota-demo -t upload --upload-port COM5
+cd ..
+```
+
+### A4. Provision: danh tính cũ + kết nối mới
+
+```powershell
+.\.local\venv\Scripts\python.exe scripts/device_tool.py --port COM5 provision `
+  --device .local/received/hop/factory.json `
+  --connection .local/received/hop/connection-funnel.json
+.\.local\venv\Scripts\python.exe scripts/device_tool.py --port COM5 info
+```
+
+- Lệnh provision phải in `FACTORY_PROVISIONED 80B54EC8149C`, sau đó chip tự khởi động lại.
+- Lệnh `info` phải có `productPrepared=1`, `generation=1`, `claimed=0`, `firmware=2.0.5-demo`.
+- Nếu ra `FACTORY_REJECTED`: chip chưa được xóa sạch, hoặc file factory không khớp MAC. Làm lại A3. **Không** sửa UID, MAC hay secret.
+- Nếu ra `FACTORY_STORAGE_FAILED`: báo Cường, không thử lại liên tục.
+
+Màn hình chip trở về QR xuất xưởng. Mã QR giống hệt trước.
+
+---
+
+## B. App người dùng và nhận cửa
+
+1. Trên điện thoại bật Tailscale cùng tailnet nhóm. Mở Expo Go (tương thích SDK 58) và vào **exp://100.109.158.8:8081** (Expo trên máy Thủy) hoặc **exp://100.111.90.116:8081** (nếu bật Expo trên máy Hợp).
+2. Tự đăng ký **tài khoản người dùng** của Hợp và đăng nhập. Không dùng tài khoản admin của Bằng làm chủ cửa.
+3. Trong app, mở chức năng quét QR sản phẩm và quét mã trên màn hình chip. QR sản phẩm khác QR của Expo.
+4. Kết nối Wi-Fi phát ra từ chip (`SmartDoor-C8149C`) theo QR, mở **http://192.168.4.1** và chọn Wi-Fi cho chip. Yêu cầu với mạng này:
+   - băng tần **2.4 GHz**;
+   - **có Internet** và không cần đăng nhập qua trang web (Wi-Fi trường học hoặc quán cà phê có trang đăng nhập sẽ không chạy);
+   - không chặn kết nối ra cổng 8443.
+
+   **Không cần** cùng mạng với laptop. Có thể dùng hotspot điện thoại.
+5. Khi đang nối Wi-Fi của chip, điện thoại tạm mất đường tới server. Chọn Wi-Fi xong, quay về mạng bình thường và bật lại Tailscale để app hoàn tất nhận cửa.
+6. Đặt **PIN mở cửa** và **PIN admin** (hai mã khác nhau), hiệu chỉnh cảm ứng và cảm biến theo hướng dẫn trên app. Góc servo chỉnh riêng, hiển thị 0–90°.
+7. Chờ chip báo READY và trạng thái **ONLINE** trên app. Nhờ Cường xem log broker có client `ESP32-80B54EC8149C` kết nối, và Bằng thấy thiết bị đã được nhận trên trang admin. Sau đó mới thử mở và khóa.
+
+Nếu app báo mã đã dùng hoặc không tồn tại: dừng lại và báo Cường chạy file `CUONG-RESET-CUA.md` để đưa thiết bị về trạng thái chờ nhận (`INVENTORY`). Không tạo mã mới.
+
+---
+
+## C. Edge AI tại cửa (sau khi cửa READY)
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-edge-ai.ps1
 ```
 
-Mở **http://127.0.0.1:8092** trên chính laptop Hợp. Nhập máy chủ **http://100.95.248.100:8080**, đăng nhập tài khoản chủ cửa Hợp, chọn cửa vừa nhận, chọn camera laptop rồi ghép/bật nhận diện. Dùng portal để cấp camera mới cho DB Cường; không dùng .env/secret camera cũ. Nếu portal hiện kết nối cũ, dừng/đăng xuất kết nối cũ rồi ghép với địa chỉ server Cường.
+1. Mở **http://127.0.0.1:8092** trên chính laptop Hợp.
+2. Nhập máy chủ **http://100.95.248.100:8080**, đăng nhập tài khoản chủ cửa của Hợp.
+3. Chọn cửa vừa nhận, chọn camera laptop, rồi ghép và bật nhận diện.
+4. Nếu portal hiện kết nối cũ, đăng xuất kết nối cũ rồi ghép lại với server của Cường.
 
-Portal chạy :8092 là UI/worker camera cục bộ, không phải backend server. Edge tải quyền qua HTTP, gửi kết quả nhận diện có xác minh người thật về backend; backend mới quyết định và gửi lệnh MQTT cho cửa. Không bật FACE_ALLOW_UNVERIFIED_LIVENESS để bỏ qua kiểm tra. Đăng ký khuôn mặt bằng ảnh/video trên app dùng processor của Cường; camera mở cửa dùng edge của bạn, là hai luồng khác nhau.
+Edge AI gửi kết quả nhận diện cho backend qua HTTP (Tailscale). Backend quyết định có mở cửa không và gửi lệnh MQTT cho chip. Không bật `FACE_ALLOW_UNVERIFIED_LIVENESS`.
 
-## Đổi IP LAN
+Đăng ký khuôn mặt bằng ảnh/video trên app do máy Cường xử lý. Camera mở cửa do laptop của bạn xử lý. Đây là hai luồng khác nhau.
 
-Ưu tiên giữ DHCP reservation 10.18.0.194. Nếu bắt buộc đổi IP:
+---
 
-1. Dừng hai gateway, sửa trường `lan` trong `.local/team/role.json`, thêm lại Firewall với -HopLan mới và bật lại gateway.
-2. Cường sửa APP_DEVICE_BASE_URL sang IP LAN mới, restart backend.
-3. mqttHost đã cấp trong chip cũng phải đổi. Chỉ sửa file connection trên laptop không cập nhật chip. Không xóa factory/QR để đổi IP tùy tiện; nhờ người bảo trì cấp lại cùng bộ danh tính qua quy trình reset/provision hoặc giữ nguyên địa chỉ bằng DHCP. Không cần tạo lại SQL/activationCode nếu dùng lại đúng bộ danh tính và chip chưa được nhận.
+## Chạy hằng ngày
 
-Giữ laptop có điện, không sleep, Tailscale online và hai gateway chạy. Thiếu gateway: app có thể vào được server nhưng chip vẫn offline. Bản bàn giao không thể tự xác nhận máy Cường/Thủy đã mở Firewall; phải chạy Test-NetConnection trước khi chọn Wi-Fi.
+Chờ Cường báo server READY, rồi:
+
+1. Bật Tailscale, kiểm tra: `Test-NetConnection 100.95.248.100 -Port 8080` phải ra `True`.
+2. Cấp điện cho ESP32. Chip tự kết nối Wi-Fi đã lưu và broker, không cần laptop.
+3. Mở app trên điện thoại.
+4. Nếu dùng camera: chạy `scripts/start-edge-ai.ps1` và bật nhận diện trên portal.
+
+**Không** chạy lại `erase`, `upload` hay `provision` mỗi ngày. Phần A chỉ làm một lần.
+
+## Đổi mạng Wi-Fi cho chip
+
+Không cần nạp lại chip, không phải sửa gì ở máy Cường hay máy của bạn.
+
+1. Trên màn hình chip chọn **ADMIN / CHANGE WI-FI** và nhập PIN admin.
+2. Nối điện thoại vào Wi-Fi `SmartDoor-...` của chip, mở trang thiết lập, nhập lại PIN admin một lần, rồi chọn mạng mới (2.4 GHz, có Internet).
+
+Chip nhớ tối đa 5 mạng đã kết nối thành công. Khi mất Wi-Fi, chip tự thử lần lượt các mạng đã nhớ, nên mang chip về lại một mạng cũ thì không phải làm gì.
+
+## Xử lý sự cố
+
+| Hiện tượng | Kiểm tra |
+|---|---|
+| Chip có Wi-Fi nhưng OFFLINE | Máy Cường có bật không? Chạy lại A1 từ một mạng khác. Wi-Fi của chip có trang đăng nhập hoặc chặn cổng 8443 không? |
+| App không vào được server | Tailscale trên điện thoại có bật không? `Test-NetConnection 100.95.248.100 -Port 8080` |
+| Không mở được Expo | Máy Thủy có bật Expo không? `Test-NetConnection 100.109.158.8 -Port 8081` |
+| Edge AI không ghép được | Đăng nhập đúng tài khoản chủ cửa; cửa đã READY chưa |
+
+## Bảo mật
+
+- Không gửi `factory.json`, `connection.json`, `connection-funnel.json` hay ảnh QR lên kênh chung.
+- Không đưa thư mục `.local\received\hop` vào Git.
+- Nếu sau này cần quay lại gateway LAN cũ, phải xóa flash và provision lại bằng connection JSON cũ. Báo Cường trước, vì backend cũng phải đổi `APP_DEVICE_BASE_URL`.
