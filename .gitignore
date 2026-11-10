@@ -77,3 +77,14 @@ target/
 /docs/superpowers/
 /docs/team-tailscale/
 /docs/*_20??-??-??.md
+/docs/local-development.md
+/docs/verification.md
+
+# Machine-local assistant configuration and native build caches.
+.claude/
+.gradle/
+.kotlin/
+.cxx/
+
+# Empty scaffolding markers are unnecessary for building the project.
+.gitkeep

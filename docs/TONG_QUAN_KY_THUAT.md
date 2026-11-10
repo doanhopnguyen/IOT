@@ -173,7 +173,7 @@ cd D:\DEV\IOT\smart-access-control-backend
 mvn package -DskipTests
 ```
 
-Rule Firewall `Smart Access local development` từng được mở cho LocalSubnet tới 1884/8080/8081, sau đó **đã gỡ theo yêu cầu thu hồi quyền LAN**. Các rule khác giữ nguyên. Web/backend trên laptop vẫn chạy; ESP32 và điện thoại có thể không kết nối được nếu không có rule cho phép khác. Khi laptop đổi IP, cấu hình broker/mobile/CORS cũng cần cập nhật. Xem [hướng dẫn chạy và đăng ký thiết bị](../docs/local-development.md).
+Rule Firewall `Smart Access local development` từng được mở cho LocalSubnet tới 1884/8080/8081, sau đó **đã gỡ theo yêu cầu thu hồi quyền LAN**. Các rule khác giữ nguyên. Web/backend trên laptop vẫn chạy; ESP32 và điện thoại có thể không kết nối được nếu không có rule cho phép khác. Khi laptop đổi IP, cấu hình broker/mobile/CORS cũng cần cập nhật. Xem hướng dẫn chạy và đăng ký thiết bị (ghi ch? c?c b? t?i `../docs/local-development.md`).
 
 ## 6. Nạp ESP32 và đổi Wi-Fi
 
@@ -269,7 +269,7 @@ npm test
 pio run
 ```
 
-Chưa đăng ký RFID/vân tay/khuôn mặt/PIN cho tài khoản mới; chưa kiểm tra thao tác mở servo và toàn bộ tình huống mất điện/mất mạng trên phần cứng. Không coi heartbeat online là bằng chứng chốt đã khóa đúng vị trí. Xem [kết quả và giới hạn kiểm chứng](../docs/verification.md).
+Chưa đăng ký RFID/vân tay/khuôn mặt/PIN cho tài khoản mới; chưa kiểm tra thao tác mở servo và toàn bộ tình huống mất điện/mất mạng trên phần cứng. Không coi heartbeat online là bằng chứng chốt đã khóa đúng vị trí. Xem kết quả và giới hạn kiểm chứng (ghi ch? c?c b? t?i `../docs/verification.md`).
 
 ## 10. Giới hạn và phần nâng cấp
 
@@ -280,4 +280,4 @@ Chưa đăng ký RFID/vân tay/khuôn mặt/PIN cho tài khoản mới; chưa ki
 - Cấu hình đang chạy là LAN phát triển HTTP/MQTT; triển khai qua mạng không tin cậy cần HTTPS/WSS/MQTT TLS và cấu hình chứng chỉ.
 - Lint còn9 cảnh báo đã mô tả trong verification.md; chưa sửa toàn bộ các màn hình cũ.
 
-Tài liệu chi tiết: [Firmware](../firmware/README.md), [đấu nối và tích hợp](../docs/integration.md), [chạy cục bộ](../docs/local-development.md), [backend](../smart-access-control-backend/README.md), [mobile](../IOT_mobile/README.md).
+Tài liệu chi tiết: [Firmware](../firmware/README.md), [đấu nối và tích hợp](../docs/integration.md), chạy cục bộ (ghi ch? c?c b? t?i `../docs/local-development.md`), [backend](../smart-access-control-backend/README.md), [mobile](../IOT_mobile/README.md).

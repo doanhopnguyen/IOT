@@ -4,15 +4,15 @@ Smart Door là dự án IoT mở cửa bằng **PIN, thẻ RFID, vân tay, nhậ
 
 ## Chức năng
 
-| Nhóm | Nội dung |
-|---|---|
-| Truy cập tại cửa | PIN trên TFT và keypad, RFID, vân tay |
-| Điều khiển từ app | Mở/khóa từ xa, đổi PIN, quản lý thẻ/vân tay, cấu hình tự khóa |
-| Người dùng | Chủ cửa, thành viên được mời, quyền theo phương thức truy cập |
-| Nhận diện khuôn mặt | Camera laptop, kiểm tra người thật và quyền tại cửa |
-| Giám sát | Lịch sử, telemetry, thống kê, xuất CSV và cảnh báo |
-| Quản trị | Quản lý hệ thống, thiết bị và phát hành firmware |
-| Vòng đời thiết bị | Cấp phát, quét QR nhận cửa, hiệu chỉnh, reset/chuyển giao và OTA |
+| Nhóm                | Nội dung                                                         |
+| ------------------- | ---------------------------------------------------------------- |
+| Truy cập tại cửa    | PIN trên TFT và keypad, RFID, vân tay                            |
+| Điều khiển từ app   | Mở/khóa từ xa, đổi PIN, quản lý thẻ/vân tay, cấu hình tự khóa    |
+| Người dùng          | Chủ cửa, thành viên được mời, quyền theo phương thức truy cập    |
+| Nhận diện khuôn mặt | Camera laptop, kiểm tra người thật và quyền tại cửa              |
+| Giám sát            | Lịch sử, telemetry, thống kê, xuất CSV và cảnh báo               |
+| Quản trị            | Quản lý hệ thống, thiết bị và phát hành firmware                 |
+| Vòng đời thiết bị   | Cấp phát, quét QR nhận cửa, hiệu chỉnh, reset/chuyển giao và OTA |
 
 ## Kiến trúc
 
@@ -36,36 +36,36 @@ flowchart LR
 
 ## Cấu trúc dự án
 
-| Đường dẫn | Vai trò |
-|---|---|
-| `firmware/connected_door/` | Firmware kết nối chính: mạng, thiết lập, đồng bộ và OTA |
-| `firmware/offline_door/` | Logic cửa cục bộ được firmware connected sử dụng |
-| `firmware/include/` | Cấu hình và các hàm dùng chung |
-| `firmware/maintenance/`, `firmware/factory_wipe/` | Firmware bảo trì và xóa dữ liệu có chủ đích |
-| `hardware/` | Linh kiện, sơ đồ chân, lưu ý nguồn điện |
-| `smart-access-control-backend/` | Spring Boot, API, nghiệp vụ và migration database |
-| `admin-web/` | Mã nguồn web quản trị |
-| `IOT_mobile/` | App Expo / React Native cho Android, iOS và web |
-| `face-node/` | Nhận diện khuôn mặt, ghép camera laptop và mô hình AI |
-| `infra/mosquitto/` | Cấu hình broker, ACL và TLS |
-| `deployment/` | Docker Compose cho MySQL, Mosquitto và backend |
-| `scripts/` | Cấp phát, launcher, gateway, build và công cụ kiểm tra |
-| `tests/` | Mục lục kiểm thử toàn hệ thống |
-| `docs/`, `diagram/` | Hướng dẫn kỹ thuật và sơ đồ |
+| Đường dẫn                                         | Vai trò                                                 |
+| ------------------------------------------------- | ------------------------------------------------------- |
+| `firmware/connected_door/`                        | Firmware kết nối chính: mạng, thiết lập, đồng bộ và OTA |
+| `firmware/offline_door/`                          | Logic cửa cục bộ được firmware connected sử dụng        |
+| `firmware/include/`                               | Cấu hình và các hàm dùng chung                          |
+| `firmware/maintenance/`, `firmware/factory_wipe/` | Firmware bảo trì và xóa dữ liệu có chủ đích             |
+| `hardware/`                                       | Linh kiện, sơ đồ chân, lưu ý nguồn điện                 |
+| `smart-access-control-backend/`                   | Spring Boot, API, nghiệp vụ và migration database       |
+| `admin-web/`                                      | Mã nguồn web quản trị                                   |
+| `IOT_mobile/`                                     | App Expo / React Native cho Android, iOS và web         |
+| `face-node/`                                      | Nhận diện khuôn mặt, ghép camera laptop và mô hình AI   |
+| `infra/mosquitto/`                                | Cấu hình broker, ACL và TLS                             |
+| `deployment/`                                     | Docker Compose cho MySQL, Mosquitto và backend          |
+| `scripts/`                                        | Cấp phát, launcher, gateway, build và công cụ kiểm tra  |
+| `tests/`                                          | Mục lục kiểm thử toàn hệ thống                          |
+| `docs/`, `diagram/`                               | Hướng dẫn kỹ thuật và sơ đồ                             |
 
 ## Môi trường phát triển
 
 Các phiên bản sau lấy từ cấu hình dự án:
 
-| Thành phần | Công nghệ / yêu cầu |
-|---|---|
-| Backend | Java 17, Maven, Spring Boot 3.5.16 |
-| Database / broker | Docker dùng MySQL 8.4 và Eclipse Mosquitto 2 |
-| App | Expo 58, React Native 0.88, React 19, TypeScript |
-| Node.js | Theo package app: `^22.13.0`, `^24.3.0` hoặc `>=26.0.0` |
-| Firmware | PlatformIO, Arduino, Espressif32 6.12.0 |
-| Board | ESP32-S3 DevKitC-1 N16R8: flash 16 MB, PSRAM 8 MB |
-| Face node | Python và dependency trong `face-node/requirements.txt`; hướng dẫn laptop dùng Python 3.11 |
+| Thành phần        | Công nghệ / yêu cầu                                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------ |
+| Backend           | Java 17, Maven, Spring Boot 3.5.16                                                         |
+| Database / broker | Docker dùng MySQL 8.4 và Eclipse Mosquitto 2                                               |
+| App               | Expo 58, React Native 0.88, React 19, TypeScript                                           |
+| Node.js           | Theo package app: `^22.13.0`, `^24.3.0` hoặc `>=26.0.0`                                    |
+| Firmware          | PlatformIO, Arduino, Espressif32 6.12.0                                                    |
+| Board             | ESP32-S3 DevKitC-1 N16R8: flash 16 MB, PSRAM 8 MB                                          |
+| Face node         | Python và dependency trong `face-node/requirements.txt`; hướng dẫn laptop dùng Python 3.11 |
 
 Phần cứng gồm TFT ILI9341 + XPT2046, RC522, cảm biến vân tay UART, servo, công tắc từ, keypad HX-543 và còi. Xem [BOM và sơ đồ chân](hardware/README.md). Servo cần nguồn phù hợp và GND chung với ESP32.
 
@@ -81,14 +81,14 @@ Copy-Item deployment/.env.example deployment/.env
 
 Sửa `deployment/.env` trước khi chạy:
 
-| Biến | Ý nghĩa |
-|---|---|
-| `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`, `MYSQL_ROOT_PASSWORD` | Database và tài khoản MySQL |
-| `MQTT_PASSWORD` | Mật khẩu broker của backend |
-| `MQTT_DEVICE_ACCOUNTS` | Tài khoản MQTT thiết bị theo định dạng script entrypoint |
-| `CORS_ALLOWED_ORIGINS` | Origin app/web được phép gọi API |
-| `APP_DEVICE_BASE_URL` | URL backend mà ESP32 truy cập được để tải firmware |
-| `SESSION_COOKIE_SECURE` | Đặt `true` khi triển khai qua HTTPS |
+| Biến                                                           | Ý nghĩa                                                  |
+| -------------------------------------------------------------- | -------------------------------------------------------- |
+| `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`, `MYSQL_ROOT_PASSWORD` | Database và tài khoản MySQL                              |
+| `MQTT_PASSWORD`                                                | Mật khẩu broker của backend                              |
+| `MQTT_DEVICE_ACCOUNTS`                                         | Tài khoản MQTT thiết bị theo định dạng script entrypoint |
+| `CORS_ALLOWED_ORIGINS`                                         | Origin app/web được phép gọi API                         |
+| `APP_DEVICE_BASE_URL`                                          | URL backend mà ESP32 truy cập được để tải firmware       |
+| `SESSION_COOKIE_SECURE`                                        | Đặt `true` khi triển khai qua HTTPS                      |
 
 ```powershell
 docker compose -f deployment/docker-compose.yml --env-file deployment/.env up -d --build
@@ -97,11 +97,11 @@ Invoke-RestMethod http://localhost:8080/api/health
 
 Docker build cả web admin và backend:
 
-| Dịch vụ | Địa chỉ mặc định |
-|---|---|
-| Backend / health | `http://localhost:8080/api/health` |
-| Web admin | `http://localhost:8080/admin/index.html` |
-| MQTT | Cổng `1883` trên máy chủ |
+| Dịch vụ          | Địa chỉ mặc định                         |
+| ---------------- | ---------------------------------------- |
+| Backend / health | `http://localhost:8080/api/health`       |
+| Web admin        | `http://localhost:8080/admin/index.html` |
+| MQTT             | Cổng `1883` trên máy chủ                 |
 
 Khởi tạo tài khoản admin theo môi trường triển khai; không có mật khẩu mặc định chung. Xem [hướng dẫn triển khai](docs/HUONG_DAN_TRIEN_KHAI.md). Compose này dùng MQTT không mã hóa cho LAN thử nghiệm; cấu hình TLS nằm trong `infra/mosquitto/`.
 
@@ -187,15 +187,15 @@ Admin phát hành .bin
     → App hiển thị kết quả
 ```
 
-| Điểm xử lý | File / hàm |
-|---|---|
-| Giao diện cập nhật | `IOT_mobile/src/components/FirmwareUpdates.tsx` |
-| API app | `IOT_mobile/src/services/api/firmwareService.ts` |
-| Phát hành và tạo lệnh | `FirmwareUpdateService.publish()` / `install()` trong backend |
-| Xác thực tải | `FirmwareUpdateService.download()` và `DeviceAuthenticationService.authenticate()` |
-| Bắt đầu và tải | `startOtaUpdate()` / `otaWorker()` trong `firmware/connected_door/ota_update.h` |
-| Chọn firmware, reboot | `Update.end()` / `ESP.restart()` |
-| Xác nhận sau reboot | `pollOtaUpdate()` và `CommandAckService` |
+| Điểm xử lý            | File / hàm                                                                         |
+| --------------------- | ---------------------------------------------------------------------------------- |
+| Giao diện cập nhật    | `IOT_mobile/src/components/FirmwareUpdates.tsx`                                    |
+| API app               | `IOT_mobile/src/services/api/firmwareService.ts`                                   |
+| Phát hành và tạo lệnh | `FirmwareUpdateService.publish()` / `install()` trong backend                      |
+| Xác thực tải          | `FirmwareUpdateService.download()` và `DeviceAuthenticationService.authenticate()` |
+| Bắt đầu và tải        | `startOtaUpdate()` / `otaWorker()` trong `firmware/connected_door/ota_update.h`    |
+| Chọn firmware, reboot | `Update.end()` / `ESP.restart()`                                                   |
+| Xác nhận sau reboot   | `pollOtaUpdate()` và `CommandAckService`                                           |
 
 ESP32 gửi `X-Device-Uid` và `X-Device-Secret` khi tải. Backend yêu cầu lệnh đúng thiết bị, đúng bản phát hành và còn hiệu lực. Firmware chỉ bắt đầu khi cửa đóng, khóa và không đang vận hành/hiệu chỉnh; điều khiển cửa tạm dừng trong lúc cập nhật.
 
@@ -214,33 +214,35 @@ App phân biệt yêu cầu đã lưu trên server với cấu hình thiết b�
 
 Sau khi cài dependency, chạy trong thư mục tương ứng:
 
-| Thành phần | Lệnh |
-|---|---|
-| Backend | `mvn test` trong `smart-access-control-backend/` |
-| App — kiểm tra kiểu | `npm run typecheck` trong `IOT_mobile/` |
-| App — lint | `npm run lint` trong `IOT_mobile/` |
-| App — test | `npm test` trong `IOT_mobile/` |
-| Face node | `python -m unittest discover -s face-node/tests -p "test_*.py"` từ gốc repo |
-| Công cụ Python | `python -m unittest discover -s scripts/tests -p "test_*.py"` từ gốc repo |
-| Firmware OTA | `python firmware/tests/test_ota_policy.py` và `python firmware/tests/test_ota_transfer.py` từ gốc repo |
-| Build firmware | `pio run -c platformio.connected.ini -e esp32-s3-connected` trong `firmware/` |
+| Thành phần          | Lệnh                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------ |
+| Backend             | `mvn test` trong `smart-access-control-backend/`                                                       |
+| App — kiểm tra kiểu | `npm run typecheck` trong `IOT_mobile/`                                                                |
+| App — lint          | `npm run lint` trong `IOT_mobile/`                                                                     |
+| App — test          | `npm test` trong `IOT_mobile/`                                                                         |
+| Face node           | `python -m unittest discover -s face-node/tests -p "test_*.py"` từ gốc repo                            |
+| Công cụ Python      | `python -m unittest discover -s scripts/tests -p "test_*.py"` từ gốc repo                              |
+| Firmware OTA        | `python firmware/tests/test_ota_policy.py` và `python firmware/tests/test_ota_transfer.py` từ gốc repo |
+| Build firmware      | `pio run -c platformio.connected.ini -e esp32-s3-connected` trong `firmware/`                          |
 
 Một số host test firmware cần trình biên dịch C++ và thư viện PlatformIO. CI nằm tại [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Xem [mục lục kiểm thử](tests/README.md) để biết điều kiện và phạm vi từng bộ test. Test tự động không thay thế kiểm tra nguồn, cảm biến và cơ khí trên cửa thật.
 
 ## Tài liệu
 
-| Chủ đề | Tài liệu |
-|---|---|
-| Kiến trúc / nghiệp vụ | [Tổng quan kỹ thuật](docs/TONG_QUAN_KY_THUAT.md), [Luồng hệ thống](docs/FLOW_HE_THONG.md) |
-| Triển khai | [Hướng dẫn triển khai](docs/HUONG_DAN_TRIEN_KHAI.md), [Môi trường phát triển](docs/HUONG_DAN_MAY_PHAT_TRIEN.md) |
-| Phần cứng / firmware | [Phần cứng](hardware/README.md), [Firmware](firmware/README.md) |
-| API | [Tài khoản](smart-access-control-backend/docs/account-api.md), [Quản lý cửa](smart-access-control-backend/docs/manager-api.md) |
-| App | [README app](IOT_mobile/README.md), [Thiết lập Wi-Fi](docs/THIET_LAP_APP_VA_WIFI.md) |
-| Vận hành | [Còi cảnh báo](docs/COI_CANH_BAO.md), [Xử lý sai PIN](docs/XU_LY_CANH_BAO_PIN.md), [Khóa từ xa và tự động](docs/KHOA_TU_XA_VA_TU_DONG.md) |
-| Kiểm thử | [Hướng dẫn test](tests/README.md), [Kết quả ghi nhận](docs/KET_QUA_KIEM_THU.md) |
+| Chủ đề                | Tài liệu                                                                                                                                  |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Kiến trúc / nghiệp vụ | [Tổng quan kỹ thuật](docs/TONG_QUAN_KY_THUAT.md), [Luồng hệ thống](docs/FLOW_HE_THONG.md)                                                 |
+| Triển khai            | [Hướng dẫn triển khai](docs/HUONG_DAN_TRIEN_KHAI.md), [Môi trường phát triển](docs/HUONG_DAN_MAY_PHAT_TRIEN.md)                           |
+| Phần cứng / firmware  | [Phần cứng](hardware/README.md), [Firmware](firmware/README.md)                                                                           |
+| API                   | [Tài khoản](smart-access-control-backend/docs/account-api.md), [Quản lý cửa](smart-access-control-backend/docs/manager-api.md)            |
+| App                   | [README app](IOT_mobile/README.md), [Thiết lập Wi-Fi](docs/THIET_LAP_APP_VA_WIFI.md)                                                      |
+| Vận hành              | [Còi cảnh báo](docs/COI_CANH_BAO.md), [Xử lý sai PIN](docs/XU_LY_CANH_BAO_PIN.md), [Khóa từ xa và tự động](docs/KHOA_TU_XA_VA_TU_DONG.md) |
+| Kiểm thử              | [Hướng dẫn test](tests/README.md), [Kết quả ghi nhận](docs/KET_QUA_KIEM_THU.md)                                                           |
 
 ### Quy ước lưu trên Git
 
 Giữ mã nguồn, cấu hình mẫu, migration, test, README và hướng dẫn kỹ thuật dùng chung. `.gitignore` loại dependency, build, log, file tạm, secret và cấu hình máy cá nhân. Kế hoạch trong `docs/superpowers/`, bàn giao riêng trong `docs/team-tailscale/` và ghi chú theo ngày dạng `docs/*_YYYY-MM-DD.md` chỉ giữ cục bộ.
+
+Cache native (`.gradle/`, `.kotlin/`, `.cxx/`), marker `.gitkeep` và ghi chú phiên chạy/kết quả cũ (`docs/local-development.md`, `docs/verification.md`) cũng được bỏ qua. Giữ dependency lockfile để tái lập bản cài đặt.
 
 Các ghi chú nội bộ không thuộc bộ tài liệu của bản clone mới. Không đưa `.env`, `.local/`, bundle cấp phát, QR chứa thông tin kích hoạt hoặc khóa thiết bị lên Git. Khi triển khai ngoài LAN, cấu hình HTTPS, MQTT TLS và quyền truy cập phù hợp.
