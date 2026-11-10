@@ -6,7 +6,8 @@ $releases = Join-Path $projectRoot '.local\releases'
 New-Item -ItemType Directory -Path $releases -Force | Out-Null
 $builds = @(
     @{ Environment='esp32-s3-connected'; Version='1.18.0'; File='firmware-base-1.18.0.bin' },
-    @{ Environment='esp32-s3-ota-demo'; Version='2.0.5-demo'; File='firmware-v2.0.5-demo.bin' }
+    @{ Environment='esp32-s3-ota-demo'; Version='2.0.5-demo'; File='firmware-v2.0.5-demo.bin' },
+    @{ Environment='esp32-s3-ota-red'; Version='2.0.6-demo'; File='firmware-v2.0.6-demo.bin' }
 )
 $manifest = @()
 Push-Location (Join-Path $projectRoot 'firmware')

@@ -137,18 +137,100 @@ Nếu app báo mã đã dùng hoặc không tồn tại: dừng lại và báo C
 
 ## C. Edge AI tại cửa (sau khi cửa READY)
 
+Hướng dẫn chạy lại và chuyển kết nối sang laptop Cường, cập nhật 10/11/2026.
+
+### C1. Cường bật máy chủ trước
+
+Trên máy Cường, bật MySQL, MQTT, backend và face-api theo [hướng dẫn máy Cường](CUONG.md). Kiểm tra tại máy Cường:
+
 ```powershell
+Invoke-RestMethod http://127.0.0.1:8080/api/health
+```
+
+Kết quả cần có `status = READY`. Backend phục vụ Hợp qua cổng `8080`; face-api `8091` phục vụ xử lý ảnh đăng ký tại máy Cường.
+
+### C2. Hợp kiểm tra đường tới máy Cường
+
+Bật Tailscale trên cả hai laptop, vào cùng tailnet. Trên laptop Hợp mở PowerShell:
+
+```powershell
+cd D:\DEV\IOT
+Test-NetConnection 100.95.248.100 -Port 8080
+Invoke-RestMethod http://100.95.248.100:8080/api/health
+```
+
+Chỉ tiếp tục khi `TcpTestSucceeded = True` và API trả `status = READY`. Nếu IP Tailscale máy Cường đã đổi, lấy IP mới bằng `tailscale ip -4` **trên máy Cường**, rồi thay địa chỉ trong lệnh kiểm tra và ô máy chủ ở C4.
+
+Nếu máy Cường gọi local được nhưng Hợp gọi không được, Cường kiểm tra backend đang lắng nghe cổng 8080 và chạy PowerShell **Run as Administrator** để thiết lập firewall theo dự án:
+
+```powershell
+cd D:\DEV\IOT
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/team-firewall.ps1 -Role cuong
+```
+
+Script firewall hiện dùng IP Cường `100.95.248.100`; nếu IP đã đổi phải cập nhật địa chỉ vai trò `cuong` trong script trước. Kiểm tra thêm ACL/grants của tailnet cho phép laptop Hợp tới máy Cường TCP `8080`.
+
+### C3. Chạy lại Smart Door AI trên laptop Hợp
+
+```powershell
+cd D:\DEV\IOT
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-edge-ai.ps1
 ```
 
-1. Mở **http://127.0.0.1:8092** trên chính laptop Hợp.
-2. Nhập máy chủ **http://100.95.248.100:8080**, đăng nhập tài khoản chủ cửa của Hợp.
-3. Chọn cửa vừa nhận, chọn camera laptop, rồi ghép và bật nhận diện.
-4. Nếu portal hiện kết nối cũ, đăng xuất kết nối cũ rồi ghép lại với server của Cường.
+Cũng có thể nhấp đúp `Smart Door AI.cmd`. Launcher mở **http://127.0.0.1:8092** trên chính laptop Hợp; nếu portal đã chạy, launcher dùng lại tiến trình đó. Không chạy thêm `node.py --camera` vì hai tiến trình có thể tranh webcam.
+
+Nếu báo chưa có Python AI, chuẩn bị một lần:
+
+```powershell
+cd D:\DEV\IOT
+py -3.11 -m venv .local\venv
+.\.local\venv\Scripts\python.exe -m pip install -r face-node\requirements.txt
+```
+
+Nếu chưa có model, giải nén gói `AI-MODELS.zip` nhóm đã chuẩn bị vào gốc repo. Kiểm tra có `face-node/models/models/buffalo_l/det_10g.onnx`, `face-node/models/models/buffalo_l/w600k_r50.onnx` và `face-node/models/addons/liveness.onnx`, rồi chạy lại launcher.
+
+### C4. Sửa kết nối cũ để trỏ tới laptop Cường
+
+1. Mở **http://127.0.0.1:8092**. Nếu đang đăng nhập/kết nối máy chủ cũ, bấm **Đăng xuất và dừng AI**.
+2. Ở màn hình đăng nhập, mở **Kết nối máy chủ Smart Door** và sửa **Địa chỉ máy chủ** thành **`http://100.95.248.100:8080`**. `127.0.0.1:8092` là giao diện trên Hợp; địa chỉ máy chủ phải là IP của Cường, không thêm `/api` vào ô này.
+3. Nhập email/số điện thoại và mật khẩu **tài khoản chủ cửa của Hợp trên backend Cường**, cùng tài khoản đang dùng trên app. Tài khoản từng tạo ở backend cũ trên Hợp có thể chưa tồn tại ở database Cường.
+4. Chọn đúng cửa trong danh sách hoặc nhập mã `SD-…` từ **Cài đặt cửa → Nhận diện bằng laptop** trên app. Không dùng mã QR xuất xưởng hay UID `ESP32-80B54EC8149C` vào ô mã cửa.
+5. Mở **Camera và tùy chọn ghép nối**, chọn **Camera mặc định**; thử camera thứ hai/thứ ba nếu dùng webcam USB. Nếu báo cửa đã có camera khác và muốn thay camera đó, chọn **Thay camera cũ bằng laptop này**. Camera cũ sẽ ngừng hoạt động.
+6. Giữ **Tự chạy lại khi mở Smart Door AI trên laptop này** nếu muốn dùng lại kết nối ở các lần sau. Bấm **Kết nối cửa và bật AI**.
+7. Khi cửa online và hoàn tất thiết lập, portal chuyển sang **Đang nhận diện**, cửa sổ **Smart Door – Face Check** mở. Nếu hiện **Đang chờ cửa**, kiểm tra trạng thái cửa, PIN và hiệu chỉnh trên app/ESP32.
+
+**Không cần sửa mã Python để chuyển server.** Portal lưu địa chỉ và danh tính camera vào `.local/edge-ai/connections.json`, rồi tự cấp `FACE_API_URL` và `FACE_EVENT_TRANSPORT=http` cho tiến trình nhận diện. Chỉ đổi `FACE_API_URL` trong `face-node/.env` không cập nhật kết nối camera đã lưu; cần thực hiện lại C4. Không chép secret của ESP32 vào cấu hình camera.
+
+### C5. Kiểm tra nhận diện và chạy hằng ngày
+
+Trên app đang nối backend Cường, đăng ký khuôn mặt và cấp quyền khuôn mặt tại cửa cho người thử. Đứng trước camera, đủ sáng, chỉ một người trong khung. Kiểm tra cả kết quả nhận diện, trạng thái mở thực tế và lịch sử trên app.
 
 Edge AI gửi kết quả nhận diện cho backend qua HTTP (Tailscale). Backend quyết định có mở cửa không và gửi lệnh MQTT cho chip. Không bật `FACE_ALLOW_UNVERIFIED_LIVENESS`.
 
 Đăng ký khuôn mặt bằng ảnh/video trên app do máy Cường xử lý. Camera mở cửa do laptop của bạn xử lý. Đây là hai luồng khác nhau.
+
+Những lần sau: Cường bật server → Hợp bật Tailscale → chạy launcher. Nếu đã ghép và bật tự chạy lại, kết nối được dùng lại. Nếu đã bấm **Dừng nhận diện**, cần kết nối/bật AI lại trên portal. Đóng tab trình duyệt vẫn để AI chạy; dùng nút **Dừng nhận diện** để dừng.
+
+### C6. Nếu chưa chạy được
+
+| Hiện tượng | Cách xử lý |
+|---|---|
+| Không vào được `127.0.0.1:8092` | Chạy lại launcher; kiểm tra log portal bên dưới. |
+| Hợp không gọi được API Cường | Làm C2; Cường kiểm tra backend, firewall và Tailscale ACL/grants. |
+| Đăng nhập lỗi hoặc danh sách cửa trống | Xác nhận ô máy chủ đúng IP Cường, tài khoản tồn tại ở DB Cường và tài khoản đó là chủ cửa. |
+| Cửa đã có camera khác / lỗi 409 | Đăng nhập lại nếu được yêu cầu, chọn thay camera cũ khi muốn chuyển sang laptop này, rồi ghép lại. |
+| Sau reset cửa, camera báo mất quyền hoặc không tồn tại | Nhận và thiết lập cửa lại trên app trước, sau đó đăng xuất/ghép lại theo C4 với mã cửa hiện tại. |
+| Camera không mở hoặc AI báo lỗi | Đóng ứng dụng đang giữ webcam; bật quyền camera cho ứng dụng desktop trong Windows; thử camera khác và xem `worker.log`. |
+| Nhận ra mặt nhưng không mở cửa | Kiểm tra quyền khuôn mặt tại đúng cửa, xác minh người thật, trạng thái cửa và kết nối ESP32 tới broker Cường; xem lịch sử/log backend. |
+
+Đọc log trên laptop Hợp (chỉ đọc file đang có):
+
+```powershell
+Get-Content .local\edge-ai\portal.err.log -Tail 60
+Get-Content .local\edge-ai\worker.log -Tail 80
+```
+
+Không gửi `.local/edge-ai/connections.json` lên nhóm hoặc Git vì chứa secret camera. Hướng dẫn này đối chiếu với mã nguồn; kết nối thực tế cần xác nhận bằng bước C2 và thử cửa ở C5.
 
 ---
 
