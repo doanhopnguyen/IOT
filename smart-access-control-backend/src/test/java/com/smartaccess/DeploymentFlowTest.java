@@ -76,7 +76,7 @@ class DeploymentFlowTest {
   assertThat(member.isAllowFace()||member.isAllowFingerprint()||member.isAllowRfid()||member.isAllowRemoteUnlock()).isFalse();
   assertThatThrownBy(()->invitations.respond(invite.id(),true)).isInstanceOf(RuntimeException.class);
  }
- @Test void oneGlobalFaceProfileCanRequestTwoDoorsButApprovalIsSeparateAndChangingProfileRevokesOldRights(){
+ @Test void oneGlobalFaceProfileCanRequestTwoDoorsButApprovalIsSeparateAndNewestProfileNeedsApproval(){
   var door1=claimed(registered());login(admin);
   var issued2=deployment.register(String.format("%012X",seq+10000),"Second chip");var door2=claimed(issued2);
   tx.executeWithoutResult(s->{for(Long id:List.of(door1.unitId(),door2.unitId())){UserAccess m=new UserAccess();m.setAccount(accounts.getReferenceById(stranger));m.setAccessUnit(units.getReferenceById(id));members.save(m);}});
@@ -88,8 +88,23 @@ class DeploymentFlowTest {
   assertThat(faces.hasApproval(stranger,door1.unitId())).isTrue();assertThat(faces.hasApproval(stranger,door2.unitId())).isFalse();
   faces.decide(request2.id(),true);assertThat(faces.hasApproval(stranger,door2.unitId())).isTrue();
   login(stranger);assertThat(faces.profile().credentialId()).isEqualTo(profile.credentialId());
-  faces.registerProfile(new com.smartaccess.dto.FaceDtos.ProfileInput(true,FaceEmbedding.MODEL,vector));
+  var newest=faces.registerProfile(new com.smartaccess.dto.FaceDtos.ProfileInput(true,FaceEmbedding.MODEL,vector));
+  // Ảnh mới nhất thay ảnh cũ nhưng chưa được duyệt thì chưa mở được cửa nào.
+  assertThat(newest.credentialId()).isNotEqualTo(profile.credentialId());
   assertThat(faces.hasApproval(stranger,door1.unitId())).isFalse();assertThat(faces.hasApproval(stranger,door2.unitId())).isFalse();
+  var request3=faces.create(new com.smartaccess.dto.FaceDtos.CreateRequest(door1.unitId(),null,true,null,null));
+  login(owner);faces.decide(request3.id(),true);
+  assertThat(faces.hasApproval(stranger,door1.unitId())).isTrue();assertThat(faces.hasApproval(stranger,door2.unitId())).isFalse();
+  // Yêu cầu gửi trước rồi mới up ảnh khác: khi duyệt thì kích hoạt ảnh mới nhất.
+  login(stranger);var request4=faces.create(new com.smartaccess.dto.FaceDtos.CreateRequest(door2.unitId(),null,true,null,null));
+  var latest=faces.registerProfile(new com.smartaccess.dto.FaceDtos.ProfileInput(true,FaceEmbedding.MODEL,vector));
+  login(owner);faces.decide(request4.id(),true);
+  assertThat(faces.profileOf(stranger).credentialId()).isEqualTo(latest.credentialId());
+  assertThat(faces.hasApproval(stranger,door2.unitId())).isTrue();assertThat(faces.hasApproval(stranger,door1.unitId())).isFalse();
+  // Xoá khuôn mặt: mất quyền và yêu cầu hiện "đã xoá" trong danh sách duyệt.
+  login(stranger);faces.revoke();
+  assertThat(faces.hasApproval(stranger,door1.unitId())).isFalse();assertThat(faces.hasApproval(stranger,door2.unitId())).isFalse();
+  login(owner);assertThat(faces.list(door1.unitId())).extracting(r->r.status()).containsOnly("REVOKED");
  }
  @Test void heartbeatDoesNotCompleteSetupUntilLocalAndPinReady(){
   var issued=registered();var mine=claimed(issued);

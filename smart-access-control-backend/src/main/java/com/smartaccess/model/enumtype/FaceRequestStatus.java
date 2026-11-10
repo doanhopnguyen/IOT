@@ -4,5 +4,7 @@ public enum FaceRequestStatus {
     PENDING,
     APPROVED,
     REJECTED,
-    COMPLETED
+    COMPLETED,
+    /** Chủ tài khoản đã xoá mẫu khuôn mặt sau khi gửi/được duyệt yêu cầu. */
+    REVOKED
 }

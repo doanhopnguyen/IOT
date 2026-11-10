@@ -255,12 +255,14 @@ function RequestCard({
               ? 'Chờ duyệt'
               : item.status === 'COMPLETED'
                 ? 'Đã duyệt'
-                : item.status === 'REJECTED'
+                : item.status === 'REVOKED'
+                  ? 'Đã xoá'
+                  : item.status === 'REJECTED'
                   ? 'Từ chối'
                   : 'Cần cập nhật'
           }
           tone={
-            item.status === 'REJECTED'
+            item.status === 'REJECTED' || item.status === 'REVOKED'
               ? 'error'
               : item.status === 'PENDING'
                 ? 'warning'
@@ -440,12 +442,14 @@ function FaceInspectModal({
                 ? 'Chờ duyệt'
                 : item.status === 'COMPLETED'
                   ? 'Đã duyệt'
-                  : item.status === 'REJECTED'
+                  : item.status === 'REVOKED'
+                    ? 'Đã xoá'
+                    : item.status === 'REJECTED'
                     ? 'Từ chối'
                     : 'Cần cập nhật'
             }
             tone={
-              item.status === 'REJECTED'
+              item.status === 'REJECTED' || item.status === 'REVOKED'
                 ? 'error'
                 : item.status === 'PENDING'
                   ? 'warning'
@@ -652,7 +656,9 @@ export function FaceApprovals({ door, back }: { door: Door; back: () => void }) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
-  const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'COMPLETED' | 'REJECTED'>('ALL');
+  const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'COMPLETED' | 'REJECTED' | 'REVOKED'>(
+    'ALL',
+  );
   const [inspectItem, setInspectItem] = useState<FaceRequestDto | null>(null);
   const refresh = useCallback(() => setRevision((value) => value + 1), []);
   useEffect(() => {
@@ -688,7 +694,7 @@ export function FaceApprovals({ door, back }: { door: Door; back: () => void }) 
     .filter((r) => (filter === 'ALL' ? true : r.status === filter))
     .sort((a, b) => {
       const rank = (status: string) =>
-        status === 'PENDING' ? 0 : status === 'COMPLETED' ? 1 : 2;
+        status === 'PENDING' ? 0 : status === 'COMPLETED' ? 1 : status === 'REVOKED' ? 2 : 3;
       return rank(a.status) - rank(b.status) || b.id - a.id;
     });
 
@@ -726,6 +732,7 @@ export function FaceApprovals({ door, back }: { door: Door; back: () => void }) 
             ['PENDING', 'Chờ duyệt'],
             ['COMPLETED', 'Đã duyệt'],
             ['REJECTED', 'Từ chối'],
+            ['REVOKED', 'Đã xoá'],
           ] as const
         ).map(([key, label]) => {
           const active = filter === key;

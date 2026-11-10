@@ -186,6 +186,26 @@ class FaceEnrollmentServiceTest {
         service.revoke();
         assertThat(old.getStatus()).isEqualTo(CredentialStatus.REVOKED);
         assertThat(pending.getStatus()).isEqualTo(CredentialStatus.REVOKED);
-        assertThat(r.getStatus()).isEqualTo(FaceRequestStatus.REJECTED);
+        assertThat(r.getStatus()).isEqualTo(FaceRequestStatus.REVOKED);
+    }
+    @Test void newestUploadedFaceNeedsItsOwnApprovalBeforeOpening() {
+        Credential approvedOld = sample(CredentialStatus.REVOKED); // mẫu đã duyệt (id 20) bị thay
+        FaceRequest approval=request(approvedOld);approval.setStatus(FaceRequestStatus.COMPLETED);
+        Credential newest = sample(CredentialStatus.ACTIVE); newest.setCredentialId(30L);
+        when(requests.findByAccount_AccountIdOrderByRequestedAtDesc(2L)).thenReturn(List.of(approval));
+        when(credentials.findByAccount_AccountId(2L)).thenReturn(List.of(approvedOld, newest));
+        membership.setAllowFace(true); when(memberships.findMembersByUnitId(10L)).thenReturn(List.of(membership));
+        assertThat(service.templates("camera", "secret").templates()).isEmpty(); // ảnh cũ đã thay, ảnh mới chưa duyệt
+    }
+    @Test void approvingAStaleRequestActivatesTheNewestUploadedFace() {
+        Credential replaced = sample(CredentialStatus.REVOKED);
+        FaceRequest r = request(replaced);
+        Credential newest = sample(CredentialStatus.ACTIVE); newest.setCredentialId(30L);
+        when(credentials.findByAccount_AccountId(2L)).thenReturn(List.of(replaced, newest));
+        when(current.requireAccount()).thenReturn(owner);
+        service.decide(8L, true);
+        assertThat(newest.getStatus()).isEqualTo(CredentialStatus.ACTIVE);
+        assertThat(r.getStatus()).isEqualTo(FaceRequestStatus.COMPLETED);
+        assertThat(membership.isAllowFace()).isTrue();
     }
 }

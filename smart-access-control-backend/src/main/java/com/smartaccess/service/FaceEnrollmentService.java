@@ -101,17 +101,19 @@ public class FaceEnrollmentService {
         if (request.getStatus() != FaceRequestStatus.PENDING) throw error(CONFLICT, "Yêu cầu này đã được xử lý.");
         Credential sample = pendingSample(request).orElse(null);
         if (approved) {
-            if (sample == null || (sample.getStatus() != CredentialStatus.PENDING && sample.getStatus() != CredentialStatus.ACTIVE))
+            // Ưu tiên khuôn mặt tải lên mới nhất: mẫu PENDING của yêu cầu luôn mới hơn hồ sơ hiện tại,
+            // còn nếu mẫu đã bị thay bởi lần tải lên sau thì duyệt luôn mẫu ACTIVE mới nhất.
+            if (sample == null || sample.getStatus() != CredentialStatus.PENDING) sample = active(accountId).orElse(null);
+            if (sample == null)
                 throw error(CONFLICT, "Cần quét khuôn mặt trong ứng dụng trước khi duyệt; hãy hủy yêu cầu cũ chưa có mẫu.");
             if (target.getStatus() != AccountStatus.ACTIVE) throw error(CONFLICT, "Tài khoản đã bị vô hiệu hóa.");
             UserAccess membership = memberships.findById(new UserAccessId(accountId, request.getAccessUnit().getUnitId()))
                     .orElseThrow(() -> error(CONFLICT, "Tài khoản không còn là thành viên của cửa này."));
             FaceEmbedding.decode(sample.getFaceEmbedding());
-            if(sample.getStatus()==CredentialStatus.ACTIVE && active(accountId).map(c->!c.getCredentialId().equals(sample.getCredentialId())).orElse(true))
-                throw error(CONFLICT,"Hồ sơ đã thay đổi, cần gửi yêu cầu mới");
+            final Long chosenId = sample.getCredentialId();
             for (Credential old : credentials.findByAccount_AccountId(accountId)) {
                 if (old.getCredentialType() == CredentialType.FACE && old.getStatus() == CredentialStatus.ACTIVE
-                        && !old.getCredentialId().equals(sample.getCredentialId())) {
+                        && !old.getCredentialId().equals(chosenId)) {
                     old.setStatus(CredentialStatus.REVOKED); old.setRevokedAt(LocalDateTime.now());
                 }
             }
@@ -124,7 +126,8 @@ public class FaceEnrollmentService {
             request.setStatus(FaceRequestStatus.REJECTED);
         }
         request.setReviewedAt(LocalDateTime.now());
-        audit(actor, approved ? "APPROVE_FACE_ENROLLMENT" : "REJECT_FACE_ENROLLMENT", id, Map.of());
+        audit(actor, approved ? "APPROVE_FACE_ENROLLMENT" : "REJECT_FACE_ENROLLMENT", id,
+                approved ? Map.of("credentialId", sample.getCredentialId()) : Map.of());
         return dto(request);
     }
 
@@ -156,8 +159,9 @@ public class FaceEnrollmentService {
         byte[] vector=FaceEmbedding.encode(input.model(),input.embedding());
         for(Credential c:credentials.findByAccount_AccountId(actor.getAccountId()))
             if(c.getCredentialType()==CredentialType.FACE){c.setStatus(CredentialStatus.REVOKED);c.setRevokedAt(LocalDateTime.now());}
+        // Ảnh mới nhất thay mẫu cũ nhưng phải được chủ cửa duyệt lại ở từng cửa mới mở được.
+        // Yêu cầu đang chờ được giữ lại; khi duyệt sẽ kích hoạt đúng ảnh mới nhất này.
         for(UserAccess m:memberships.findByAccountWithUnit(actor.getAccountId()))m.setAllowFace(false);
-        for(FaceRequest r:requests.findByAccount_AccountIdAndStatusIn(actor.getAccountId(),List.of(FaceRequestStatus.PENDING,FaceRequestStatus.APPROVED)))r.setStatus(FaceRequestStatus.REJECTED);
         Credential c=new Credential();c.setAccount(actor);c.setCredentialType(CredentialType.FACE);c.setEmbeddingModel(FaceEmbedding.MODEL);
         c.setFaceEmbedding(vector);c.setStatus(CredentialStatus.ACTIVE);credentials.saveAndFlush(c);
         if (input.previewImage() != null && !input.previewImage().isBlank()) {
@@ -172,11 +176,21 @@ public class FaceEnrollmentService {
         return profileOf(actor.getAccountId());
     }
 
+    /** Chỉ mẫu ACTIVE mới nhất mở được cửa, và chính mẫu đó phải đã được chủ cửa duyệt ở cửa này. */
     public boolean hasApproval(Long accountId,Long unitId) {
         Long activeId=active(accountId).map(Credential::getCredentialId).orElse(null);
         return activeId!=null && requests.findByAccount_AccountIdOrderByRequestedAtDesc(accountId).stream()
             .filter(r->r.getAccessUnit().getUnitId().equals(unitId) && r.getStatus()==FaceRequestStatus.COMPLETED)
-            .anyMatch(r->pendingSample(r).map(c->c.getCredentialId().equals(activeId)).orElse(false));
+            .anyMatch(r->activeId.equals(approvedCredentialId(r)));
+    }
+
+    /** Mẫu thực sự được duyệt (có thể là ảnh mới hơn ảnh lúc gửi yêu cầu). */
+    private Long approvedCredentialId(FaceRequest r) {
+        Long approved = audits.findFirstByActionAndEntityTypeAndEntityIdOrderByAuditLogIdDesc(
+                "APPROVE_FACE_ENROLLMENT", "FACE_REQUEST", r.getRequestId())
+                .map(log -> log.getDetails() != null ? log.getDetails().get("credentialId") : null)
+                .filter(Number.class::isInstance).map(v -> ((Number) v).longValue()).orElse(null);
+        return approved != null ? approved : pendingSample(r).map(Credential::getCredentialId).orElse(null);
     }
 
     public Profile profileForManager(Long accountId, Long unitId) {
@@ -204,9 +218,11 @@ public class FaceEnrollmentService {
                 credential.setStatus(CredentialStatus.REVOKED); credential.setRevokedAt(LocalDateTime.now());
             }
         }
+        // Hiện "Đã xoá" trong danh sách duyệt của chủ cửa, kể cả yêu cầu đã được duyệt trước đó.
         for (FaceRequest request : requests.findByAccount_AccountIdAndStatusIn(actor.getAccountId(),
-                List.of(FaceRequestStatus.PENDING, FaceRequestStatus.APPROVED))) {
-            request.setStatus(FaceRequestStatus.REJECTED);
+                List.of(FaceRequestStatus.PENDING, FaceRequestStatus.APPROVED, FaceRequestStatus.COMPLETED))) {
+            request.setStatus(FaceRequestStatus.REVOKED);
+            if (request.getReviewedAt() == null) request.setReviewedAt(LocalDateTime.now());
         }
         for(UserAccess m:memberships.findByAccountWithUnit(actor.getAccountId()))m.setAllowFace(false);
         audit(actor, "REVOKE_FACE", actor.getAccountId(), Map.of());
@@ -284,11 +300,28 @@ public class FaceEnrollmentService {
         if (email == null) email = request.getAccount().getPhone();
         String reqType = request.getRequestType() != null ? request.getRequestType().name() : null;
         return new RequestView(request.getRequestId(), request.getAccount().getAccountId(), request.getAccount().getFullName(),
-                request.getAccessUnit().getUnitId(), request.getAccessUnit().getUnitName(), request.getStatus().name(),
+                request.getAccessUnit().getUnitId(), request.getAccessUnit().getUnitName(), displayStatus(request).name(),
                 request.getRequestedAt(), preview, email, reqType);
     }
 
+    /** Dữ liệu cũ: yêu cầu đã duyệt nhưng mẫu đã bị xoá trước khi có trạng thái REVOKED. */
+    private FaceRequestStatus displayStatus(FaceRequest request) {
+        if (request.getStatus() != FaceRequestStatus.COMPLETED || request.getRequestId() == null) return request.getStatus();
+        if (request.getAccount().getAccountId() != null && active(request.getAccount().getAccountId()).isEmpty())
+            return FaceRequestStatus.REVOKED;
+        return request.getStatus();
+    }
+
     private String requestPreviewImage(FaceRequest request) {
+        // Yêu cầu đang chờ mà mẫu ban đầu đã bị thay: chủ cửa sẽ duyệt khuôn mặt mới nhất nên hiện ảnh đó.
+        if (request.getRequestId() != null && request.getStatus() == FaceRequestStatus.PENDING) {
+            Long accountId = request.getAccount().getAccountId();
+            Long activeId = active(accountId).map(Credential::getCredentialId).orElse(null);
+            boolean replaced = activeId != null && pendingSample(request)
+                    .map(c -> c.getStatus() != CredentialStatus.PENDING && !c.getCredentialId().equals(activeId)).orElse(true);
+            String latest = replaced ? accountPreviewImage(accountId) : null;
+            if (latest != null) return latest;
+        }
         if (request.getRequestId() != null) {
             Optional<String> fromReq = audits.findFirstByActionAndEntityTypeAndEntityIdOrderByAuditLogIdDesc(
                     "REQUEST_FACE_ENROLLMENT", "FACE_REQUEST", request.getRequestId())

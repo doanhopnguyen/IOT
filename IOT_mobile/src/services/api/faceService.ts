@@ -1,6 +1,6 @@
 import { request } from './client';
 
-export type FaceRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED';
+export type FaceRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED' | 'REVOKED';
 export interface FaceProfile {
   hasTemplate: boolean;
   credentialId: number | null;
@@ -70,5 +70,7 @@ export function faceRequestLabel(request: Pick<FaceRequestDto, 'status'>) {
   if (request.status === 'PENDING') return 'Đã gửi mẫu · chờ chủ cửa duyệt';
   if (request.status === 'APPROVED') return 'Yêu cầu cũ · cần hủy và quét lại trong app';
   if (request.status === 'COMPLETED') return 'Đã duyệt đăng ký khuôn mặt';
+  if (request.status === 'REVOKED') return 'Người dùng đã xoá khuôn mặt';
   return 'Đã từ chối hoặc hủy';
 }
+
