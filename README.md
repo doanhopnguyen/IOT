@@ -2,6 +2,8 @@
 
 Smart Door là dự án IoT mở cửa bằng **PIN, thẻ RFID, vân tay, nhận diện khuôn mặt và lệnh từ xa**. ESP32-S3 vận hành phần cứng; backend quản lý tài khoản, quyền truy cập, cấu hình và lịch sử; app giúp chủ cửa thiết lập, giám sát và sử dụng hệ thống.
 
+README được đối chiếu với mã nguồn ngày **10/11/2026**, bao gồm bộ Docker máy chủ có dịch vụ xử lý khuôn mặt và các môi trường firmware OTA hiện tại.
+
 ## Chức năng
 
 | Nhóm                | Nội dung                                                         |
@@ -21,6 +23,7 @@ flowchart LR
     App[App Expo / Web] <-->|REST, WebSocket| Backend[Spring Boot]
     Admin[Web admin] <-->|REST| Backend
     Backend <--> DB[(MySQL / Flyway)]
+    Backend -->|Trích xuất mẫu từ ảnh / video| Processor[Face API :8091]
     Backend <-->|MQTT| Broker[Mosquitto]
     Broker <-->|Wi-Fi / MQTT| ESP[ESP32-S3]
     ESP --- Hardware[TFT, RFID, vân tay, servo, reed, keypad, còi]
@@ -33,6 +36,9 @@ flowchart LR
 - **Mosquitto:** trao đổi lệnh, cấu hình và sự kiện. Topic có dạng `smartdoor-iot/{UID}/...`, giới hạn bằng ACL.
 - **App:** giao diện chủ cửa và thành viên; web admin được build vào backend tại `/admin/`.
 - **Face node:** chạy mô hình trên máy có camera; dùng HTTP hoặc MQTT tùy cách triển khai.
+- **Face API:** dịch vụ `enrollment_server.py` xử lý ảnh/video đăng ký để trích xuất mẫu khuôn mặt cho backend. Đây là tiến trình riêng với camera nhận diện trực tiếp trên laptop; bộ Docker trong `deployment/team/` đã tích hợp dịch vụ này.
+
+Khi người dùng xóa khuôn mặt, các yêu cầu liên quan được đánh dấu `REVOKED` và app hiển thị trạng thái đã xóa. Màn hình chủ cửa duyệt khuôn mặt ưu tiên yêu cầu chờ duyệt, sau đó đã duyệt, đã thu hồi; trong mỗi nhóm, yêu cầu có ID mới hơn được hiển thị trước.
 
 ## Cấu trúc dự án
 
@@ -48,7 +54,7 @@ flowchart LR
 | `IOT_mobile/`                                     | App Expo / React Native cho Android, iOS và web         |
 | `face-node/`                                      | Nhận diện khuôn mặt, ghép camera laptop và mô hình AI   |
 | `infra/mosquitto/`                                | Cấu hình broker, ACL và TLS                             |
-| `deployment/`                                     | Docker Compose cho MySQL, Mosquitto và backend          |
+| `deployment/`                                     | Compose cơ bản và bộ `team/` có thêm Face API           |
 | `scripts/`                                        | Cấp phát, launcher, gateway, build và công cụ kiểm tra  |
 | `tests/`                                          | Mục lục kiểm thử toàn hệ thống                          |
 | `docs/`, `diagram/`                               | Hướng dẫn kỹ thuật và sơ đồ                             |
@@ -56,6 +62,8 @@ flowchart LR
 ## Môi trường phát triển
 
 Các phiên bản sau lấy từ cấu hình dự án:
+
+Firmware chính hiện khai báo **1.18.0**, phần cứng **`esp32s3-n16r8`**. Các bản demo ghi đè phiên bản qua build flag; phiên bản firmware không phải phiên bản app.
 
 | Thành phần        | Công nghệ / yêu cầu                                                                        |
 | ----------------- | ------------------------------------------------------------------------------------------ |
@@ -85,7 +93,7 @@ Sửa `deployment/.env` trước khi chạy:
 | -------------------------------------------------------------- | -------------------------------------------------------- |
 | `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`, `MYSQL_ROOT_PASSWORD` | Database và tài khoản MySQL                              |
 | `MQTT_PASSWORD`                                                | Mật khẩu broker của backend                              |
-| `MQTT_DEVICE_ACCOUNTS`                                         | Tài khoản MQTT thiết bị theo định dạng script entrypoint |
+| `MQTT_DEVICE_ACCOUNTS`                                         | Danh sách `UID1:matkhau1,UID2:matkhau2`; username phải đúng UID |
 | `CORS_ALLOWED_ORIGINS`                                         | Origin app/web được phép gọi API                         |
 | `APP_DEVICE_BASE_URL`                                          | URL backend mà ESP32 truy cập được để tải firmware       |
 | `SESSION_COOKIE_SECURE`                                        | Đặt `true` khi triển khai qua HTTPS                      |
@@ -104,6 +112,33 @@ Docker build cả web admin và backend:
 | MQTT             | Cổng `1883` trên máy chủ                 |
 
 Khởi tạo tài khoản admin theo môi trường triển khai; không có mật khẩu mặc định chung. Xem [hướng dẫn triển khai](docs/HUONG_DAN_TRIEN_KHAI.md). Compose này dùng MQTT không mã hóa cho LAN thử nghiệm; cấu hình TLS nằm trong `infra/mosquitto/`.
+
+### Bộ Docker máy chủ có Face API
+
+[deployment/team/docker-compose.yml](deployment/team/docker-compose.yml) chạy **MySQL + Mosquitto + Face API + backend**, đồng thời build web admin. Cấu hình này dùng bộ dữ liệu và thông tin cấp phát riêng; trước khi chạy cần chuẩn bị:
+
+- `.local/team/backend.env`: biến môi trường backend, gồm tài khoản DB, MQTT, CORS, URL tải OTA và `FACE_PROCESSOR_TOKEN`.
+- `.local/team/face.env`: `FACE_PROCESSOR_TOKEN` trùng backend, dài ít nhất **32 ký tự**.
+- `.local/team/mosquitto/passwords` và `.local/team/mosquitto/acl`: file mật khẩu Mosquitto đã tạo đúng định dạng và ACL theo thiết bị.
+- `face-node/models/`: model đã tải theo hướng dẫn AI; thư mục này được mount chỉ đọc vào `/models`, không đóng gói trong image.
+- `.local/team/docker/mysql-init/`: thư mục SQL khởi tạo nếu chuyển dữ liệu từ môi trường cũ. Script tại đây chỉ chạy khi volume MySQL còn trống.
+
+Chạy từ gốc repository, sau khi chuẩn bị đủ các file trên:
+
+```powershell
+docker compose -f deployment/team/docker-compose.yml --env-file .local/team/backend.env up -d --build
+docker compose -f deployment/team/docker-compose.yml --env-file .local/team/backend.env ps
+Invoke-RestMethod http://localhost:8080/api/health
+```
+
+| Dịch vụ | Địa chỉ trong cấu hình máy chủ |
+|---|---|
+| Backend / admin | Cổng host `8080` |
+| MQTT | Cổng host `1884` |
+| MySQL | `127.0.0.1:3307`, database `smart_access_team` |
+| Face API | `http://face-api:8091/extract` trong mạng Docker; không publish ra host |
+
+Compose ghi đè địa chỉ DB, MQTT và Face API bằng tên service Docker. Backend và Face API dùng image riêng; camera laptop vẫn chạy ngoài bộ Compose. MySQL, dữ liệu broker và uploads dùng named volume. Các file `.local/team/` cần được chuẩn bị riêng trên máy triển khai và không có trong bản clone.
 
 ### 2. App người dùng
 
@@ -152,6 +187,15 @@ pio device monitor -b 115200
 
 Kiểm tra `upload_port` và `monitor_port` trong `platformio.connected.ini`; cấu hình hiện tại dùng `COM5`, cần đổi theo máy. Các bản test phần cứng, offline, maintenance và factory wipe có cấu hình riêng trong `firmware/`.
 
+| Môi trường build | Phiên bản | Giao diện |
+|---|---|---|
+| `esp32-s3-connected` | `1.18.0` | Bản chính |
+| `esp32-s3-ota-demo` | `2.0.5-demo` | Bật `FW_DEMO_BLACK_BUTTONS` |
+| `esp32-s3-ota-red` | `2.0.6-demo` | Không bật cờ nút đen |
+| `esp32-s3-ota-black` | `2.0.7-demo` | Bật `FW_DEMO_BLACK_BUTTONS` |
+
+Từ gốc repo, `powershell -ExecutionPolicy Bypass -File scripts/build-ota-demo.ps1` build cả bốn bản, kiểm tra dấu nhận diện/phiên bản rồi xuất `.bin` và `firmware-manifest.json` vào `.local/releases/`. Script không nạp USB hay tự phát hành firmware lên backend.
+
 ### 5. Camera nhận diện khuôn mặt
 
 Cài dependency, tải model và hoàn tất bước chấp thuận giấy phép theo [hướng dẫn AI trên laptop](docs/DEMO_AI_TREN_LAPTOP.md). Trên Windows, mở `Smart Door AI.cmd` hoặc:
@@ -160,7 +204,9 @@ Cài dependency, tải model và hoàn tất bước chấp thuận giấy phép
 powershell -ExecutionPolicy Bypass -File scripts/start-edge-ai.ps1
 ```
 
-Giao diện laptop mặc định ở `http://127.0.0.1:8092`. Chủ cửa đăng nhập, chọn cửa và kết nối camera. AI cần cấu hình backend, mẫu khuôn mặt, quyền truy cập và cửa sẵn sàng. Docker Compose máy chủ chưa khởi chạy phần AI này.
+Giao diện laptop mặc định ở `http://127.0.0.1:8092`. Chủ cửa đăng nhập, chọn cửa và kết nối camera. Camera nhận diện cần cấu hình backend, mẫu khuôn mặt, quyền truy cập và cửa sẵn sàng; tiến trình camera laptop chạy riêng với các dịch vụ Docker máy chủ.
+
+Nếu chạy backend trực tiếp, dịch vụ trích xuất mẫu có thể chạy riêng bằng `python enrollment_server.py` trong `face-node/`. Chuẩn bị dependency, model và `.env.enrollment` chứa `FACE_PROCESSOR_TOKEN`; backend cần cùng token và `FACE_PROCESSOR_URL` đúng địa chỉ. Mặc định dịch vụ nghe tại `127.0.0.1:8091`; Docker đặt `FACE_PROCESSOR_HOST=0.0.0.0` để backend truy cập qua mạng container. Bộ Compose cơ bản `deployment/docker-compose.yml` chưa có Face API; bộ `deployment/team/` đã có.
 
 ## Thiết lập cửa
 
@@ -198,6 +244,8 @@ Admin phát hành .bin
 | Xác nhận sau reboot   | `pollOtaUpdate()` và `CommandAckService`                                           |
 
 ESP32 gửi `X-Device-Uid` và `X-Device-Secret` khi tải. Backend yêu cầu lệnh đúng thiết bị, đúng bản phát hành và còn hiệu lực. Firmware chỉ bắt đầu khi cửa đóng, khóa và không đang vận hành/hiệu chỉnh; điều khiển cửa tạm dừng trong lúc cập nhật.
+
+File ứng dụng tối đa **4 MiB**, phải khớp phần cứng và phiên bản nhúng trong binary. Backend chỉ cho tải khi lệnh đang `PENDING` hoặc `SENT` và chưa quá **5 phút**. ESP32 chỉ cho HTTP tới host được `privateHost()` chấp nhận; HTTPS yêu cầu CA đã cấu hình. App báo hoàn tất khi lệnh được xác nhận và phiên bản thiết bị báo về khớp phiên bản đích.
 
 OTA dùng hai phân vùng ứng dụng `app0` và `app1`, không xóa NVS. Giữ dữ liệu còn phụ thuộc khả năng đọc/chuyển đổi cấu hình cũ của firmware mới. Luồng hiện tại xác nhận phiên bản sau reboot; không nên coi đây là bảo đảm tự rollback nếu firmware mới lỗi lúc chạy. Xem [quy trình OTA và cấp phát](docs/DEMO_CAP_NHAT_FIRMWARE_TU_XA.md).
 
