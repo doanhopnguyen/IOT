@@ -71,3 +71,9 @@ target/
 .classpath
 .project
 .settings/
+
+# Local notes, dated reports and team-specific handover documents.
+# Keep shared technical guides and component READMEs tracked.
+/docs/superpowers/
+/docs/team-tailscale/
+/docs/*_20??-??-??.md

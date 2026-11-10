@@ -1,90 +1,246 @@
-# Smart Door — Hệ thống kiểm soát ra vào thông minh (IoT)
+﻿# Smart Door — Hệ thống kiểm soát ra vào thông minh
 
-**Bàn giao nhóm 4 laptop (08/11/2026):** Cường chạy backend/MQTT/AI, Thủy chạy web/Expo, Bằng quản trị, Hợp giữ ESP32 và edge AI. Bắt đầu tại [thứ tự chạy và file riêng từng người](docs/team-tailscale/00-THU-TU-CHAY.md). Bộ này thay sơ đồ server đặt trên laptop Hợp trong tài liệu cũ.
+Smart Door là dự án IoT mở cửa bằng **PIN, thẻ RFID, vân tay, nhận diện khuôn mặt và lệnh từ xa**. ESP32-S3 vận hành phần cứng; backend quản lý tài khoản, quyền truy cập, cấu hình và lịch sử; app giúp chủ cửa thiết lập, giám sát và sử dụng hệ thống.
 
-**Xử lý sai PIN (1.16.0 / 2.0.3-demo):** trên thông báo và danh sách cảnh báo, chọn **Cửa vẫn an toàn** để tắt chuông/cho nhập PIN lại, hoặc **Tạm thời khóa cửa** để tắt chuông/bật tạm khóa. [Hướng dẫn](docs/XU_LY_CANH_BAO_PIN.md).
+## Chức năng
 
-**Servo cửa demo:** app và màn hình chip (firmware 1.17.0 / 2.0.4-demo) hiển thị góc mở **0–90°**, chỉ theo chiều dương; giữ mốc khóa 0° đang dùng. Mức 180° cũ hiển thị 90°, nút chỉnh vẫn theo bước 5° của thang mới. [Hướng dẫn căn góc](docs/CAN_GOC_SERVO.md).
-
-**Demo OTA v2.0 và bàn giao có sẵn QR:** làm theo [hướng dẫn admin phát hành → chủ cửa nhận cập nhật](docs/DEMO_CAP_NHAT_FIRMWARE_TU_XA.md). Admin đã bỏ giao diện đăng ký chip/QR; cấp phát sản phẩm dùng công cụ kỹ thuật CLI.
-
-**Còi cảnh báo GPIO5:** bản chính **1.14.0** và demo **2.0.1-demo** báo sai PIN đủ ngưỡng và cửa mở lâu; chỉnh ngưỡng trong app tại **Cài đặt thiết bị → Hẹn giờ**. [Chi tiết và kiểm thử](docs/COI_CANH_BAO.md).
-
-Đồ án kết thúc học phần IoT — nhóm 09. Cửa thông minh trên ESP32-S3 mở bằng **PIN, thẻ RFID, vân tay, khuôn mặt** hoặc **mở từ xa** qua app; backend lưu lịch sử, telemetry, sinh cảnh báo tự động và cho chủ cửa quản lý thành viên, cấu hình cửa từ xa.
+| Nhóm | Nội dung |
+|---|---|
+| Truy cập tại cửa | PIN trên TFT và keypad, RFID, vân tay |
+| Điều khiển từ app | Mở/khóa từ xa, đổi PIN, quản lý thẻ/vân tay, cấu hình tự khóa |
+| Người dùng | Chủ cửa, thành viên được mời, quyền theo phương thức truy cập |
+| Nhận diện khuôn mặt | Camera laptop, kiểm tra người thật và quyền tại cửa |
+| Giám sát | Lịch sử, telemetry, thống kê, xuất CSV và cảnh báo |
+| Quản trị | Quản lý hệ thống, thiết bị và phát hành firmware |
+| Vòng đời thiết bị | Cấp phát, quét QR nhận cửa, hiệu chỉnh, reset/chuyển giao và OTA |
 
 ## Kiến trúc
 
+```mermaid
+flowchart LR
+    App[App Expo / Web] <-->|REST, WebSocket| Backend[Spring Boot]
+    Admin[Web admin] <-->|REST| Backend
+    Backend <--> DB[(MySQL / Flyway)]
+    Backend <-->|MQTT| Broker[Mosquitto]
+    Broker <-->|Wi-Fi / MQTT| ESP[ESP32-S3]
+    ESP --- Hardware[TFT, RFID, vân tay, servo, reed, keypad, còi]
+    Face[Laptop / Face node] -->|HTTP hoặc MQTT| Backend
+    ESP -->|HTTP / HTTPS tải firmware| Backend
 ```
- Thiết bị (Perception)          Mạng (Network)              Ứng dụng (Application)
-┌─────────────────────┐     ┌──────────────────┐     ┌──────────────────────────────┐
-│ ESP32-S3 + TFT,     │     │                  │     │ Backend Spring Boot (8080)   │
-│ RC522, vân tay,     │◄───►│ Mosquitto MQTT   │◄───►│  REST + phiên/CSRF, Flyway   │──► MySQL
-│ servo, công tắc từ  │Wi-Fi│ (xác thực + ACL) │     │  quy tắc cảnh báo, telemetry │
-└─────────────────────┘     └──────────────────┘     └──────────────┬───────────────┘
- Face node (laptop+webcam) ──── MQTT ──────┘                        │ HTTP
-                                                     App Expo (Android/iOS/Web), Web admin
-```
 
-- **Giao thức thiết bị** (topic `smartdoor-iot/{UID}/…`): thiết bị gửi `status` (heartbeat 5 s, kèm RSSI/heap/uptime/phiên bản), `access`, `ack`, `face`; backend gửi `cmd`, `config` (danh sách quyền + tham số cửa), `ack-confirm`, `access-ack`. Mỗi bản tin thiết bị kèm khóa thiết bị; broker chỉ cho mỗi thiết bị dùng topic của chính nó.
-- **Hoạt động offline**: thiết bị giữ danh sách quyền cục bộ, vẫn mở bằng PIN/RFID/vân tay khi mất mạng và gửi bù lịch sử khi có mạng lại.
+- **ESP32-S3:** xác thực cục bộ, vận hành servo, đọc cảm biến, lưu cấu hình và hàng đợi sự kiện.
+- **Backend:** phân quyền, điều phối lệnh và ACK, đồng bộ cấu hình, lưu lịch sử và phát cảnh báo.
+- **Mosquitto:** trao đổi lệnh, cấu hình và sự kiện. Topic có dạng `smartdoor-iot/{UID}/...`, giới hạn bằng ACL.
+- **App:** giao diện chủ cửa và thành viên; web admin được build vào backend tại `/admin/`.
+- **Face node:** chạy mô hình trên máy có camera; dùng HTTP hoặc MQTT tùy cách triển khai.
 
-## Cấu trúc thư mục (đề bài mục 8.1)
+## Cấu trúc dự án
 
-| Thư mục | Nội dung |
+| Đường dẫn | Vai trò |
 |---|---|
-| `firmware/` | Firmware ESP32-S3 (PlatformIO): `connected_door` (bản chính), `maintenance` (bảo trì cảm biến) |
-| `hardware/` | BOM, sơ đồ chân, lưu ý lắp ráp |
-| `smart-access-control-backend/` | Backend Spring Boot + migration Flyway + Dockerfile |
-| `admin-web/` | Web quản trị (build vào backend `/admin`) |
-| `IOT_mobile/` | App Expo dùng chung cho chủ cửa và thành viên (Android/iOS/Web) |
-| `face-node/` | Nút nhận diện khuôn mặt chạy trên máy tính có camera |
-| `infra/mosquitto/` | Cấu hình broker (LAN và TLS), ACL theo UID |
-| `deployment/` | `docker-compose.yml` chạy MySQL + Mosquitto + backend |
-| `scripts/` | Cấp phát thiết bị qua USB, đo phi chức năng, kiểm thử bảo mật broker |
-| `tests/` | Mục lục và cách chạy toàn bộ kiểm thử |
-| `docs/` | Đặc tả luồng, hướng dẫn triển khai, kết quả kiểm thử |
+| `firmware/connected_door/` | Firmware kết nối chính: mạng, thiết lập, đồng bộ và OTA |
+| `firmware/offline_door/` | Logic cửa cục bộ được firmware connected sử dụng |
+| `firmware/include/` | Cấu hình và các hàm dùng chung |
+| `firmware/maintenance/`, `firmware/factory_wipe/` | Firmware bảo trì và xóa dữ liệu có chủ đích |
+| `hardware/` | Linh kiện, sơ đồ chân, lưu ý nguồn điện |
+| `smart-access-control-backend/` | Spring Boot, API, nghiệp vụ và migration database |
+| `admin-web/` | Mã nguồn web quản trị |
+| `IOT_mobile/` | App Expo / React Native cho Android, iOS và web |
+| `face-node/` | Nhận diện khuôn mặt, ghép camera laptop và mô hình AI |
+| `infra/mosquitto/` | Cấu hình broker, ACL và TLS |
+| `deployment/` | Docker Compose cho MySQL, Mosquitto và backend |
+| `scripts/` | Cấp phát, launcher, gateway, build và công cụ kiểm tra |
+| `tests/` | Mục lục kiểm thử toàn hệ thống |
+| `docs/`, `diagram/` | Hướng dẫn kỹ thuật và sơ đồ |
 
-## Chạy nhanh bằng Docker
+## Môi trường phát triển
 
-```bash
-cp deployment/.env.example deployment/.env      # điền mật khẩu
+Các phiên bản sau lấy từ cấu hình dự án:
+
+| Thành phần | Công nghệ / yêu cầu |
+|---|---|
+| Backend | Java 17, Maven, Spring Boot 3.5.16 |
+| Database / broker | Docker dùng MySQL 8.4 và Eclipse Mosquitto 2 |
+| App | Expo 58, React Native 0.88, React 19, TypeScript |
+| Node.js | Theo package app: `^22.13.0`, `^24.3.0` hoặc `>=26.0.0` |
+| Firmware | PlatformIO, Arduino, Espressif32 6.12.0 |
+| Board | ESP32-S3 DevKitC-1 N16R8: flash 16 MB, PSRAM 8 MB |
+| Face node | Python và dependency trong `face-node/requirements.txt`; hướng dẫn laptop dùng Python 3.11 |
+
+Phần cứng gồm TFT ILI9341 + XPT2046, RC522, cảm biến vân tay UART, servo, công tắc từ, keypad HX-543 và còi. Xem [BOM và sơ đồ chân](hardware/README.md). Servo cần nguồn phù hợp và GND chung với ESP32.
+
+## Khởi chạy
+
+### 1. Máy chủ bằng Docker
+
+Chạy từ thư mục gốc bằng PowerShell:
+
+```powershell
+Copy-Item deployment/.env.example deployment/.env
+```
+
+Sửa `deployment/.env` trước khi chạy:
+
+| Biến | Ý nghĩa |
+|---|---|
+| `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`, `MYSQL_ROOT_PASSWORD` | Database và tài khoản MySQL |
+| `MQTT_PASSWORD` | Mật khẩu broker của backend |
+| `MQTT_DEVICE_ACCOUNTS` | Tài khoản MQTT thiết bị theo định dạng script entrypoint |
+| `CORS_ALLOWED_ORIGINS` | Origin app/web được phép gọi API |
+| `APP_DEVICE_BASE_URL` | URL backend mà ESP32 truy cập được để tải firmware |
+| `SESSION_COOKIE_SECURE` | Đặt `true` khi triển khai qua HTTPS |
+
+```powershell
 docker compose -f deployment/docker-compose.yml --env-file deployment/.env up -d --build
-curl http://localhost:8080/api/health           # {"status":"READY",...}
+Invoke-RestMethod http://localhost:8080/api/health
 ```
 
-Web admin: `http://localhost:8080/admin/index.html` (tạo admin đầu tiên bằng `scripts/bootstrap_local.py seed` hoặc chèn tài khoản `is_admin=true`). App: `cd IOT_mobile && npm ci && npx expo start --web` với `EXPO_PUBLIC_API_BASE_URL=http://<IP máy chủ>:8080`.
+Docker build cả web admin và backend:
 
-Chạy từ đầu trên Windows, nhiều ESP32/mobile/Edge AI ở các mạng khác nhau: xem [hướng dẫn Tailscale và gateway](docs/CHAY_TU_DAU_TAILSCALE.md). Cài môi trường: [docs/HUONG_DAN_MAY_PHAT_TRIEN.md](docs/HUONG_DAN_MAY_PHAT_TRIEN.md).
-
-Sau lần xóa dữ liệu và nạp lại chip: làm theo [hướng dẫn từng bước từ trạng thái sạch](docs/CHAY_LAI_SAU_RESET_TAILSCALE.md). [Báo cáo rà soát mobile/admin và kiểm thử hệ thống](docs/RA_SOAT_VA_KIEM_THU_HE_THONG_2026-11-07.md) ghi kết quả mới nhất và phạm vi phần cứng đã xác nhận.
-
-## Thiết bị
-
-1. Lắp theo [hardware/README.md](hardware/README.md); nạp `cd firmware && pio run -c platformio.connected.ini -t upload`.
-2. Kỹ thuật viên cấp phát chip qua `scripts/register_local_device.py`, khởi động lại broker dự án, rồi ghi bằng `scripts/device_tool.py provision`. Tạo nhãn bằng `node scripts/make-product-qr.cjs <factory.json>`. Chip bàn giao đã có QR thì bỏ qua bước này. Chi tiết ở [hướng dẫn OTA và cấp phát](docs/DEMO_CAP_NHAT_FIRMWARE_TU_XA.md).
-3. Người dùng quét QR, chọn Wi-Fi qua `http://192.168.4.1`, rồi trở lại app kiểm tra cửa online. Sau đó app nhận cửa/đặt tên và hai PIN; chip mới bắt đầu hiệu chỉnh cảm ứng/cảm biến, app hiển thị hướng dẫn theo tiến độ. Quản lý cửa có đổi Wi-Fi và khôi phục mạng; xem [luồng thiết lập hiện tại](docs/THIET_LAP_APP_VA_WIFI.md).
-
-## Chức năng chính
-
-Firmware connected **1.12.0** rút gọn đăng ký mới còn 8 bước, kết thúc sau PIN, cảm ứng và cảm biến cửa. Góc servo được chỉnh riêng trong Cài đặt cửa; nâng firmware giữ Wi-Fi, PIN, thẻ, vân tay và các góc đã lưu. Xem [luồng thiết lập](docs/QUET_QR_VA_THIET_LAP.md).
-
-Firmware connected 1.11.0 đã tích hợp bàn phím HX-543 phía trong nhà dùng chung PIN cửa: nhập 6 số + `#`, `*` xóa. Giới hạn nhập sai, bật/tắt PIN từ app, trạng thái hạn chế và tự khóa đều dùng chung với TFT. Xem [hướng dẫn bàn phím trong nhà](docs/BAN_PHIM_TRONG_NHA.md).
-
-| Nhóm | Chức năng |
+| Dịch vụ | Địa chỉ mặc định |
 |---|---|
-| Tài khoản & thiết bị | Đăng ký/đăng nhập, cấp phát chip/QR qua công cụ kỹ thuật, nhận cửa, reset/chuyển giao có xác minh |
-| Firmware OTA | Admin phát hành `.bin`, chủ cửa xác nhận cài đặt, kiểm tra SHA-256 và xác nhận phiên bản sau reboot |
-| Quản lý cửa & quyền | Lời mời thành viên, quyền theo phương thức (RFID/vân tay/khuôn mặt/mở từ xa), PIN, đăng ký vân tay/thẻ từ xa, **cài đặt cửa từ xa** (thời gian mở, ngưỡng cửa mở, bật/tắt phương thức) |
-| Giám sát | Lịch sử ra vào, **telemetry** (RSSI, bộ nhớ, trạng thái cửa/cảm biến), **biểu đồ 7 ngày**, **xuất CSV**, dashboard admin |
-| Cảnh báo | Tự sinh: mất kết nối, cửa mở quá lâu, bị từ chối liên tục, lỗi cảm biến vân tay; chống trùng, tự đóng; chủ cửa đánh dấu đã xem/đã xử lý |
-| Khuôn mặt | Hồ sơ khuôn mặt dùng chung, chủ cửa duyệt theo cửa, nhận diện có kiểm tra người thật |
+| Backend / health | `http://localhost:8080/api/health` |
+| Web admin | `http://localhost:8080/admin/index.html` |
+| MQTT | Cổng `1883` trên máy chủ |
+
+Khởi tạo tài khoản admin theo môi trường triển khai; không có mật khẩu mặc định chung. Xem [hướng dẫn triển khai](docs/HUONG_DAN_TRIEN_KHAI.md). Compose này dùng MQTT không mã hóa cho LAN thử nghiệm; cấu hình TLS nằm trong `infra/mosquitto/`.
+
+### 2. App người dùng
+
+```powershell
+cd IOT_mobile
+Copy-Item .env.example .env
+npm ci
+```
+
+Đặt URL backend thực tế trong `.env`:
+
+```dotenv
+EXPO_PUBLIC_API_BASE_URL=http://<IP-LAN-may-chu>:8080
+```
+
+```powershell
+npm run start
+# Hoặc mở giao diện web:
+npm run web
+```
+
+Điện thoại cần truy cập được IP máy chủ; `localhost` trên điện thoại là chính điện thoại. Khởi động lại Expo sau khi đổi `.env`. Xem [hướng dẫn Expo Go](docs/CHAY_EXPO_GO.md).
+
+### 3. Backend chạy trực tiếp
+
+Chuẩn bị MySQL, broker và biến môi trường theo [README backend](smart-access-control-backend/README.md). Spring Boot không tự đọc `.env`.
+
+Nếu cần web admin, build trước từ thư mục gốc:
+
+```powershell
+cd admin-web
+npm ci
+npm run build
+cd ../smart-access-control-backend
+mvn spring-boot:run
+```
+
+### 4. Build và nạp ESP32-S3
+
+```powershell
+cd firmware
+pio run -c platformio.connected.ini -e esp32-s3-connected
+pio run -c platformio.connected.ini -e esp32-s3-connected -t upload
+pio device monitor -b 115200
+```
+
+Kiểm tra `upload_port` và `monitor_port` trong `platformio.connected.ini`; cấu hình hiện tại dùng `COM5`, cần đổi theo máy. Các bản test phần cứng, offline, maintenance và factory wipe có cấu hình riêng trong `firmware/`.
+
+### 5. Camera nhận diện khuôn mặt
+
+Cài dependency, tải model và hoàn tất bước chấp thuận giấy phép theo [hướng dẫn AI trên laptop](docs/DEMO_AI_TREN_LAPTOP.md). Trên Windows, mở `Smart Door AI.cmd` hoặc:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start-edge-ai.ps1
+```
+
+Giao diện laptop mặc định ở `http://127.0.0.1:8092`. Chủ cửa đăng nhập, chọn cửa và kết nối camera. AI cần cấu hình backend, mẫu khuôn mặt, quyền truy cập và cửa sẵn sàng. Docker Compose máy chủ chưa khởi chạy phần AI này.
+
+## Thiết lập cửa
+
+1. **Kỹ thuật viên:** lắp phần cứng, nạp firmware, đăng ký thiết bị và cấp phát danh tính bằng công cụ trong `scripts/`.
+2. **Kỹ thuật viên:** tạo QR sản phẩm; giữ thông tin cấp phát và secret ở máy triển khai.
+3. **Chủ cửa:** quét QR trong app, kết nối Wi-Fi cho ESP32 qua trang thiết lập `http://192.168.4.1` và nhận cửa vào tài khoản.
+4. **Chủ cửa:** đặt PIN, hoàn tất hiệu chỉnh theo app/màn hình thiết bị, chỉnh servo theo cơ khí thực tế.
+5. **Chủ cửa:** thêm thành viên, đăng ký thẻ/vân tay/khuôn mặt và cấp quyền sử dụng.
+
+Chi tiết: [QR và thiết lập](docs/QUET_QR_VA_THIET_LAP.md), [app và Wi-Fi](docs/THIET_LAP_APP_VA_WIFI.md), [căn góc servo](docs/CAN_GOC_SERVO.md). Các máy khác mạng xem [Tailscale và gateway](docs/CHAY_TU_DAU_TAILSCALE.md).
+
+## Cập nhật firmware OTA
+
+```text
+Admin phát hành .bin
+    → App hiển thị bản phù hợp
+    → Chủ cửa đồng ý cập nhật
+    → Backend gửi FIRMWARE_UPDATE qua MQTT
+    → ESP32 kiểm tra điều kiện cửa
+    → Tải .bin qua HTTP(S), ghi phân vùng còn lại
+    → Kiểm tra kích thước và SHA-256
+    → Chọn firmware mới, khởi động lại
+    → Xác nhận phiên bản với backend
+    → App hiển thị kết quả
+```
+
+| Điểm xử lý | File / hàm |
+|---|---|
+| Giao diện cập nhật | `IOT_mobile/src/components/FirmwareUpdates.tsx` |
+| API app | `IOT_mobile/src/services/api/firmwareService.ts` |
+| Phát hành và tạo lệnh | `FirmwareUpdateService.publish()` / `install()` trong backend |
+| Xác thực tải | `FirmwareUpdateService.download()` và `DeviceAuthenticationService.authenticate()` |
+| Bắt đầu và tải | `startOtaUpdate()` / `otaWorker()` trong `firmware/connected_door/ota_update.h` |
+| Chọn firmware, reboot | `Update.end()` / `ESP.restart()` |
+| Xác nhận sau reboot | `pollOtaUpdate()` và `CommandAckService` |
+
+ESP32 gửi `X-Device-Uid` và `X-Device-Secret` khi tải. Backend yêu cầu lệnh đúng thiết bị, đúng bản phát hành và còn hiệu lực. Firmware chỉ bắt đầu khi cửa đóng, khóa và không đang vận hành/hiệu chỉnh; điều khiển cửa tạm dừng trong lúc cập nhật.
+
+OTA dùng hai phân vùng ứng dụng `app0` và `app1`, không xóa NVS. Giữ dữ liệu còn phụ thuộc khả năng đọc/chuyển đổi cấu hình cũ của firmware mới. Luồng hiện tại xác nhận phiên bản sau reboot; không nên coi đây là bảo đảm tự rollback nếu firmware mới lỗi lúc chạy. Xem [quy trình OTA và cấp phát](docs/DEMO_CAP_NHAT_FIRMWARE_TU_XA.md).
+
+## Lưu cấu hình và hoạt động offline
+
+- **Database:** tài khoản, quyền, cài đặt trên server, lịch sử và bản phát hành firmware.
+- **NVS ESP32:** PIN đã xử lý, danh sách thẻ/ID vân tay, thông số cửa, Wi-Fi và trạng thái cần giữ qua reboot.
+- **Cảm biến vân tay:** giữ mẫu trong bộ nhớ riêng; xóa flash ESP32 không đồng nghĩa xóa mẫu trong cảm biến.
+- **Mất mạng:** sử dụng quyền cục bộ đã đồng bộ cho các phương thức được hỗ trợ, xếp hàng sự kiện và gửi bù khi kết nối lại. Mở từ xa và đồng bộ mới cần kết nối.
+
+App phân biệt yêu cầu đã lưu trên server với cấu hình thiết bị báo lại. Khi đổi cấu trúc dữ liệu firmware, cần chuyển đổi phiên bản để giữ cấu hình cũ. Factory reset, factory wipe và xóa toàn bộ flash là thao tác riêng có thể xóa dữ liệu.
 
 ## Kiểm thử
 
-Xem [tests/README.md](tests/README.md). Kết quả: [docs/KET_QUA_KIEM_THU.md](docs/KET_QUA_KIEM_THU.md). CI: `.github/workflows/ci.yml` (backend, mobile, Python, build firmware).
+Sau khi cài dependency, chạy trong thư mục tương ứng:
 
-## Bảo mật
+| Thành phần | Lệnh |
+|---|---|
+| Backend | `mvn test` trong `smart-access-control-backend/` |
+| App — kiểm tra kiểu | `npm run typecheck` trong `IOT_mobile/` |
+| App — lint | `npm run lint` trong `IOT_mobile/` |
+| App — test | `npm test` trong `IOT_mobile/` |
+| Face node | `python -m unittest discover -s face-node/tests -p "test_*.py"` từ gốc repo |
+| Công cụ Python | `python -m unittest discover -s scripts/tests -p "test_*.py"` từ gốc repo |
+| Firmware OTA | `python firmware/tests/test_ota_policy.py` và `python firmware/tests/test_ota_transfer.py` từ gốc repo |
+| Build firmware | `pio run -c platformio.connected.ini -e esp32-s3-connected` trong `firmware/` |
 
-- Không commit bí mật: `.env`, `.local/`, file cấp phát thiết bị đều trong `.gitignore`; chỉ có `*.env.example`.
-- Broker bắt buộc đăng nhập, ACL theo UID; thiết bị xác thực thêm bằng khóa thiết bị trong từng bản tin. Triển khai qua Internet dùng MQTT TLS (`infra/mosquitto/compose.tls.yml`).
-- Web dùng phiên HttpOnly + CSRF; quyền kiểm tra theo từng cửa ở backend.
+Một số host test firmware cần trình biên dịch C++ và thư viện PlatformIO. CI nằm tại [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Xem [mục lục kiểm thử](tests/README.md) để biết điều kiện và phạm vi từng bộ test. Test tự động không thay thế kiểm tra nguồn, cảm biến và cơ khí trên cửa thật.
+
+## Tài liệu
+
+| Chủ đề | Tài liệu |
+|---|---|
+| Kiến trúc / nghiệp vụ | [Tổng quan kỹ thuật](docs/TONG_QUAN_KY_THUAT.md), [Luồng hệ thống](docs/FLOW_HE_THONG.md) |
+| Triển khai | [Hướng dẫn triển khai](docs/HUONG_DAN_TRIEN_KHAI.md), [Môi trường phát triển](docs/HUONG_DAN_MAY_PHAT_TRIEN.md) |
+| Phần cứng / firmware | [Phần cứng](hardware/README.md), [Firmware](firmware/README.md) |
+| API | [Tài khoản](smart-access-control-backend/docs/account-api.md), [Quản lý cửa](smart-access-control-backend/docs/manager-api.md) |
+| App | [README app](IOT_mobile/README.md), [Thiết lập Wi-Fi](docs/THIET_LAP_APP_VA_WIFI.md) |
+| Vận hành | [Còi cảnh báo](docs/COI_CANH_BAO.md), [Xử lý sai PIN](docs/XU_LY_CANH_BAO_PIN.md), [Khóa từ xa và tự động](docs/KHOA_TU_XA_VA_TU_DONG.md) |
+| Kiểm thử | [Hướng dẫn test](tests/README.md), [Kết quả ghi nhận](docs/KET_QUA_KIEM_THU.md) |
+
+### Quy ước lưu trên Git
+
+Giữ mã nguồn, cấu hình mẫu, migration, test, README và hướng dẫn kỹ thuật dùng chung. `.gitignore` loại dependency, build, log, file tạm, secret và cấu hình máy cá nhân. Kế hoạch trong `docs/superpowers/`, bàn giao riêng trong `docs/team-tailscale/` và ghi chú theo ngày dạng `docs/*_YYYY-MM-DD.md` chỉ giữ cục bộ.
+
+Các ghi chú nội bộ không thuộc bộ tài liệu của bản clone mới. Không đưa `.env`, `.local/`, bundle cấp phát, QR chứa thông tin kích hoạt hoặc khóa thiết bị lên Git. Khi triển khai ngoài LAN, cấu hình HTTPS, MQTT TLS và quyền truy cập phù hợp.

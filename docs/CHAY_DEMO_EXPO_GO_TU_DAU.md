@@ -1,6 +1,6 @@
 # Chạy demo từ đầu: Expo Go và laptop AI
 
-> **Lưu ý (cập nhật 10/11/2026):** Luồng ESP32 qua gateway LAN trong tài liệu này là bản cũ. Từ bản bàn giao 09/11, ESP32 nối thẳng broker máy Cường qua Internet (TLS) và tải OTA qua HTTPS; xem [team-tailscale/HOP.md](team-tailscale/HOP.md) và [DEMO_CAP_NHAT_FIRMWARE_TU_XA.md](DEMO_CAP_NHAT_FIRMWARE_TU_XA.md).
+> **Lưu ý (cập nhật 10/11/2026):** Luồng ESP32 qua gateway LAN trong tài liệu này là bản cũ. Từ bản bàn giao 09/11, ESP32 nối thẳng broker máy Cường qua Internet (TLS) và tải OTA qua HTTPS; xem team-tailscale/HOP.md (ghi ch? n?i b?, ch? gi? c?c b? t?i `team-tailscale/HOP.md`) và [DEMO_CAP_NHAT_FIRMWARE_TU_XA.md](DEMO_CAP_NHAT_FIRMWARE_TU_XA.md).
 
 **Vừa xóa toàn bộ dữ liệu và nạp lại chip:** dùng [hướng dẫn sau reset với Tailscale](CHAY_LAI_SAU_RESET_TAILSCALE.md) để đăng ký và cấp phát trước.
 

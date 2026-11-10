@@ -18,7 +18,7 @@ Các bản cùng chức năng. OTA giữ PIN, thẻ, vân tay, Wi-Fi và cấu h
 Tệp để admin tải lên khi demo: [firmware-v2.0.7-demo.bin](../.local/releases/firmware-v2.0.7-demo.bin) (SHA-256 `485a1a75482a529ca40d1380eb8d4828301d7d07f1ddd63f074833d0ed407849`). Danh sách phiên bản, dung lượng và SHA-256: [firmware-manifest.json](../.local/releases/firmware-manifest.json). Chip đang chạy 2.0.6 thì cập nhật lên 2.0.7; OTA không cho hạ phiên bản.
 
 > [!NOTE]
-> Luồng mạng hiện hành (ESP32 nối thẳng broker và tải OTA qua Internet/HTTPS) theo [bản bàn giao mới](team-tailscale/HOP.md). Mục 5 mô tả luồng này; các mục dùng IP LAN `10.18.0.194` ở tài liệu khác là bản cũ.
+> Luồng mạng hiện hành (ESP32 nối thẳng broker và tải OTA qua Internet/HTTPS) theo bản bàn giao mới (ghi ch? n?i b?, ch? gi? c?c b? t?i `team-tailscale/HOP.md`). Mục 5 mô tả luồng này; các mục dùng IP LAN `10.18.0.194` ở tài liệu khác là bản cũ.
 
 ## 1. Mở hệ thống trên laptop
 
@@ -98,7 +98,7 @@ App chỉ báo hoàn tất khi nhận xác nhận sau khởi động và thiết
 
 ## 5. Tailscale và địa chỉ tải firmware
 
-Theo [bản bàn giao 09/11](team-tailscale/HOP.md), ESP32 **không còn đi qua gateway LAN** và không cần cùng mạng với backend. Chip kết nối thẳng broker máy Cường qua Internet bằng TLS, và tải firmware qua HTTPS:
+Theo bản bàn giao 09/11 (ghi ch? n?i b?, ch? gi? c?c b? t?i `team-tailscale/HOP.md`), ESP32 **không còn đi qua gateway LAN** và không cần cùng mạng với backend. Chip kết nối thẳng broker máy Cường qua Internet bằng TLS, và tải firmware qua HTTPS:
 
 ```text
 App → Backend máy Cường → MQTT (TLS) → ESP32

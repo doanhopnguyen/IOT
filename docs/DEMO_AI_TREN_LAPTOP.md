@@ -61,7 +61,7 @@ Lệnh tải model dùng điều khoản model hiện có của dự án. Không
 
 ## Dữ liệu và xử lý lỗi
 
-- Tải ảnh từ thư viện: app tối ưu ảnh trước khi gửi; tệp nguồn tối đa 20 MiB. Nếu gặp 422, đọc lý do cụ thể như không tìm thấy mặt, nhiều người, ảnh mờ hoặc mặt quá nhỏ rồi chọn ảnh phù hợp. Sau cập nhật, reload Expo Go và đăng nhập lại nếu backend vừa được khởi động lại. Chi tiết [sửa luồng QR và ảnh](KIEM_THU_QR_FACE_2026-11-07.md).
+- Tải ảnh từ thư viện: app tối ưu ảnh trước khi gửi; tệp nguồn tối đa 20 MiB. Nếu gặp 422, đọc lý do cụ thể như không tìm thấy mặt, nhiều người, ảnh mờ hoặc mặt quá nhỏ rồi chọn ảnh phù hợp. Sau cập nhật, reload Expo Go và đăng nhập lại nếu backend vừa được khởi động lại. Chi tiết sửa luồng QR và ảnh (ghi ch? n?i b?, ch? gi? c?c b? t?i `KIEM_THU_QR_FACE_2026-11-07.md`).
 - Mật khẩu tài khoản chỉ ở bộ nhớ cho lần cấp camera, không lưu ra file hoặc gửi vào worker. Thông tin camera riêng được lưu cục bộ tại `.local/edge-ai/connections.json`; không chia sẻ hay đưa thư mục này vào Git.
 - Gỡ camera hoặc đổi quyền trên hệ thống làm khóa camera hết hiệu lực. Launcher dừng thay vì phát lại các sự kiện cũ.
 - Mất mạng hoặc cửa chưa sẵn sàng: launcher chờ và tự tiếp tục khi kết nối phục hồi. Nếu ứng dụng camera lỗi/model thiếu, giao diện báo lỗi và dừng vòng khởi động; kiểm tra `.local/edge-ai/worker.log` rồi kết nối lại.

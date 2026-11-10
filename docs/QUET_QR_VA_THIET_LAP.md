@@ -6,7 +6,7 @@ QR mới chứa cùng lúc tên mạng, mật khẩu Wi-Fi riêng của khóa v�
 
 Tên hiển thị là tên thiết bị gọn hoặc `Smart Door C8149C`. Mục **Mã nhận cửa** chỉ hiện mã nhận cửa, không hiện nguyên URL QR. Các QR `smartdoor://activate?...` đã cấp trước đây còn hiệu lực và mã nhập tay vẫn dùng được; không phải đăng ký lại sản phẩm chỉ để đổi định dạng QR.
 
-Android dùng dữ liệu QR gốc (`raw`) để giữ mã nhận cửa trong QR Wi-Fi. Nếu đang mở bản app cũ báo mã không hợp lệ ngay sau quét, reload dự án trong Expo Go. Cửa đã nhận thành công thì mã dùng một lần hết hiệu lực; mở cửa đã thêm để tiếp tục thiết lập. Xem [kiểm tra QR và tải ảnh](KIEM_THU_QR_FACE_2026-11-07.md).
+Android dùng dữ liệu QR gốc (`raw`) để giữ mã nhận cửa trong QR Wi-Fi. Nếu đang mở bản app cũ báo mã không hợp lệ ngay sau quét, reload dự án trong Expo Go. Cửa đã nhận thành công thì mã dùng một lần hết hiệu lực; mở cửa đã thêm để tiếp tục thiết lập. Xem kiểm tra QR và tải ảnh (ghi ch? n?i b?, ch? gi? c?c b? t?i `KIEM_THU_QR_FACE_2026-11-07.md`).
 
 QR sản phẩm mới trên web admin và trên màn hình ESP32 dùng định dạng Wi-Fi. Firmware hiện tại **1.12.0**. Khi cửa đã được nhận, QR trên màn hình đổi Wi-Fi chỉ chứa thông tin tham gia mạng, không cấp lại mã nhận cửa.
 

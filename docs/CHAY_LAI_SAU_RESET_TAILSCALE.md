@@ -1,12 +1,12 @@
 # Chạy lại toàn bộ dự án sau reset, dùng Tailscale
 
-> **Lưu ý (cập nhật 10/11/2026):** Luồng ESP32 qua gateway LAN trong tài liệu này là bản cũ. Từ bản bàn giao 09/11, ESP32 nối thẳng broker máy Cường qua Internet (TLS) và tải OTA qua HTTPS; xem [team-tailscale/HOP.md](team-tailscale/HOP.md) và [DEMO_CAP_NHAT_FIRMWARE_TU_XA.md](DEMO_CAP_NHAT_FIRMWARE_TU_XA.md).
+> **Lưu ý (cập nhật 10/11/2026):** Luồng ESP32 qua gateway LAN trong tài liệu này là bản cũ. Từ bản bàn giao 09/11, ESP32 nối thẳng broker máy Cường qua Internet (TLS) và tải OTA qua HTTPS; xem team-tailscale/HOP.md (ghi ch? n?i b?, ch? gi? c?c b? t?i `team-tailscale/HOP.md`) và [DEMO_CAP_NHAT_FIRMWARE_TU_XA.md](DEMO_CAP_NHAT_FIRMWARE_TU_XA.md).
 
 **Cập nhật 08/11/2026:** bản bàn giao OTA dùng firmware cơ sở **1.14.0**, đã chuẩn bị danh tính và QR sản phẩm mới. Bắt đầu theo [hướng dẫn demo OTA và chạy lại bằng QR có sẵn](DEMO_CAP_NHAT_FIRMWARE_TU_XA.md); bỏ qua các bước đăng ký chip/cấp QR cũ trong tài liệu này. Giao diện admin hiện chỉ phát hành firmware và quản trị hệ thống, không có đăng ký chip/QR.
 
 Áp dụng cho máy `D:\DEV\IOT`, chip COM5, MAC `80:B5:4E:C8:14:9C`, ngày 07/11/2026. Làm lần lượt các bước dưới đây. Các lệnh đều chạy trong PowerShell tại thư mục dự án.
 
-Đã rà soát chuyển trạng thái mobile/admin với backend và dọn lại dữ liệu sau đợt kiểm thử mới nhất. Xem [báo cáo kiểm thử và giới hạn phần cứng đã xác nhận](RA_SOAT_VA_KIEM_THU_HE_THONG_2026-11-07.md). Đây là hướng dẫn cho trạng thái sạch hiện tại; các QR hoặc tài khoản thường dùng trong kiểm thử đã xóa.
+Đã rà soát chuyển trạng thái mobile/admin với backend và dọn lại dữ liệu sau đợt kiểm thử mới nhất. Xem báo cáo kiểm thử và giới hạn phần cứng đã xác nhận (ghi ch? n?i b?, ch? gi? c?c b? t?i `RA_SOAT_VA_KIEM_THU_HE_THONG_2026-11-07.md`). Đây là hướng dẫn cho trạng thái sạch hiện tại; các QR hoặc tài khoản thường dùng trong kiểm thử đã xóa.
 
 ## 1. Trạng thái đã chuẩn bị
 
