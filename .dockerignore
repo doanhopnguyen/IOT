@@ -1,0 +1,15 @@
+# Build context = thư mục gốc repo. Không gửi bí mật, dependency của máy host hay file build.
+.git
+.local
+**/node_modules
+**/.expo
+**/target
+**/.gradle
+**/build
+firmware/.pio
+face-node
+hardware
+diagram
+tests
+**/*.env
+**/.env

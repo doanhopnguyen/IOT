@@ -1,0 +1,82 @@
+# Server nhóm (máy Cường) chạy bằng Docker: MySQL + Mosquitto + face-api + backend.
+# Bí mật lấy từ .local/team/backend.env và face.env (không commit).
+#   docker compose -f deployment/team/docker-compose.yml --env-file .local/team/backend.env up -d --build
+# Cổng ra máy host giữ như bản chạy thường để Tailscale Funnel không phải đổi:
+#   8080 backend, 1884 MQTT, 127.0.0.1:3307 MySQL (cho Workbench). face-api không mở ra ngoài.
+name: smartdoor-team
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: smart_access_team
+      MYSQL_USER: ${DB_USERNAME:?Cần --env-file .local/team/backend.env}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Cần --env-file .local/team/backend.env}
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+      TZ: Asia/Ho_Chi_Minh
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # Chỉ chạy ở lần đầu (volume trống): nạp dữ liệu dump từ MySQL cũ.
+      - ../../.local/team/docker/mysql-init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:3307:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ../../.local/team/mosquitto/passwords:/mosquitto/team/passwords:ro
+      - ../../.local/team/mosquitto/acl:/mosquitto/team/acl:ro
+      - mosquitto-data:/mosquitto/data
+    ports:
+      - "1884:1884"
+
+  face-api:
+    build:
+      context: ../../face-node
+    restart: unless-stopped
+    env_file: ../../.local/team/face.env
+    environment:
+      FACE_PROCESSOR_HOST: 0.0.0.0
+      FACE_MODEL_ROOT: /models
+    volumes:
+      - ../../face-node/models:/models:ro
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: smart-access-control-backend/Dockerfile
+    image: smartdoor-backend:latest
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+      face-api:
+        condition: service_started
+    env_file: ../../.local/team/backend.env
+    # Ghi đè các địa chỉ 127.0.0.1 trong backend.env bằng tên service trong mạng Docker.
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/smart_access_team?serverTimezone=Asia/Ho_Chi_Minh
+      MQTT_BROKER_URL: tcp://mosquitto:1884
+      FACE_PROCESSOR_URL: http://face-api:8091/extract
+      SERVER_ADDRESS: 0.0.0.0
+    ports:
+      - "8080:8080"
+    volumes:
+      - uploads:/app/uploads
+
+volumes:
+  mysql-data:
+  mosquitto-data:
+  uploads:

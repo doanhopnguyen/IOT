@@ -135,9 +135,11 @@ def main():
     # Enrollment from uploaded media does not assert liveness. No recognition bypass is enabled.
     engine = Engine(Config(model_root=Path(os.getenv('FACE_MODEL_ROOT', 'models')), liveness_enabled=False))
     port = int(os.environ.get('FACE_PROCESSOR_PORT', '8091'))
-    server = ThreadingHTTPServer(('127.0.0.1', port), handler_for(engine, token))
+    # Mặc định chỉ nghe local; container Docker đặt FACE_PROCESSOR_HOST=0.0.0.0 (không publish cổng ra máy host).
+    host = os.environ.get('FACE_PROCESSOR_HOST', '127.0.0.1')
+    server = ThreadingHTTPServer((host, port), handler_for(engine, token))
     server.daemon_threads = True
-    print(f'Face enrollment processor ready on 127.0.0.1:{port}', flush=True)
+    print(f'Face enrollment processor ready on {host}:{port}', flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
