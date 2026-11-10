@@ -74,3 +74,8 @@ Tham khảo: [PubSubClient](https://github.com/knolleary/pubsubclient/tree/v2.8)
 - Từ 1.17.0 / 2.0.4-demo, setup servo trên TFT đồng bộ app: 0–90°, khóa 0°, chỉ dương, tăng/giảm 5° hiển thị = 10 đơn vị lệnh. Giữ PWM/NVS/MQTT và các vị trí đã lưu; 180 cũ hiển thị 90°.
 
 - Từ 1.18.0 / 2.0.5-demo, DOOR_LOCK từ app đưa servo về góc khóa ngay, không chờ cảm biến. Tự khóa và thao tác khóa tại TFT vẫn giữ chính sách hiện tại. Không thay đổi PWM hoặc NVS.
+
+
+- Từ 2.0.6-demo, bản OTA không bật cờ nền nút đen nên nút trở về nền mặc định (xanh dương trên chip thật).
+
+- Từ 2.0.7-demo, bản OTA bật lại nền nút đen (FW_DEMO_BLACK_BUTTONS), cùng chức năng với 1.18.0. Build bằng môi trường esp32-s3-ota-black trong platformio.connected.ini.

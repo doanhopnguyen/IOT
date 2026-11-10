@@ -1,17 +1,24 @@
 # Demo cập nhật firmware từ xa: v2.0 demo
 
-Bản mới nhất **1.14.0 / 2.0.1-demo** đã bổ sung còi cảnh báo GPIO5 và ngưỡng sai PIN chỉnh trong app. Xem [cách cài đặt và kết quả thử còi](COI_CANH_BAO.md). Hai bản dùng cùng chức năng cảnh báo, khác màu nền nút.
+Bản mới nhất là **1.18.0 / 2.0.7-demo**. Từ 1.14.0 firmware có còi cảnh báo GPIO5 và ngưỡng sai PIN chỉnh trong app, xem [cách cài đặt và kết quả thử còi](COI_CANH_BAO.md). Từ 1.18.0, DOOR_LOCK từ app đưa servo về góc khóa ngay, xem [TU_KHOA_TRONG_APP.md](TU_KHOA_TRONG_APP.md). Các bản dùng cùng chức năng, chỉ khác màu nền nút.
 
-## Bạn dùng hai bản nào?
+## Các bản dùng trong demo
 
 | Bản | Mục đích | Màu nền nút trên màn hình cửa |
 |---|---|---|
-| **1.14.0** | Bản cơ sở được nạp lại trước khi bàn giao; đã có OTA | Đỏ |
-| **2.0.1-demo**, tên **v2.0 demo** | Admin phát hành, chủ cửa đồng ý rồi cửa tự tải và khởi động lại | Đen, chữ và viền trắng |
+| **1.18.0** | Bản cơ sở nạp qua USB; đã có OTA | Xanh dương (nền nút mặc định, quan sát trên chip thật) |
+| **2.0.5-demo** | Bản OTA đã nạp lên chip bàn giao | Đen, chữ và viền trắng |
+| **2.0.6-demo** | Bản OTA để đưa nút về nền mặc định sau 2.0.5 | Xanh dương (như bản cơ sở) |
+| **2.0.7-demo** | Bản dùng để demo OTA: admin phát hành, chủ cửa đồng ý rồi cửa tự tải và khởi động lại | Đen, chữ và viền trắng |
 
-Hai bản cùng chức năng. OTA giữ PIN, thẻ, vân tay, Wi-Fi và cấu hình cửa. Việc xóa dữ liệu để bàn giao là thao tác riêng, không nằm trong cập nhật OTA.
+Cả hai môi trường xanh dương (`esp32-s3-connected`, `esp32-s3-ota-red`) không bật cờ `FW_DEMO_BLACK_BUTTONS`, nên code tô nền bằng hằng `RED`. Màn hình hiển thị màu xanh dương, có thể do thứ tự màu RGB/BGR của màn hình; chưa xác minh nguyên nhân. Tên môi trường `ota-red` chỉ là tên lịch sử. Màu đen không bị ảnh hưởng.
 
-Tệp để admin tải lên: [firmware-v2.0.1-demo.bin](../.local/releases/firmware-v2.0.1-demo.bin). Danh sách phiên bản, dung lượng và SHA-256: [firmware-manifest.json](../.local/releases/firmware-manifest.json).
+Các bản cùng chức năng. OTA giữ PIN, thẻ, vân tay, Wi-Fi và cấu hình cửa. Việc xóa dữ liệu để bàn giao là thao tác riêng, không nằm trong cập nhật OTA.
+
+Tệp để admin tải lên khi demo: [firmware-v2.0.7-demo.bin](../.local/releases/firmware-v2.0.7-demo.bin) (SHA-256 `485a1a75482a529ca40d1380eb8d4828301d7d07f1ddd63f074833d0ed407849`). Danh sách phiên bản, dung lượng và SHA-256: [firmware-manifest.json](../.local/releases/firmware-manifest.json). Chip đang chạy 2.0.6 thì cập nhật lên 2.0.7; OTA không cho hạ phiên bản.
+
+> [!NOTE]
+> Luồng mạng hiện hành (ESP32 nối thẳng broker và tải OTA qua Internet/HTTPS) theo [bản bàn giao mới](team-tailscale/HOP.md). Mục 5 mô tả luồng này; các mục dùng IP LAN `10.18.0.194` ở tài liệu khác là bản cũ.
 
 ## 1. Mở hệ thống trên laptop
 
@@ -63,10 +70,10 @@ Thao tác trên **trình duyệt laptop**:
 
    | Ô | Giá trị |
    |---|---|
-   | Tên hiển thị | `v2.0 demo` |
-   | Phiên bản firmware | `2.0.1-demo` |
-   | Nội dung | `Thêm còi cảnh báo sai PIN và cửa mở lâu, đồng bộ ngưỡng từ app. Giữ nền nút đen và dữ liệu cửa.` |
-   | Tệp firmware | `D:\DEV\IOT\.local\releases\firmware-v2.0.1-demo.bin` |
+   | Tên hiển thị | `v2.0.7 demo` |
+   | Phiên bản firmware | `2.0.7-demo` |
+   | Nội dung | `Đổi nền nút trên màn hình cửa sang đen. Giữ nguyên chức năng và dữ liệu cửa.` |
+   | Tệp firmware | `D:\DEV\IOT\.local\releases\firmware-v2.0.7-demo.bin` |
 
 4. Bấm **Phát hành cho chủ cửa**. Chờ thông báo phát hành thành công và bản demo xuất hiện trong danh sách phía dưới.
 
@@ -80,42 +87,44 @@ Thao tác trên **app điện thoại**:
 
 1. Mở cửa đang quản lý. Trong khoảng 15 giây app sẽ hiện **Có bản cập nhật cho cửa**.
 2. Bấm **Xem bản cập nhật**. Hoặc vào **Cài đặt thiết bị → Cập nhật**.
-3. Đọc nội dung **v2.0 demo**, kiểm tra phiên bản hiện tại **1.14.0**.
+3. Đọc nội dung **v2.0.7 demo**, kiểm tra phiên bản hiện tại (**2.0.6-demo** nếu chip đang chạy bản này).
 4. Đóng cửa, giữ nam châm đúng vị trí cảm biến đóng và chờ chốt khóa đứng yên.
-5. Bấm **Cập nhật v2.0 demo → Đồng ý cập nhật**.
+5. Bấm **Cập nhật v2.0.7 demo → Đồng ý cập nhật**.
 6. Giữ nguồn điện và Wi-Fi. Màn hình cửa báo tiến độ; thao tác điều khiển cửa tạm dừng trong thời gian ghi firmware. Cửa tự khởi động lại khi tải và kiểm tra tệp xong.
-7. Chờ app báo **Cập nhật thành công**, phiên bản **2.0.1-demo**. Quan sát nền các nút trên màn hình cửa đã chuyển từ đỏ sang đen.
+7. Chờ app báo **Cập nhật thành công**, phiên bản **2.0.7-demo**. Quan sát nền các nút trên màn hình cửa đã chuyển từ xanh dương sang đen.
 8. Thử lại PIN/thẻ/vân tay đã thêm và các thao tác cửa thường dùng. Dữ liệu này phải còn sau OTA.
 
 App chỉ báo hoàn tất khi nhận xác nhận sau khởi động và thiết bị báo đúng phiên bản mới. Nếu cửa đang mở, thiết bị từ chối cập nhật và app hướng dẫn đóng cửa để thử lại. Nếu tải lỗi hoặc SHA-256 không khớp, thiết bị hủy bản tải; không chọn bản tải lỗi để khởi động.
 
 ## 5. Tailscale và địa chỉ tải firmware
 
-Điện thoại và admin có thể truy cập backend qua Tailscale. **ESP32 không có Tailscale**, nên tệp firmware phải tải qua địa chỉ LAN mà chip truy cập được.
-
-Trên laptop hiện tại đã cấu hình:
+Theo [bản bàn giao 09/11](team-tailscale/HOP.md), ESP32 **không còn đi qua gateway LAN** và không cần cùng mạng với backend. Chip kết nối thẳng broker máy Cường qua Internet bằng TLS, và tải firmware qua HTTPS:
 
 ```text
-APP_DEVICE_BASE_URL=http://10.18.0.194:8080
+App → Backend máy Cường → MQTT (TLS) → ESP32
+ESP32 → HTTPS → tải firmware → kiểm tra SHA-256 → khởi động lại
 ```
 
-Bản demo mặc định dùng cửa và máy backend cùng LAN. Cho phép TCP 8080 từ LAN tới laptop. Nếu đổi Wi-Fi/IP laptop, dừng backend rồi chạy, thay IP bằng IPv4 LAN mới:
+| Thành phần | Địa chỉ |
+|---|---|
+| MQTT broker (TLS) | `desktop-s2r046u.tailad91e1.ts.net:8443` |
+| Tải firmware (OTA) | `https://desktop-s2r046u.tailad91e1.ts.net` (cổng 443) |
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/configure-network.ps1 -Role server -LanAddress 10.18.0.194
+Backend trên máy Cường phải đặt:
+
+```text
+APP_DEVICE_BASE_URL=https://desktop-s2r046u.tailad91e1.ts.net
 ```
 
-Sau đó khởi động lại backend. Cấu hình MQTT trên chip cũng phải trỏ đúng gateway LAN hiện tại. Không đặt `APP_DEVICE_BASE_URL` là `localhost`, `127.0.0.1` hoặc IP Tailscale cho ESP32.
+Lưu ý:
+- ESP32 dùng Wi-Fi nào có Internet cũng được, miễn truy cập được cổng 8443 và 443 của máy Cường. Máy Cường phải bật trong lúc demo.
+- Firmware chỉ chấp nhận URL HTTP khi host là địa chỉ riêng. URL công cộng phải là HTTPS và chip phải có CA đã provision (`ts-ca.pem`); thiếu CA thì báo `OTA_TLS_CA_REQUIRED`.
+- Không đặt `APP_DEVICE_BASE_URL` là `localhost`, `127.0.0.1` hoặc IP Tailscale cho ESP32.
+- Đổi `APP_DEVICE_BASE_URL` cần khởi động lại backend. URL dùng chung cho cả đợt demo; chưa cấu hình OTA riêng cho nhiều site.
+- Kiểm tra trước demo (tắt Tailscale trên laptop để thử như ESP32): `Test-NetConnection desktop-s2r046u.tailad91e1.ts.net -Port 8443` và `-Port 443` đều phải `TcpTestSucceeded : True`.
+- Tài liệu cũ dùng IP LAN `10.18.0.194` và `scripts/mqtt_gateway.py` mô tả luồng gateway trước ngày 09/11; không dùng cho luồng hiện hành.
 
-Nếu cửa ở LAN khác, cần gateway chuyển tiếp **cả MQTT 1884 và HTTP tải firmware 8080** qua Tailscale. Script TCP hiện có dùng được cho cổng tải, chạy thêm trên gateway ở LAN cửa, ví dụ:
-
-```powershell
-python scripts/mqtt_gateway.py --listen 192.168.1.20 --listen-port 8080 --server 100.111.90.116 --server-port 8080
-```
-
-Cho phép cổng 8080 từ LAN trên gateway và đặt `APP_DEVICE_BASE_URL=http://192.168.1.20:8080` trên backend rồi khởi động lại. Cấu hình URL này dùng chung cho đợt demo: phải chọn địa chỉ mọi cửa trong đợt cập nhật đều truy cập được. Chỉ có gateway MQTT thì cửa vẫn điều khiển được nhưng chưa tải được firmware qua HTTP. Chưa cấu hình phân phối OTA riêng cho nhiều site có URL khác nhau.
-
-## 6. Build lại hai tệp demo
+## 6. Build lại các tệp demo
 
 Tại `D:\DEV\IOT`:
 
@@ -123,14 +132,14 @@ Tại `D:\DEV\IOT`:
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-ota-demo.ps1
 ```
 
-Lệnh chỉ build và tạo tệp trong `.local/releases`; không nạp chip hoặc xóa dữ liệu. Khi cần đưa một cửa đã cài demo về bản đỏ 1.14.0 để biểu diễn lại, kỹ thuật viên nạp bản cơ sở qua USB; OTA hiện không cho hạ phiên bản. Không chạy các lệnh reset dữ liệu mỗi lần mở dự án.
+Lệnh chỉ build và tạo tệp trong `.local/releases`; không nạp chip hoặc xóa dữ liệu. Khi cần đưa một cửa đã cài demo về bản cơ sở 1.18.0 (nền nút xanh dương) để biểu diễn lại, kỹ thuật viên nạp bản cơ sở qua USB; OTA hiện không cho hạ phiên bản. Không chạy các lệnh reset dữ liệu mỗi lần mở dự án.
 
 ## 7. Chỉ dành cho cấp phát một chip mới
 
 Chip đang bàn giao đã được làm bước này. Với chip khác đã nạp bản cơ sở, công cụ kỹ thuật vẫn dùng API cấp phát được bảo vệ bằng quyền admin; phần này không nằm trong giao diện admin.
 
 ```powershell
-.\.local\venv\Scripts\python.exe scripts/register_local_device.py --mac 80B54EC8149C --name "Smart Door" --mqtt-host 10.18.0.194
+.\.local\venv\Scripts\python.exe scripts/register_local_device.py --mac 80B54EC8149C --name "Smart Door" --mqtt-host desktop-s2r046u.tailad91e1.ts.net
 ```
 
 Khởi động lại **broker dự án 1884** để nạp tài khoản MQTT mới, rồi cấp phát USB (đổi UID/COM đúng chip):

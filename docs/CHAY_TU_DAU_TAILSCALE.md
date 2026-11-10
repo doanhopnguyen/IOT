@@ -1,5 +1,7 @@
 # Chạy từ đầu với Tailscale: nhiều ESP32, mobile và Edge AI khác mạng
 
+> **Lưu ý (cập nhật 10/11/2026):** Luồng ESP32 qua gateway LAN trong tài liệu này là bản cũ. Từ bản bàn giao 09/11, ESP32 nối thẳng broker máy Cường qua Internet (TLS) và tải OTA qua HTTPS; xem [team-tailscale/HOP.md](team-tailscale/HOP.md) và [DEMO_CAP_NHAT_FIRMWARE_TU_XA.md](DEMO_CAP_NHAT_FIRMWARE_TU_XA.md).
+
 **Bàn giao OTA 08/11/2026:** chip COM5 đã có firmware cơ sở **1.14.0** và QR mới. Bắt đầu theo [hướng dẫn hiện tại](DEMO_CAP_NHAT_FIRMWARE_TU_XA.md); bỏ qua các bước đăng ký chip trên web admin cũ ở tài liệu này. Admin hiện không còn chức năng đăng ký chip/QR. Tải OTA còn cần đường HTTP 8080 từ ESP32 đến backend/gateway, ngoài MQTT 1884.
 
 **Khởi động demo hằng ngày bằng Expo Go:** dùng [hướng dẫn theo từng cửa sổ PowerShell](CHAY_DEMO_EXPO_GO_TU_DAU.md). Hướng dẫn đó dùng dữ liệu hiện có và luồng ghép laptop bằng tài khoản chủ cửa. Các phần cấp phát, build và reset dưới đây dành cho lúc cần chuẩn bị hoặc bảo trì thiết bị.
