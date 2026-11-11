@@ -10,6 +10,16 @@ class UsbDeviceServiceTest {
         assertThat(service.list().enabled()).isFalse();assertThat(service.list().ports()).isEmpty();
         assertThatThrownBy(()->service.read("COM5")).isInstanceOf(BusinessException.class).hasMessageContaining("chưa bật");
     }
+    @Test void flashAndProvisionRejectBadPortsAndDisabledService(){
+        var disabled=new UsbDeviceService(new ObjectMapper(),false,"not-a-program","");
+        assertThatThrownBy(()->disabled.flash("COM5",new byte[]{1})).isInstanceOf(BusinessException.class).hasMessageContaining("chưa bật");
+        assertThatThrownBy(()->disabled.provision("COM5","{}")).isInstanceOf(BusinessException.class).hasMessageContaining("chưa bật");
+        var enabled=new UsbDeviceService(new ObjectMapper(),true,"not-a-program","");
+        for(String port:new String[]{"COM5 & x","../COM5","COM0"}){
+            assertThatThrownBy(()->enabled.flash(port,new byte[]{1})).isInstanceOf(BusinessException.class).hasMessageContaining("không hợp lệ");
+            assertThatThrownBy(()->enabled.provision(port,"{}")).isInstanceOf(BusinessException.class).hasMessageContaining("không hợp lệ");
+        }
+    }
     @Test void rejectPathsAndShellSyntaxBeforeStartingAnyProcess(){
         var service=new UsbDeviceService(new ObjectMapper(),true,"not-a-program","");
         for(String port:new String[]{"COM0","COM5 & erase_flash","../COM5","COM5\n","COM99999"})
