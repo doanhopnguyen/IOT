@@ -33,6 +33,11 @@ app:
   face-processor:
     url: ${FACE_PROCESSOR_URL:http://127.0.0.1:8091/extract}
     token: ${FACE_PROCESSOR_TOKEN:}
+  provisioning:
+    mqtt-host: ${PROVISION_MQTT_HOST:}
+    mqtt-port: ${PROVISION_MQTT_PORT:1884}
+    mqtt-tls: ${PROVISION_MQTT_TLS:false}
+    mqtt-ca-file: ${PROVISION_MQTT_CA_FILE:}
   usb:
     enabled: ${USB_ENABLED:false}
     python-executable: ${USB_PYTHON_EXECUTABLE:python}
