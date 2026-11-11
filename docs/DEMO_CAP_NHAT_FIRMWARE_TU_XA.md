@@ -108,7 +108,7 @@ ESP32 → HTTPS → tải firmware → kiểm tra SHA-256 → khởi động l�
 | Thành phần | Địa chỉ |
 |---|---|
 | MQTT broker (TLS) | `desktop-s2r046u.tailad91e1.ts.net:8443` |
-| Tải firmware (OTA) | `https://desktop-s2r046u.tailad91e1.ts.net` (cổng 443) |
+| Tải firmware (OTA) | ````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````` (cổng 443) |
 
 Backend trên máy Cường phải đặt:
 
