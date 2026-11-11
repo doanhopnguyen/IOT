@@ -15,6 +15,7 @@ if (-not $SkipBuild) {
 }
 
 # Factory image để web admin nạp chip trắng (ghi ở 0x0). App nằm ở 0x10000 và phải trùng firmware.bin phát hành.
+# Không ép --flash_mode: header bootloader phải giữ DIO như PlatformIO, ép QIO làm ESP32-S3 kẹt vòng reset.
 $build = Join-Path $firmware '.pio\connected-door-build\esp32-s3-connected'
 $match = Select-String -Path (Join-Path $firmware 'connected_door\main.cpp') -Pattern '#define FIRMWARE_VERSION "([^"]+)"' | Select-Object -First 1
 if (-not $match) { throw 'FIRMWARE_VERSION not found in connected_door/main.cpp.' }
@@ -28,7 +29,7 @@ foreach ($required in @($bootApp0, $esptool, $python, (Join-Path $build 'firmwar
 $releases = Join-Path $projectRoot '.local\releases'
 New-Item -ItemType Directory -Force $releases | Out-Null
 $output = Join-Path $releases "factory-$version.bin"
-& $python $esptool --chip esp32s3 merge_bin -o $output --flash_mode qio --flash_size 16MB `
+& $python $esptool --chip esp32s3 merge_bin -o $output --flash_size 16MB `
     0x0 (Join-Path $build 'bootloader.bin') 0x8000 (Join-Path $build 'partitions.bin') `
     0xe000 $bootApp0 0x10000 (Join-Path $build 'firmware.bin')
 if ($LASTEXITCODE -ne 0) { throw "merge_bin failed (exit $LASTEXITCODE)." }

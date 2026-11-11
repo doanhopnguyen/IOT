@@ -20,6 +20,9 @@ class UsbDeviceServiceTest {
             assertThatThrownBy(()->enabled.provision(port,"{}")).isInstanceOf(BusinessException.class).hasMessageContaining("không hợp lệ");
         }
     }
+    @Test void chipThatNeverBootsGetsItsOwnMessage(){
+        assertThat(UsbDeviceService.message("NO_BOOT")).contains("không khởi động");
+    }
     @Test void rejectPathsAndShellSyntaxBeforeStartingAnyProcess(){
         var service=new UsbDeviceService(new ObjectMapper(),true,"not-a-program","");
         for(String port:new String[]{"COM0","COM5 & erase_flash","../COM5","COM5\n","COM99999"})

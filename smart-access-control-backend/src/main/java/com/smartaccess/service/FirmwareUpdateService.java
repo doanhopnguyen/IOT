@@ -81,6 +81,9 @@ public class FirmwareUpdateService {
                 byte[] factory=factoryImage.getBytes();
                 if(factory.length<FACTORY_APP_OFFSET+bytes.length||(factory[0]&255)!=0xE9)
                     throw reject(BAD_REQUEST,"Tệp factory image không phải ảnh nạp ESP32-S3 (bootloader ở 0x0)");
+                // ROM ESP32-S3 phải đọc bootloader ở DIO/DOUT; header QIO làm chip kẹt vòng reset (ets_loader.c 78).
+                if(factory[2]!=2 && factory[2]!=3)
+                    throw reject(BAD_REQUEST,"Factory image phải giữ chế độ flash DIO của bootloader; gộp ảnh không dùng --flash_mode qio");
                 if(!Arrays.equals(factory,FACTORY_APP_OFFSET,FACTORY_APP_OFFSET+bytes.length,bytes,0,bytes.length))
                     throw reject(BAD_REQUEST,"Tệp factory image không chứa đúng firmware của bản phát hành này");
                 r.setFactoryImage(factory);r.setFactorySize(factory.length);

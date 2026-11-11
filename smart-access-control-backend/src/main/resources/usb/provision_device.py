@@ -111,7 +111,10 @@ def provision(port, bundle):
     mac = bundle_mac(bundle)
     uid = json.loads(bundle).get('deviceUid')
     deadline = time.monotonic() + 80
-    info(port, mac, deadline)  # firmware is up and listening on serial
+    try:
+        info(port, mac, min(deadline, time.monotonic() + 45))  # firmware is up and listening on serial
+    except ValueError as error:
+        raise ValueError('NO_BOOT') if str(error) == 'TIMEOUT' else error
     link = open_link(port, deadline)
     try:
         send(link, 'FACTORY ' + bundle)

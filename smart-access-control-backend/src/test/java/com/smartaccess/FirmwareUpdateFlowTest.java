@@ -54,7 +54,7 @@ class FirmwareUpdateFlowTest {
         var r=publish();assertThat(r.sha256()).hasSize(64);assertThat(r.size()).isEqualTo(1024);
         assertThatThrownBy(this::publish).isInstanceOf(RuntimeException.class);
     }
-    byte[] factory(byte[] app){byte[] f=new byte[0x10000+app.length];f[0]=(byte)0xE9;System.arraycopy(app,0,f,0x10000,app.length);return f;}
+    byte[] factory(byte[] app){byte[] f=new byte[0x10000+app.length];f[0]=(byte)0xE9;f[2]=2;/* DIO như PlatformIO */System.arraycopy(app,0,f,0x10000,app.length);return f;}
     FirmwareUpdateService.ReleaseView publishWithFactory(byte[] factory){login(admin);
         return firmware.publish(version,"demo","esp32s3-n16r8","",new MockMultipartFile("file",image()),new MockMultipartFile("factoryImage",factory));}
     @Test void factoryImageMustEmbedTheSameApp(){
@@ -70,6 +70,10 @@ class FirmwareUpdateFlowTest {
         assertThatThrownBy(()->publishWithFactory(wrong)).isInstanceOf(RuntimeException.class);
         byte[] huge=new byte[FirmwareUpdateService.MAX_FACTORY_SIZE+1];huge[0]=(byte)0xE9;System.arraycopy(image(),0,huge,0x10000,1024);
         assertThatThrownBy(()->publishWithFactory(huge)).isInstanceOf(RuntimeException.class);
+    }
+    @Test void factoryImageWithQioBootloaderHeaderIsRejected(){
+        byte[] qio=factory(image());qio[2]=0;
+        assertThatThrownBy(()->publishWithFactory(qio)).isInstanceOf(RuntimeException.class).hasMessageContaining("DIO");
     }
     @Test void releaseWithoutFactoryImageIsNotFlashable(){assertThat(publish().flashable()).isFalse();}
     @Test void wrongChipAndBadFilesAreRejected(){

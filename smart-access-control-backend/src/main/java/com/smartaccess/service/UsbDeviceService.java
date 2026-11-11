@@ -58,7 +58,7 @@ public class UsbDeviceService {
     /** Gửi gói FACTORY (qua stdin) và xác minh bằng INFO sau khi chip khởi động lại. */
     public Provisioned provision(String input,String bundleJson){
         String port=port(input);
-        JsonNode result=run(PROVISIONER,List.of("--provision","--port",port),bundleJson,90);
+        JsonNode result=run(PROVISIONER,List.of("--provision","--port",port),bundleJson,150);
         return new Provisioned(result.path("factoryMac").asText(),result.path("uid").asText(),result.path("firmware").asText());
     }
     private String port(String input){
@@ -105,6 +105,7 @@ public class UsbDeviceService {
             case "FLASH_FAILED" -> "Ghi firmware thất bại. Kiểm tra dây USB, giữ BOOT rồi thử lại";
             case "REJECTED" -> "Chip từ chối gói cấp phát (sai MAC hoặc chip đã có danh tính)";
             case "STORAGE_FAILED" -> "Chip không lưu được gói cấp phát vào bộ nhớ";
+            case "NO_BOOT" -> "Chip không khởi động sau khi ghi firmware (không trả lời INFO). Kiểm tra factory image rồi nạp lại";
             case "NO_ACK" -> "Chip không xác nhận gói cấp phát; kiểm tra firmware vừa ghi";
             case "INFO_MISMATCH" -> "Chip khởi động lại với danh tính khác gói vừa nạp";
             default -> "Không thao tác được ESP32. Đóng Serial Monitor, kiểm tra cổng và dây USB rồi thử lại";
