@@ -1218,3 +1218,11 @@ button:active:not(:disabled) {
 .metric.critical b {
   color: var(--red);
 }
+
+/* Nạp code: tiến trình từng bước */
+.flash-steps{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.flash-steps li{display:flex;gap:10px;align-items:center;color:var(--muted,#6b7280)}
+.flash-steps li span{width:1.2em;text-align:center}
+.flash-steps li.active{color:inherit;font-weight:600}
+.flash-steps li.done{color:#15803d}
+.flash-steps li.failed{color:#b91c1c;font-weight:600}
