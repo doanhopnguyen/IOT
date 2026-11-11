@@ -1,0 +1,30 @@
+[
+    {
+        "file":  "firmware-base-1.18.0.bin",
+        "version":  "1.18.0",
+        "hardwareVersion":  "esp32s3-n16r8",
+        "size":  1101584,
+        "sha256":  "69ac9c3af66d3358157b9133a619f7a9ac4c1ea4276e7e70de43a081198475be"
+    },
+    {
+        "file":  "firmware-v2.0.5-demo.bin",
+        "version":  "2.0.5-demo",
+        "hardwareVersion":  "esp32s3-n16r8",
+        "size":  1101584,
+        "sha256":  "3c49cc0d4d6cd83a0b3a20c7532610c4fadc44eafc60d559d0df707be66ba07c"
+    },
+    {
+        "file":  "firmware-v2.0.6-demo.bin",
+        "version":  "2.0.6-demo",
+        "hardwareVersion":  "esp32s3-n16r8",
+        "size":  1101584,
+        "sha256":  "47ec72c177ed6db528803e3128415bb5ae12ca01997aa3b055c6fe86d4bcff34"
+    },
+    {
+        "file":  "firmware-v2.0.7-demo.bin",
+        "version":  "2.0.7-demo",
+        "hardwareVersion":  "esp32s3-n16r8",
+        "size":  1101584,
+        "sha256":  "485a1a75482a529ca40d1380eb8d4828301d7d07f1ddd63f074833d0ed407849"
+    }
+]
