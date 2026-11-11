@@ -34,6 +34,15 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.CONFLICT, "Operation conflicts with existing data; refresh and retry");
     }
 
+    /** Lý do (reason) của ResponseStatusException là thông báo cho người dùng; Spring mặc định giấu nó. */
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    public ResponseEntity<ErrorResponse> status(org.springframework.web.server.ResponseStatusException exception) {
+        HttpStatus status = HttpStatus.resolve(exception.getStatusCode().value());
+        if (status == null) status = HttpStatus.INTERNAL_SERVER_ERROR;
+        String reason = exception.getReason();
+        return error(status, reason == null || reason.isBlank() ? "Không thực hiện được yêu cầu" : reason);
+    }
+
     private ResponseEntity<ErrorResponse> error(HttpStatus status, String message) {
         return ResponseEntity.status(status).body(new ErrorResponse(status.value(), message));
     }

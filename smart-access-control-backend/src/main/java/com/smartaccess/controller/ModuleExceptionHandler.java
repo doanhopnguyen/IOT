@@ -8,6 +8,8 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.dao.DataIntegrityViolationException;
 
+// Ưu tiên hơn GlobalExceptionHandler để giữ định dạng ProblemDetail cũ cho các controller này.
+@org.springframework.core.annotation.Order(org.springframework.core.Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = {AccessLogController.class, AlertController.class, ImageUploadController.class})
 public class ModuleExceptionHandler {
     @ExceptionHandler(ResponseStatusException.class)
