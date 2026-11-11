@@ -28,9 +28,11 @@ public class AdminDeviceController {
     private final AuditLogRepository audits;
     private final PasswordEncoder passwords;
     private final com.smartaccess.service.DecommissionNotifier decommissions;
+    private final com.smartaccess.service.BrokerAccounts brokers;
     public AdminDeviceController(DeviceRepository devices, AccountRepository accounts, AuditLogRepository audits, PasswordEncoder passwords,
-                                 com.smartaccess.service.DecommissionNotifier decommissions) {
+                                 com.smartaccess.service.DecommissionNotifier decommissions, com.smartaccess.service.BrokerAccounts brokers) {
         this.devices = devices; this.accounts = accounts; this.audits = audits; this.passwords = passwords; this.decommissions = decommissions;
+        this.brokers = brokers;
     }
     @GetMapping @Transactional(readOnly = true)
     public List<DeviceResponse> list() { return devices.findAll().stream().map(DeviceResponse::from).toList(); }
@@ -72,12 +74,17 @@ public class AdminDeviceController {
     // Chỉ báo chip sau khi DB đã ghi thu hồi, để chip không bị xóa dữ liệu khi giao dịch rollback.
     private void notifyAfterCommit(String uid) {
         if (!org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
-            decommissions.notifyNow(uid); return;
+            afterDecommission(uid); return;
         }
         org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
                 new org.springframework.transaction.support.TransactionSynchronization() {
-                    @Override public void afterCommit() { decommissions.notifyNow(uid); }
+                    @Override public void afterCommit() { afterDecommission(uid); }
                 });
+    }
+    private void afterDecommission(String uid) {
+        decommissions.notifyNow(uid);
+        // Báo chip trước rồi mới khoá tài khoản MQTT; lỗi broker không được làm hỏng việc thu hồi đã ghi DB.
+        try { brokers.disableDevice(uid); } catch (RuntimeException ignored) { }
     }
     private Device require(String uid) {
         return devices.findByDeviceUidForUpdate(uid).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy thiết bị"));

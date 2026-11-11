@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.*;
 @SpringBootTest(webEnvironment=SpringBootTest.WebEnvironment.NONE,properties={
     "spring.datasource.url=jdbc:h2:mem:firmware;MODE=MySQL;DB_CLOSE_DELAY=-1","spring.datasource.username=sa","spring.datasource.password=",
     "spring.datasource.driver-class-name=org.h2.Driver","spring.flyway.enabled=false","spring.jpa.hibernate.ddl-auto=create-drop",
-    "app.firmware.device-base-url=http://192.168.1.10:8080"})
+    "app.firmware.device-base-url=http://192.168.1.10:8080","app.mqtt.enabled=false"})
 class FirmwareUpdateFlowTest {
     static int sequence=0;
     @TestConfiguration static class Config { @Bean @Primary DeviceGateway gateway(){return (uid,id,type,data)->{};} }

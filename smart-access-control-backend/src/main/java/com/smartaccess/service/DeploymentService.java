@@ -25,8 +25,14 @@ public class DeploymentService {
         LocalDateTime lastSeenAt,String operationUuid,DeviceLifecycleStatus lifecycleStatus,
         List<DeviceLifecycleStatus> allowedTransitions) {}
     public record Issued(InventoryView device,String activationCode,String deviceSecret,String setupSsid,String setupPassword,
-                         com.smartaccess.dto.manager.CommandResponse syncCommand) {
-        public Issued(InventoryView device,String activationCode,String deviceSecret,String setupSsid,String setupPassword){this(device,activationCode,deviceSecret,setupSsid,setupPassword,null);}
+                         com.smartaccess.dto.manager.CommandResponse syncCommand,Map<String,Object> connection) {
+        public Issued(InventoryView device,String activationCode,String deviceSecret,String setupSsid,String setupPassword){this(device,activationCode,deviceSecret,setupSsid,setupPassword,null,null);}
+        public Issued(InventoryView device,String activationCode,String deviceSecret,String setupSsid,String setupPassword,
+                      com.smartaccess.dto.manager.CommandResponse syncCommand){this(device,activationCode,deviceSecret,setupSsid,setupPassword,syncCommand,null);}
+    }
+    /** Gói nạp vào chip qua serial; chỉ sống trong bộ nhớ của job nạp, không lưu, không trả ra API. */
+    public record FactoryBundle(InventoryView device,Map<String,Object> serialPayload,String mqttPassword,String activationCode,String setupPassword) {
+        @Override public String toString(){return "FactoryBundle["+device.deviceUid()+"]";}
     }
     public record ClaimPreview(String deviceUid,String name,boolean online) {}
     private final DeviceInventoryRepository inventory;
@@ -40,16 +46,19 @@ public class DeploymentService {
     private final CommandRepository commandRows;
     private final ApplicationEventPublisher events;
     private final EntityManager em;
+    private final BrokerAccounts brokers;
+    private final FactoryConnection connection;
     public static final String RESET_COMMAND="DEVICE_RESET";
     public static final String SYNC_ACTIVATION="ACTIVATION_CODE_SET";
     private static final String RESET_VERIFIED="RESET_EMPTY_VERIFIED";
     private static final int AUDIT_PAGE=500;
     public DeploymentService(DeviceInventoryRepository inventory,DeviceRepository devices,AccessUnitRepository units,
         AccountRepository accounts,CurrentAccountService current,PasswordEncoder passwords,ManagerAccessGuard guard,
-        DeviceCommandService commands,CommandRepository commandRows,ApplicationEventPublisher events,EntityManager em) {
+        DeviceCommandService commands,CommandRepository commandRows,ApplicationEventPublisher events,EntityManager em,
+        BrokerAccounts brokers,FactoryConnection connection) {
         this.inventory=inventory;this.devices=devices;this.units=units;this.accounts=accounts;
         this.current=current;this.passwords=passwords;this.guard=guard;this.commands=commands;
-        this.commandRows=commandRows;this.events=events;this.em=em;
+        this.commandRows=commandRows;this.events=events;this.em=em;this.brokers=brokers;this.connection=connection;
     }
     public static String digest(String value) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))); }
@@ -74,7 +83,82 @@ public class DeploymentService {
         devices.saveAndFlush(d);
         DeviceInventory i=new DeviceInventory();i.setDevice(d);i.setFactoryMac(mac);i.setClaimHash(digest(code));
         inventory.saveAndFlush(i);
-        return new Issued(view(i),code,secret,"SmartDoor-"+mac.substring(6),token().substring(0,12));
+        // Đường CLI dự phòng: tạo luôn tài khoản MQTT để file kết nối dùng được ngay, không restart broker.
+        String mqttPassword=token();brokers.upsertDevice(uid,mqttPassword);
+        Map<String,Object> link=connection.mqttHost().isEmpty()?null:connection.forDevice(uid,mqttPassword);
+        return new Issued(view(i),code,secret,"SmartDoor-"+mac.substring(6),token().substring(0,12),null,link);
+    }
+    /** Thêm thiết bị khi chưa có chip: UID tạm, chưa có secret; danh tính thật được gắn ở bước nạp code. */
+    public InventoryView createPending(String name) {
+        admin();
+        if(name==null || name.isBlank() || name.trim().length()>100) throw error(BAD_REQUEST,"Tên thiết bị cần 1-100 ký tự");
+        String uid;
+        do { byte[] b=new byte[6];new SecureRandom().nextBytes(b);uid="PENDING-"+HexFormat.of().withUpperCase().formatHex(b); }
+        while(devices.existsByDeviceUid(uid));
+        Device d=new Device();d.setDeviceUid(uid);d.setDeviceName(name.trim());d.setDeviceType(DeviceType.DOOR_CONTROLLER);
+        devices.saveAndFlush(d);
+        DeviceInventory i=new DeviceInventory();i.setDevice(d);i.setState(DeviceInventory.AWAITING_FLASH);i.setStateUpdatedAt(LocalDateTime.now());
+        inventory.saveAndFlush(i);
+        events.publishEvent(new RealtimeConfig.DeviceUpdated());
+        return view(i);
+    }
+    /** Xoá thiết bị thêm nhầm; chỉ khi chưa nạp code thành công lần nào. */
+    public void deletePending(Long deviceId) {
+        admin();
+        DeviceInventory i=inventory.lock(deviceId).orElseThrow(()->error(NOT_FOUND,"Không tìm thấy thiết bị"));
+        if(!DeviceInventory.AWAITING_FLASH.equals(i.getState()) || i.getFlashedAt()!=null)
+            throw error(CONFLICT,"Chỉ xoá được thiết bị chưa nạp code");
+        Device d=i.getDevice();
+        if(i.getFactoryMac()!=null)brokers.disableDevice(d.getDeviceUid()); // job lỗi có thể đã tạo tài khoản MQTT
+        inventory.delete(i);inventory.flush();devices.delete(d);
+        events.publishEvent(new RealtimeConfig.DeviceUpdated());
+    }
+    private static boolean flashable(DeviceInventory i) {
+        return DeviceInventory.AWAITING_FLASH.equals(i.getState()) || (DeviceInventory.INVENTORY.equals(i.getState())
+            && i.getDevice().getAccessUnit()==null && i.getOperationUuid()==null);
+    }
+    /** Kiểm tra trước khi bắt đầu job: chỉ thiết bị chờ nạp hoặc chưa có chủ, chưa có thao tác reset. */
+    @Transactional(readOnly=true)
+    public void requireFlashable(Long deviceId) {
+        DeviceInventory i=inventory.findById(deviceId).orElseThrow(()->error(NOT_FOUND,"Không tìm thấy thiết bị"));
+        if(!flashable(i))throw error(CONFLICT,"Chỉ nạp được thiết bị chờ nạp hoặc chưa có chủ cửa");
+    }
+    /**
+     * Gắn chip vừa đọc MAC vào bản ghi và sinh bộ bí mật mới. Chạy trong thread của job nên không đọc SecurityContext;
+     * người gọi đã kiểm tra quyền admin. Mã nhận cửa chưa có hiệu lực cho tới markFlashed.
+     */
+    public FactoryBundle bindForFlash(Long deviceId,String rawMac,long actorId) {
+        String mac=rawMac==null?"":rawMac.replace(":","").replace("-","").toUpperCase(Locale.ROOT);
+        if(!mac.matches("[0-9A-F]{12}"))throw error(BAD_GATEWAY,"MAC đọc từ chip không hợp lệ");
+        DeviceInventory i=inventory.lock(deviceId).orElseThrow(()->error(NOT_FOUND,"Không tìm thấy thiết bị"));
+        if(!flashable(i))throw error(CONFLICT,"Chỉ nạp được thiết bị chờ nạp hoặc chưa có chủ cửa");
+        Optional<DeviceInventory> owner=inventory.findByFactoryMac(mac).filter(x->!x.getDeviceId().equals(deviceId));
+        if(owner.isPresent())
+            throw error(CONFLICT,"Chip này đã thuộc thiết bị "+owner.get().getDevice().getDeviceUid()+"; không xoá chip đang được dùng");
+        if(i.getFactoryMac()!=null && !i.getFactoryMac().equals(mac))
+            throw error(CONFLICT,"Bản ghi đã gắn chip "+i.getFactoryMac()+"; cắm đúng chip");
+        Device d=i.getDevice();String uid="ESP32-"+mac;
+        if(!uid.equals(d.getDeviceUid()) && devices.existsByDeviceUid(uid))throw error(CONFLICT,"Device UID "+uid+" đã tồn tại");
+        String secret=token(),code=token(),setup=token().substring(0,12),mqttPassword=token();
+        d.setDeviceUid(uid);d.setDeviceSecretHash(passwords.encode(secret));d.setBootstrapSecretHash(passwords.encode(token()));
+        d.setLifecycleStatus(DeviceLifecycleStatus.REGISTERED);d.setLastSeenAt(null);
+        i.setFactoryMac(mac);i.setClaimHash(null);i.setState(DeviceInventory.AWAITING_FLASH);i.setStateUpdatedAt(LocalDateTime.now());
+        devices.flush();
+        Map<String,Object> payload=new LinkedHashMap<>();
+        payload.put("deviceUid",uid);payload.put("factoryMac",mac);payload.put("deviceSecret",secret);
+        payload.put("generation",i.getGeneration());payload.put("activationCode",code);
+        payload.put("setupSsid","SmartDoor-"+mac.substring(6));payload.put("setupPassword",setup);
+        payload.putAll(connection.forDevice(uid,mqttPassword));
+        return new FactoryBundle(view(i),payload,mqttPassword,code,setup);
+    }
+    /** Chip đã xác nhận lưu gói: mở mã nhận cửa và ghi bản firmware đã nạp. */
+    public Issued markFlashed(Long releaseId,FactoryBundle bundle) {
+        DeviceInventory i=inventory.lock(bundle.device().deviceId()).orElseThrow(()->error(NOT_FOUND,"Không tìm thấy thiết bị"));
+        if(!DeviceInventory.AWAITING_FLASH.equals(i.getState()))throw error(CONFLICT,"Thiết bị không còn ở trạng thái chờ nạp");
+        i.setState(DeviceInventory.INVENTORY);i.setClaimHash(digest(bundle.activationCode()));
+        i.setFlashedReleaseId(releaseId);i.setFlashedAt(LocalDateTime.now());i.setStateUpdatedAt(LocalDateTime.now());
+        events.publishEvent(new RealtimeConfig.DeviceUpdated());
+        return new Issued(view(i),bundle.activationCode(),null,"SmartDoor-"+i.getFactoryMac().substring(6),bundle.setupPassword());
     }
     public List<InventoryView> list() { admin();return inventory.findAll().stream().map(this::view).toList(); }
     public long generation(String uid) {
