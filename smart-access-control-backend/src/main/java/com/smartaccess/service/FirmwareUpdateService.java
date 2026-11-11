@@ -19,9 +19,12 @@ import static org.springframework.http.HttpStatus.*;
 public class FirmwareUpdateService {
     public static final String COMMAND="FIRMWARE_UPDATE";
     public static final int MAX_IMAGE_SIZE=4*1024*1024;
+    public static final int MAX_FACTORY_SIZE=16*1024*1024;
+    /** Offset của app trong factory image (sau bootloader 0x0, partitions 0x8000, boot_app0 0xe000). */
+    public static final int FACTORY_APP_OFFSET=0x10000;
     public static final List<CommandStatus> IN_FLIGHT=List.of(CommandStatus.PENDING,CommandStatus.SENT);
-    public record ReleaseView(Long id,String version,String label,String hardwareVersion,String notes,String sha256,int size,LocalDateTime publishedAt) {
-        static ReleaseView of(FirmwareRelease r){return new ReleaseView(r.getReleaseId(),r.getVersion(),r.getLabel(),r.getHardwareVersion(),r.getNotes(),r.getSha256(),r.getImageSize(),r.getPublishedAt());}
+    public record ReleaseView(Long id,String version,String label,String hardwareVersion,String notes,String sha256,int size,LocalDateTime publishedAt,boolean flashable) {
+        static ReleaseView of(FirmwareRelease r){return new ReleaseView(r.getReleaseId(),r.getVersion(),r.getLabel(),r.getHardwareVersion(),r.getNotes(),r.getSha256(),r.getImageSize(),r.getPublishedAt(),r.getFactorySha256()!=null);}
     }
     public record Status(String currentVersion,String hardwareVersion,boolean online,boolean capable,
                          List<ReleaseView> available,CommandResponse update,String targetVersion) {}
@@ -47,6 +50,10 @@ public class FirmwareUpdateService {
     private Account admin(){Account a=current.requireAccount();if(!a.isAdmin())throw reject(FORBIDDEN,"Chỉ admin hệ thống được phát hành firmware");return a;}
     @Transactional(readOnly=true) public List<ReleaseView> list(){admin();return releases.findAllByOrderByReleaseIdDesc().stream().map(ReleaseView::of).toList();}
     public ReleaseView publish(String version,String label,String hardware,String notes,MultipartFile file) {
+        return publish(version,label,hardware,notes,file,null);
+    }
+    /** factoryImage (không bắt buộc): ảnh gộp để nạp chip trắng; phải chứa đúng app ở offset 0x10000. */
+    public ReleaseView publish(String version,String label,String hardware,String notes,MultipartFile file,MultipartFile factoryImage) {
         Account actor=admin();
         if(version==null||!version.matches("[0-9]{1,4}\\.[0-9]{1,4}\\.[0-9]{1,4}(?:-[a-zA-Z0-9.]{1,30})?")||version.length()>50)
             throw reject(BAD_REQUEST,"Phiên bản cần dạng 2.0.0-demo");
@@ -69,6 +76,16 @@ public class FirmwareUpdateService {
             FirmwareRelease r=new FirmwareRelease();r.setVersion(version);r.setLabel(label.trim());r.setHardwareVersion(hardware);
             r.setNotes(notes.trim());r.setImage(bytes);r.setImageSize(bytes.length);
             r.setSha256(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)));
+            if(factoryImage!=null && !factoryImage.isEmpty()) {
+                if(factoryImage.getSize()>MAX_FACTORY_SIZE)throw reject(BAD_REQUEST,"Factory image tối đa 16 MiB");
+                byte[] factory=factoryImage.getBytes();
+                if(factory.length<FACTORY_APP_OFFSET+bytes.length||(factory[0]&255)!=0xE9)
+                    throw reject(BAD_REQUEST,"Tệp factory image không phải ảnh nạp ESP32-S3 (bootloader ở 0x0)");
+                if(!Arrays.equals(factory,FACTORY_APP_OFFSET,FACTORY_APP_OFFSET+bytes.length,bytes,0,bytes.length))
+                    throw reject(BAD_REQUEST,"Tệp factory image không chứa đúng firmware của bản phát hành này");
+                r.setFactoryImage(factory);r.setFactorySize(factory.length);
+                r.setFactorySha256(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(factory)));
+            }
             r.setPublishedAt(LocalDateTime.now());r.setPublishedBy(actor);
             return ReleaseView.of(releases.saveAndFlush(r));
         } catch(java.io.IOException|java.security.NoSuchAlgorithmException e){throw reject(BAD_REQUEST,"Không đọc được firmware");}

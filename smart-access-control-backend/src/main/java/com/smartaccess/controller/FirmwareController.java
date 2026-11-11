@@ -16,7 +16,8 @@ public class FirmwareController {
     @PostMapping(value="/api/admin/firmware",consumes="multipart/form-data")
     @ResponseStatus(HttpStatus.CREATED)
     public Object publish(@RequestParam String version,@RequestParam String label,@RequestParam String hardwareVersion,
-                          @RequestParam(defaultValue="") String notes,@RequestParam MultipartFile file){return service.publish(version,label,hardwareVersion,notes,file);}
+                          @RequestParam(defaultValue="") String notes,@RequestParam MultipartFile file,
+                          @RequestParam(required=false) MultipartFile factoryImage){return service.publish(version,label,hardwareVersion,notes,file,factoryImage);}
     @GetMapping("/api/manager/units/{unitId}/firmware")
     public Object status(@AuthenticationPrincipal AccountPrincipal actor,@PathVariable Long unitId){return service.status(actor.accountId(),unitId);}
     @PostMapping("/api/manager/units/{unitId}/firmware") @ResponseStatus(HttpStatus.ACCEPTED)

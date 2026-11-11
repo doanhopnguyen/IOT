@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.*;
 class FirmwareUpdateFlowTest {
     static int sequence=0;
     @TestConfiguration static class Config { @Bean @Primary DeviceGateway gateway(){return (uid,id,type,data)->{};} }
-    @Autowired FirmwareUpdateService firmware;
+    @Autowired FirmwareUpdateService firmware;@Autowired FirmwareReleaseRepository releases;
     @Autowired DeploymentService deployment;
     @Autowired AccountRepository accounts;
     @Autowired DeviceRepository devices;
@@ -54,6 +54,24 @@ class FirmwareUpdateFlowTest {
         var r=publish();assertThat(r.sha256()).hasSize(64);assertThat(r.size()).isEqualTo(1024);
         assertThatThrownBy(this::publish).isInstanceOf(RuntimeException.class);
     }
+    byte[] factory(byte[] app){byte[] f=new byte[0x10000+app.length];f[0]=(byte)0xE9;System.arraycopy(app,0,f,0x10000,app.length);return f;}
+    FirmwareUpdateService.ReleaseView publishWithFactory(byte[] factory){login(admin);
+        return firmware.publish(version,"demo","esp32s3-n16r8","",new MockMultipartFile("file",image()),new MockMultipartFile("factoryImage",factory));}
+    @Test void factoryImageMustEmbedTheSameApp(){
+        byte[] tampered=factory(image());tampered[0x10000+50]^=1;
+        assertThatThrownBy(()->publishWithFactory(tampered)).isInstanceOf(RuntimeException.class).hasMessageContaining("factory image không chứa đúng firmware");
+        var r=publishWithFactory(factory(image()));
+        assertThat(r.flashable()).isTrue();
+        var stored=releases.findById(r.id()).orElseThrow();
+        assertThat(stored.getFactorySha256()).hasSize(64);assertThat(stored.getFactorySize()).isEqualTo(0x10000+1024);
+    }
+    @Test void factoryImageRejectsWrongMagicOrOversize(){
+        byte[] wrong=factory(image());wrong[0]=0;
+        assertThatThrownBy(()->publishWithFactory(wrong)).isInstanceOf(RuntimeException.class);
+        byte[] huge=new byte[FirmwareUpdateService.MAX_FACTORY_SIZE+1];huge[0]=(byte)0xE9;System.arraycopy(image(),0,huge,0x10000,1024);
+        assertThatThrownBy(()->publishWithFactory(huge)).isInstanceOf(RuntimeException.class);
+    }
+    @Test void releaseWithoutFactoryImageIsNotFlashable(){assertThat(publish().flashable()).isFalse();}
     @Test void wrongChipAndBadFilesAreRejected(){
         login(admin);
         assertThatThrownBy(()->firmware.publish(version,"demo","esp32","",new MockMultipartFile("file",image()))).isInstanceOf(RuntimeException.class);
