@@ -20,7 +20,7 @@ public class AdminProvisioningController {
     @PostMapping("/api/admin/inventory/pending") @ResponseStatus(HttpStatus.CREATED)
     public DeploymentService.InventoryView create(@Valid @RequestBody Pending input) { return deployment.createPending(input.name()); }
     @DeleteMapping("/api/admin/inventory/pending/{deviceId}") @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(@PathVariable Long deviceId) { deployment.deletePending(deviceId); }
+    public void delete(@PathVariable Long deviceId) { provisioning.deletePending(deviceId); }
     @PostMapping("/api/admin/inventory/{deviceId}/flash") @ResponseStatus(HttpStatus.ACCEPTED)
     public DeviceProvisioningService.JobView flash(@PathVariable Long deviceId, @Valid @RequestBody Flash input) {
         return provisioning.start(deviceId, input.port(), input.releaseId(), input.password());

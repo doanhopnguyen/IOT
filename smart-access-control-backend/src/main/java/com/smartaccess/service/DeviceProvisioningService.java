@@ -81,6 +81,15 @@ public class DeviceProvisioningService {
         return view(job, true);
     }
 
+    /** Xoá thiết bị chờ nạp; giữ chỗ trong `running` để không có job nào bắt đầu giữa chừng. */
+    public void deletePending(Long deviceId) {
+        admin();
+        String marker = "delete-" + UUID.randomUUID();
+        if (running.putIfAbsent(deviceId, marker) != null) throw new BusinessException(CONFLICT, "Thiết bị đang được nạp");
+        try { deployment.deletePending(deviceId); }
+        finally { running.remove(deviceId, marker); }
+    }
+
     public JobView job(String jobId) {
         Account actor = admin();
         Job job = jobs.get(jobId);

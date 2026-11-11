@@ -186,6 +186,12 @@ class PendingDeviceFlowTest {
   var flashed=pending();flash(flashed.deviceId());
   assertThatThrownBy(()->deployment.deletePending(flashed.deviceId())).isInstanceOf(RuntimeException.class);
  }
+ @Test void deviceCannotBeDeletedWhileItIsBeingFlashed(){
+  var view=pending();executor.hold=true;flash(view.deviceId());
+  assertThatThrownBy(()->provisioning.deletePending(view.deviceId())).isInstanceOf(RuntimeException.class).hasMessageContaining("đang được nạp");
+  executor.held.forEach(Runnable::run);
+  assertThat(stored(view.deviceId()).getState()).isEqualTo("INVENTORY");
+ }
  @Test void legacyRegisterCreatesBrokerAccountAndReturnsConnection(){
   var issued=deployment.register(mac,"CLI");
   verify(brokers).upsertDevice(eq("ESP32-"+mac),anyString());
