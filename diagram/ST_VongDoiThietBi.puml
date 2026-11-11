@@ -53,6 +53,11 @@ note bottom of MAINTENANCE
   nên thành viên bị thu hồi lúc này
   vẫn mở được cửa cho tới khi ACTIVE lại.
 end note
+note top of REGISTERED
+  Trạng thái kho (device_inventory.state) trước REGISTERED:
+  AWAITING_FLASH (admin thêm thiết bị, UID tạm PENDING-…, chưa secret)
+  --nạp code thành công--> INVENTORY (có QR nhận cửa)
+end note
 note right of ACTIVE
   Tạm khóa (chủ cửa): trạng thái con của ACTIVE.
   Chỉ vân tay/thẻ/app của chủ cửa mở được,

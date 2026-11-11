@@ -1,16 +1,30 @@
 # Luồng sản phẩm Smart Door — 06/11/2026
 
-Cập nhật 08/11/2026: cấp phát bằng CLI kỹ thuật, admin không có đăng ký chip/QR. Firmware cơ sở **1.14.0** hỗ trợ OTA, chủ cửa tự xác nhận nhận bản do admin phát hành. Xem [hướng dẫn demo OTA và cấp phát hiện tại](DEMO_CAP_NHAT_FIRMWARE_TU_XA.md).
+Cập nhật 11/11/2026: admin thêm thiết bị trước rồi nạp code từ web (xem mục dưới); CLI chỉ còn là đường dự phòng. Firmware cơ sở **1.14.0** hỗ trợ OTA, chủ cửa tự xác nhận nhận bản do admin phát hành. Xem [hướng dẫn demo OTA và cấp phát hiện tại](DEMO_CAP_NHAT_FIRMWARE_TU_XA.md).
 
 Đây là luồng mới theo yêu cầu người dùng, thay cho các hướng dẫn demo trước đây bắt người mua nhập hoặc đổi địa chỉ backend.
 
 ## Bên sản xuất chuẩn bị trước khi giao
 
-1. Nạp firmware đúng phần cứng ESP32-S3.
-2. Kỹ thuật viên dùng `scripts/register_local_device.py` đăng ký đúng MAC, tạo mã sản phẩm và mã nhận cửa dùng một lần. Mỗi sản phẩm có mạng thiết lập `SmartDoor-xxxxxx` và mật khẩu riêng.
-3. File cấp phát chứa mã sản phẩm, mã nhận cửa, SSID/mật khẩu mạng thiết lập và khóa xác thực riêng. Công cụ sản xuất ghi file này vào bộ nhớ chip. Địa chỉ dịch vụ/broker và chứng chỉ cần thiết do bên triển khai cấu hình sẵn; không yêu cầu người mua nhập.
-4. In QR dán sản phẩm. Chip cũng dựng QR trên TFT từ thông tin đã nạp, không cần Internet để hiển thị. QR có mã nhận cửa và thông tin mạng thiết lập, không có khóa xác thực thiết bị hoặc địa chỉ máy chủ tùy ý.
-5. Không ghi trước Wi-Fi nhà của người mua và không nhận cửa vào tài khoản thử trước khi giao.
+Cập nhật 11/11/2026: admin **thêm thiết bị trước**, rồi mới nạp code vào ESP32 ngay từ web admin. Không còn bước CLI, không còn tải file JSON chứa bí mật, không phải khởi động lại broker.
+
+| Bước | Ai | Việc | Trạng thái kho |
+|---|---|---|---|
+| 1 | Admin (web) | **Thêm thiết bị**: chỉ nhập tên. Hệ thống tạo bản ghi với UID tạm `PENDING-…`, chưa có secret | `AWAITING_FLASH` — Chờ nạp code |
+| 2 | Admin (web) | Cắm ESP32-S3 vào **máy chạy backend** → **Nạp code**: chọn cổng USB, chọn bản firmware có factory image, nhập lại mật khẩu | `AWAITING_FLASH` |
+| 3 | Backend | Đọc MAC → gắn chip, UID thành `ESP32-<MAC>`, sinh secret/mã nhận cửa/mật khẩu mạng thiết lập/mật khẩu MQTT | `AWAITING_FLASH` |
+| 4 | Backend | Tạo tài khoản MQTT riêng cho UID qua Mosquitto dynamic security (không restart broker) | — |
+| 5 | Backend | Xoá flash, ghi factory image, gửi gói `FACTORY` qua serial, kiểm tra `INFO` khớp UID | — |
+| 6 | Backend | Mở mã nhận cửa; web hiện QR để in và dán sản phẩm | `INVENTORY` — Chưa nhận cửa |
+
+Quy tắc an toàn:
+- Chỉ xoá flash khi MAC đọc được **chưa thuộc thiết bị khác**; không bao giờ xoá chip của cửa đã có chủ.
+- Tài khoản broker được tạo trước khi xoá flash: broker lỗi thì chip còn nguyên.
+- Mã nhận cửa chỉ có hiệu lực sau khi chip xác nhận `FACTORY_PROVISIONED`. Nạp lại sinh bộ bí mật mới, QR cũ hết hiệu lực.
+- Thu hồi thiết bị (`DECOMMISSIONED`) khoá luôn tài khoản MQTT.
+- Nạp từ web cần backend chạy **trực tiếp** trên máy cắm chip (`USB_ENABLED=true`, `USB_ESPTOOL_SCRIPT`, `PROVISION_MQTT_HOST`). Backend chạy trong Docker không thấy cổng COM: dùng đường CLI dự phòng (`scripts/register_local_device.py` rồi `scripts/device_tool.py provision`).
+- Bản firmware dùng để nạp chip mới phải được phát hành kèm **factory image** (`scripts/build-firmware.ps1` sinh `.local/releases/factory-<phiên bản>.bin`).
+- Không ghi trước Wi-Fi nhà của người mua và không nhận cửa vào tài khoản thử trước khi giao. QR không chứa khóa xác thực thiết bị hay địa chỉ máy chủ tùy ý.
 
 ## Người mua thiết lập
 

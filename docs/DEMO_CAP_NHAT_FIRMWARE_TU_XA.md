@@ -79,7 +79,7 @@ Thao tác trên **trình duyệt laptop**:
 
 Admin phát hành cho các cửa dùng phần cứng `esp32s3-n16r8` có phiên bản thấp hơn. Admin không tự cài firmware lên cửa của chủ nhà. Phiên bản đã phát hành không được thay tệp hoặc phát hành trùng; phiên bản nhập phải khớp tệp `.bin`.
 
-Giao diện admin đã bỏ **Đăng ký chip & QR**, nút đăng ký chip và nút cấp QR trong danh sách thiết bị. Cấp phát sản phẩm mới dành cho công cụ kỹ thuật ở bước 7 bên dưới.
+Để nạp chip mới từ web, phát hành kèm **factory image** (ô "Factory image" trong form; tệp `factory-<phiên bản>.bin` do `scripts/build-firmware.ps1` sinh). Thêm thiết bị và nạp code: xem bước 7.
 
 ## 4. Chủ nhà nhận và cài đặt
 
@@ -136,13 +136,17 @@ Lệnh chỉ build và tạo tệp trong `.local/releases`; không nạp chip ho
 
 ## 7. Chỉ dành cho cấp phát một chip mới
 
-Chip đang bàn giao đã được làm bước này. Với chip khác đã nạp bản cơ sở, công cụ kỹ thuật vẫn dùng API cấp phát được bảo vệ bằng quyền admin; phần này không nằm trong giao diện admin.
+Chip đang bàn giao đã được làm bước này.
+
+**Đường chính (web admin):** Thêm thiết bị → cắm ESP32-S3 vào máy chạy backend → **Nạp code** ở dòng thiết bị → chọn cổng và bản firmware có factory image → chờ các bước ✓ → in QR. Backend cần `USB_ENABLED=true`, `USB_ESPTOOL_SCRIPT` và `PROVISION_MQTT_HOST` (địa chỉ broker ESP32 truy cập được). Broker phải chạy plugin dynamic security (`scripts/bootstrap_local.py broker` hoặc `deployment/team`).
+
+**Đường dự phòng (backend chạy Docker, không thấy USB):**
 
 ```powershell
-.\.local\venv\Scripts\python.exe scripts/register_local_device.py --mac 80B54EC8149C --name "Smart Door" --mqtt-host desktop-s2r046u.tailad91e1.ts.net
+.\.local\venv\Scripts\python.exe scripts/register_local_device.py --mac 80B54EC8149C --name "Smart Door"
 ```
 
-Khởi động lại **broker dự án 1884** để nạp tài khoản MQTT mới, rồi cấp phát USB (đổi UID/COM đúng chip):
+Backend tự tạo tài khoản MQTT và trả file kết nối (không cần restart broker), rồi cấp phát USB (đổi UID/COM đúng chip):
 
 ```powershell
 & "$env:USERPROFILE\.platformio\penv\Scripts\python.exe" scripts/device_tool.py --port COM5 provision --device .local/FACTORY_ESP32-80B54EC8149C.json --connection .local/ESP32-80B54EC8149C-connection.json
