@@ -6,7 +6,11 @@
 
 # Private runtime state: DB/broker credentials, factory bundles, QR labels,
 # flash backups, local tools, screenshots and verification logs
-/.local/
+/.local/*
+!/.local/releases/
+/.local/releases/*
+!/.local/releases/firmware-*.bin
+!/.local/releases/firmware-manifest.json
 /ui-screenshots/
 FACTORY_*.json
 ESP32-*.json
