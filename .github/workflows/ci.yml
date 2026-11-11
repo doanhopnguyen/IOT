@@ -66,7 +66,7 @@ jobs:
           key: pio-${{ hashFiles('firmware/*.ini') }}
       - run: pip install platformio
       - name: Host firmware state tests
-        run: python firmware/tests/test_offline_door.py && python firmware/tests/test_setup_flow.py && python firmware/tests/test_factory_reset.py && python firmware/tests/test_servo_preview.py && python firmware/tests/test_product_qr.py && python firmware/tests/test_unclaimed_wifi_reset.py && python firmware/tests/test_door_timing.py && python firmware/tests/test_door_restriction.py && python firmware/tests/test_physical_keypad.py && python firmware/tests/test_failed_attempt_reporting.py && python firmware/tests/test_wifi_storage.py
+        run: python firmware/tests/test_offline_door.py && python firmware/tests/test_setup_flow.py && python firmware/tests/test_factory_reset.py && python firmware/tests/test_servo_preview.py && python firmware/tests/test_product_qr.py && python firmware/tests/test_unclaimed_wifi_reset.py && python firmware/tests/test_door_timing.py && python firmware/tests/test_door_restriction.py && python firmware/tests/test_physical_keypad.py && python firmware/tests/test_failed_attempt_reporting.py && python firmware/tests/test_wifi_storage.py && python -m unittest firmware/tests/test_broker_defaults.py
       - name: Build connected door firmware
         working-directory: firmware
         run: pio run -c platformio.connected.ini
@@ -77,3 +77,6 @@ jobs:
       - name: Build black-button OTA demo
         working-directory: firmware
         run: pio run -c platformio.connected.ini -e esp32-s3-ota-demo
+      - name: Build Tailscale Funnel base firmware
+        working-directory: firmware
+        run: pio run -c platformio.connected.ini -e esp32-s3-funnel

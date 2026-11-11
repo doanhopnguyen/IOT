@@ -1,6 +1,7 @@
 #pragma once
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include "../include/broker_defaults.h"
 #include <WebServer.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
@@ -438,10 +439,10 @@ bool privateHost(const String &host) {IPAddress ip;if(!ip.fromString(host))retur
 bool loadFactoryJson(JsonDocument &doc) {
   String uid=doc["deviceUid"]|"";String mac=doc["factoryMac"]|"";mac.replace(":","");mac.toUpperCase();
   if(mac!=factoryMac() || uid!="ESP32-"+factoryMac() || String(doc["deviceSecret"]|"").length()<24)return false;
-  deviceUid=uid;deviceSecret=doc["deviceSecret"].as<String>();brokerHost=doc["mqttHost"]|"";
-  brokerUser=doc["mqttUser"]|uid;brokerPassword=doc["mqttPassword"]|"";brokerCa=doc["mqttCa"]|"";
+  deviceUid=uid;deviceSecret=doc["deviceSecret"].as<String>();brokerHost=doc["mqttHost"]|BrokerDefaults::HOST;
+  brokerUser=doc["mqttUser"]|uid;brokerPassword=doc["mqttPassword"]|"";brokerCa=doc["mqttCa"]|BrokerDefaults::CA;
   brokerTls=doc["mqttTls"]|true;benchLan=doc["allowLocalPlaintext"]|false;
-  brokerPort=doc["mqttPort"]|(brokerTls?8883:1884);
+  brokerPort=doc["mqttPort"]|(brokerTls?BrokerDefaults::TLS_PORT:1884u);
   activationCode=doc["activationCode"]|"";String key=doc["setupPassword"]|"";if(key.length()>=8&&key.length()<=63)setupPassword=key;
   return true;
 }
