@@ -76,20 +76,14 @@ def broker():
     destination = LOCAL / 'mosquitto'
     destination.mkdir(exist_ok=True)
     (destination / 'data').mkdir(exist_ok=True)
-    password_file = destination / 'passwords'
-    # mosquitto_passwd -U hashes a private plaintext staging file; no secret in process arguments.
+    # Broker dùng plugin dynamic-security: backend tự tạo tài khoản thiết bị khi nạp code.
+    # File chỉ sinh lần đầu (kèm thiết bị cấp phát trước đây); sau đó broker tự quản lý.
+    from dynsec_config import write_config, plugin_path, broker_conf
     registry = LOCAL / 'broker-devices.json'
     entries = json.loads(registry.read_text()) if registry.exists() else {}
-    save(password_file, f"backend:{cfg['broker_password']}\n" + ''.join(f'{uid}:{password}\n' for uid, password in entries.items()))
-    password_tool = mosquitto_tool('mosquitto_passwd')
-    subprocess.run([password_tool, '-U', str(password_file)], check=True,
-                   stdout=subprocess.DEVNULL)
-    save(destination / 'acl', (ROOT / 'infra/mosquitto/acl').read_text())
-    save(destination / 'mosquitto.conf', '\n'.join([
-        'listener 1884 0.0.0.0', 'allow_anonymous false',
-        f'password_file {password_file.as_posix()}', f'acl_file {(destination / "acl").as_posix()}',
-        'persistence true', f'persistence_location {(destination / "data").as_posix()}/', 'log_dest stdout',
-    ]) + '\n')
+    dynsec_file = destination / 'data' / 'dynamic-security.json'
+    write_config(dynsec_file, cfg['broker_password'], entries)
+    save(destination / 'mosquitto.conf', broker_conf(1884, dynsec_file, plugin_path(mosquitto_tool('mosquitto')), destination / 'data'))
     print('Private broker configuration prepared on port 1884; existing broker on 1883 is unchanged.')
 
 

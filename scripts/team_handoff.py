@@ -105,20 +105,20 @@ def install(role, bundle):
                    DB_USERNAME=c['db_user'], DB_PASSWORD=c['db_password'], MQTT_ENABLED='true',
                    MQTT_BROKER_URL='tcp://127.0.0.1:1884', MQTT_USERNAME='backend', MQTT_PASSWORD=c['broker_password'],
                    MQTT_TOPIC_PREFIX='smartdoor-iot', FACE_PROCESSOR_URL='http://127.0.0.1:8091/extract',
-                   FACE_PROCESSOR_TOKEN=c['processor_token'], USB_ENABLED='false', SERVER_ADDRESS='0.0.0.0',
+                   FACE_PROCESSOR_TOKEN=c['processor_token'], USB_ENABLED='false',
+                   PROVISION_MQTT_HOST=c['lan'], PROVISION_MQTT_PORT='1884', SERVER_ADDRESS='0.0.0.0',
                    SERVER_PORT='8080', SESSION_COOKIE_SECURE='false', SPRING_JPA_SHOW_SQL='false',
                    APP_DEVICE_BASE_URL=f"http://{c['lan']}:8080",
                    CORS_ALLOWED_ORIGINS=','.join(f'http://{ip}:{port}' for ip in [*PEOPLE.values(),'localhost','127.0.0.1'] for port in [8080,8081]))
         write(target/'backend.env', ''.join(f'{k}={v}\n' for k,v in env.items()))
         write(target/'face.env', f"FACE_PROCESSOR_TOKEN={c['processor_token']}\nFACE_PROCESSOR_PORT=8091\n")
         from local_runtime import mosquitto_tool
-        import subprocess
         broker = (target/'mosquitto').resolve()
         (broker/'data').mkdir(parents=True, exist_ok=True)
-        write(broker/'passwords', f"backend:{c['broker_password']}\n{UID}:{c['device_mqtt_password']}\n")
-        subprocess.run([mosquitto_tool('mosquitto_passwd'), '-U', str(broker/'passwords')], check=True, stdout=subprocess.DEVNULL)
-        shutil.copy2(ROOT/'infra/mosquitto/acl', broker/'acl')
-        write(broker/'mosquitto.conf', f"listener 1884 0.0.0.0\nallow_anonymous false\npassword_file {(broker/'passwords').as_posix()}\nacl_file {(broker/'acl').as_posix()}\npersistence true\npersistence_location {(broker/'data').as_posix()}/\nlog_dest stdout\n")
+        from dynsec_config import write_config, plugin_path, broker_conf
+        dynsec_file = broker/'data'/'dynamic-security.json'
+        write_config(dynsec_file, c['broker_password'], {UID: c['device_mqtt_password']})
+        write(broker/'mosquitto.conf', broker_conf(1884, dynsec_file, plugin_path(mosquitto_tool('mosquitto')), broker/'data'))
     else:
         c = json.loads((bundle/'role.json').read_text(encoding='utf-8-sig'))
         if c['role'] != role:

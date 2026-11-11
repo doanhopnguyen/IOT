@@ -1,25 +1,12 @@
-"""Add a door/camera MQTT identity to this project's private demo broker."""
-import argparse,json,secrets,subprocess,ipaddress
-from pathlib import Path
-from local_runtime import mosquitto_tool
+"""Retired: MQTT device accounts are now created by the backend (Mosquitto dynamic security).
 
-ROOT=Path(__file__).resolve().parents[1];LOCAL=ROOT/'.local'
-def main():
- p=argparse.ArgumentParser(description=__doc__);p.add_argument('--uid',required=True);p.add_argument('--host',required=True);p.add_argument('--mqtt-port',type=int,choices=range(1,65536),metavar='PORT',default=1884);p.add_argument('--wifi-ssid');a=p.parse_args()
- if not a.uid or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_' for c in a.uid):raise SystemExit('Invalid device UID')
- ip=ipaddress.ip_address(a.host)
- if not ip.is_private or ip.is_loopback:raise SystemExit('Use the PC LAN IPv4 address reachable from ESP32')
- cfg=json.loads((LOCAL/'runtime.json').read_text());path=LOCAL/'broker-devices.json'
- entries=json.loads(path.read_text()) if path.exists() else {}
- entries.setdefault(a.uid,secrets.token_urlsafe(24));path.write_text(json.dumps(entries,indent=2))
- passwordFile=LOCAL/'mosquitto/passwords';passwordFile.write_text(f"backend:{cfg['broker_password']}\n"+''.join(f'{uid}:{password}\n' for uid,password in entries.items()))
- import os, shutil
- password_tool = mosquitto_tool('mosquitto_passwd')
- subprocess.run([password_tool,'-U',str(passwordFile)],check=True,stdout=subprocess.DEVNULL)
- connection=dict(mqttHost=a.host,mqttPort=a.mqtt_port,mqttUser=a.uid,mqttPassword=entries[a.uid],mqttTls=False,allowLocalPlaintext=True)
- if a.wifi_ssid is not None:connection.update(wifiSsid=a.wifi_ssid,wifiPassword='')
- output=LOCAL/(a.uid+'-connection.json');output.write_text(json.dumps(connection,indent=2))
- print('Private connection file:',output)
- print('Restart ONLY this project broker to reload credentials; provision with scripts/device_tool.py.')
- print('For a face node, copy mqttHost/mqttPort/mqttUser/mqttPassword into MQTT_HOST/PORT/USERNAME/PASSWORD in its private .env.')
-if __name__=='__main__':main()
+Use the admin web "Nạp code" flow, or scripts/register_local_device.py which writes the
+connection file returned by the backend. Existing devices were imported into
+dynamic-security.json by scripts/dynsec_config.py / bootstrap_local.py broker.
+"""
+import sys
+
+if __name__ == '__main__':
+    print('Đã thay bằng tạo tài khoản MQTT tự động trong backend (dynamic security). '
+          'Dùng web admin "Nạp code" hoặc scripts/register_local_device.py.', file=sys.stderr)
+    sys.exit(2)

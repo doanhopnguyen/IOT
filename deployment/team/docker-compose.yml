@@ -34,8 +34,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      - ../../.local/team/mosquitto/passwords:/mosquitto/team/passwords:ro
-      - ../../.local/team/mosquitto/acl:/mosquitto/team/acl:ro
+      # Không :ro — broker ghi lại file khi backend tạo/khoá tài khoản thiết bị.
+      - ../../.local/team/mosquitto:/mosquitto/team
       - mosquitto-data:/mosquitto/data
     ports:
       - "1884:1884"
