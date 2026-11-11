@@ -15,6 +15,9 @@ public class FirmwareRelease {
     @Column(nullable=false,length=64,columnDefinition="char(64)") private String sha256;
     @Column(name="image_size",nullable=false) private int imageSize;
     @Lob @Column(nullable=false,columnDefinition="longblob") private byte[] image;
+    @Lob @Basic(fetch=FetchType.LAZY) @Column(name="factory_image",columnDefinition="longblob") private byte[] factoryImage;
+    @Column(name="factory_sha256",length=64,columnDefinition="char(64)") private String factorySha256;
+    @Column(name="factory_size") private Integer factorySize;
     @Column(name="published_at",nullable=false) private LocalDateTime publishedAt;
     @ManyToOne(fetch=FetchType.LAZY,optional=false) @JoinColumn(name="published_by",nullable=false) private Account publishedBy;
 }

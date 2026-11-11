@@ -6,9 +6,11 @@ import java.time.LocalDateTime;
 
 @Entity @Table(name="device_inventory") @Getter @Setter @NoArgsConstructor
 public class DeviceInventory {
+    public static final String AWAITING_FLASH="AWAITING_FLASH";
+    public static final String INVENTORY="INVENTORY";
     @Id @Column(name="device_id") private Long deviceId;
     @OneToOne(fetch=FetchType.LAZY) @MapsId @JoinColumn(name="device_id") private Device device;
-    @Column(name="factory_mac",nullable=false,unique=true,length=12) private String factoryMac;
+    @Column(name="factory_mac",unique=true,length=12) private String factoryMac;
     @Column(name="claim_hash",length=64,unique=true) private String claimHash;
     @Column(nullable=false,length=24) private String state="INVENTORY";
     @Column(nullable=false) private long generation=1;
@@ -20,4 +22,6 @@ public class DeviceInventory {
     @Column(name="operation_generation") private Long operationGeneration;
     @Column(name="operation_actor_id") private Long operationActorId;
     @Column(name="state_updated_at") private LocalDateTime stateUpdatedAt;
+    @Column(name="flashed_release_id") private Long flashedReleaseId;
+    @Column(name="flashed_at") private LocalDateTime flashedAt;
 }
