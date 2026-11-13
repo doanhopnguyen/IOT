@@ -7,6 +7,7 @@ RUN cd admin-web && npm ci
 COPY admin-web admin-web
 # admin-web dùng chung hàm trạng thái thiết bị với app mobile.
 COPY IOT_mobile/src/services/api/deviceState.ts IOT_mobile/src/services/api/deviceState.ts
+COPY IOT_mobile/src/services/api/productQr.ts IOT_mobile/src/services/api/productQr.ts
 COPY smart-access-control-backend/src/main/resources smart-access-control-backend/src/main/resources
 RUN cd admin-web && npm run build
 

@@ -2,11 +2,12 @@
 import argparse,time
 from pathlib import Path
 import serial
+from serial_port import resolve_port
 
 def main():
- p=argparse.ArgumentParser(description=__doc__);p.add_argument('--port',default='COM5');p.add_argument('--log',type=Path)
+ p=argparse.ArgumentParser(description=__doc__);p.add_argument('--port',help='COM port; auto-detected when omitted');p.add_argument('--log',type=Path)
  mode=p.add_mutually_exclusive_group(required=True);mode.add_argument('--scan',action='store_true');mode.add_argument('--erase',action='store_true',help='Erase ALL fingerprint templates, then verify count zero')
- args=p.parse_args();lines=[]
+ args=p.parse_args();args.port=resolve_port(args.port);lines=[]
  with serial.Serial(args.port,115200,timeout=.25) as port:
   port.dtr=True;port.rts=False;time.sleep(.5);port.reset_input_buffer();port.write(b'SCAN\n' if args.scan else b'ERASE_FINGERPRINTS\n')
   deadline=time.monotonic()+18

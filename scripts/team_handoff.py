@@ -81,9 +81,14 @@ def create(destination, lan):
     login = f"Admin URL: http://{PEOPLE['thuy']}:8080/admin/index.html\nEmail: {c['admin_email']}\nPassword: {password}\n"
     write(destination/'bang/ADMIN_ACCESS.txt', login)
     write(destination/'cuong/ADMIN_ACCESS.txt', login)
+    # Hướng dẫn riêng từng người chỉ giữ cục bộ (.gitignore: /docs/team-tailscale/), không có trên CI/bản clone mới.
+    guides = ROOT/'docs/team-tailscale'
     for role in PEOPLE:
         for name in ('00-THU-TU-CHAY.md', f'{role.upper()}.md'):
-            shutil.copy2(ROOT/'docs/team-tailscale'/name, destination/role/name)
+            if (guides/name).is_file():
+                shutil.copy2(guides/name, destination/role/name)
+            else:
+                print('Skipped missing local guide', guides/name)
     print('Created matching SQL, role configs and factory bundle at', destination)
 
 

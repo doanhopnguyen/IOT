@@ -67,7 +67,8 @@ services:
     env_file: ../../.local/team/backend.env
     # Ghi đè các địa chỉ 127.0.0.1 trong backend.env bằng tên service trong mạng Docker.
     environment:
-      DB_URL: jdbc:mysql://mysql:3306/smart_access_team?serverTimezone=Asia/Ho_Chi_Minh
+      # Đặt DOCKER_DB_URL trong backend.env để dùng DB ngoài (vd. TiDB Cloud); mặc định là container mysql.
+      DB_URL: ${DOCKER_DB_URL:-jdbc:mysql://mysql:3306/smart_access_team?serverTimezone=Asia/Ho_Chi_Minh}
       MQTT_BROKER_URL: tcp://mosquitto:1884
       FACE_PROCESSOR_URL: http://face-api:8091/extract
       SERVER_ADDRESS: 0.0.0.0
