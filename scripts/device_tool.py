@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 import time
 import serial
+from serial_port import resolve_port
 
 def transact(port, command, timeout=15):
     with serial.Serial(port,115200,timeout=.3) as link:
@@ -35,13 +36,13 @@ def transact(port, command, timeout=15):
             raise SystemExit('No Wi-Fi cleanup acknowledgement; do not assume the network was erased.')
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--port',default='COM5')
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--port',help='COM port; auto-detected when omitted')
     sub=p.add_subparsers(dest='action',required=True)
     sub.add_parser('info')
     forget=sub.add_parser('forget-wifi',help='Clear saved Wi-Fi on an unclaimed, unconfigured chip; preserve product QR and identity')
     forget.add_argument('--confirm-uid',required=True)
     provision=sub.add_parser('provision');provision.add_argument('--device',required=True,type=Path);provision.add_argument('--connection',required=True,type=Path)
-    a=p.parse_args()
+    a=p.parse_args();a.port=resolve_port(a.port)
     if a.action=='info':transact(a.port,'INFO');return
     if a.action=='forget-wifi':
         if not re.fullmatch(r'ESP32-[0-9A-F]{12}',a.confirm_uid):p.error('Use the exact ESP32 device UID to confirm Wi-Fi cleanup.')
