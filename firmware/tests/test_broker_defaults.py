@@ -41,7 +41,7 @@ class BrokerDefaultsTests(unittest.TestCase):
         self.run_case()
 
     def test_funnel_env_exists_and_firmware_uses_defaults(self):
-        ini = (root / 'platformio.connected.ini').read_text()
+        ini = (root / 'platformio.connected.ini').read_text(encoding='utf-8')
         self.assertIn('[env:esp32-s3-funnel]', ini)
         self.assertIn('-D SMARTDOOR_FUNNEL_DEFAULTS=1', ini)
         network = (root / 'connected_door/network.h').read_text(encoding='utf-8')
