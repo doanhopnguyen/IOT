@@ -24,7 +24,7 @@ Quy tắc an toàn:
 - Thu hồi thiết bị (`DECOMMISSIONED`) khoá luôn tài khoản MQTT.
 - Nạp từ web dùng Chrome/Edge desktop, mở admin qua **HTTPS hoặc localhost**. Hộp thoại tự quét cổng đã cấp quyền mỗi 1,5 giây và khi cắm/rút USB; tự chọn nếu chỉ có một cổng, giữ lựa chọn hiện tại khi quét lại. Có nút **Quét lại cổng USB**. Cổng chưa cấp quyền lần nào vẫn cần bấm **Chọn cổng USB** một lần theo yêu cầu của trình duyệt. Tạm dừng quét khi nạp và dừng hẳn khi đóng hộp thoại. Backend vẫn cần `PROVISION_MQTT_HOST` và broker dynamic security, nhưng không cần Python/esptool hoặc `USB_ENABLED` cho Web Serial.
 - Giữ trang mở và không rút USB khi nạp. Phiên nạp bỏ dở hết hạn sau 15 phút. Nếu chip đã nạp xong nhưng mất mạng khi lưu kết quả, bấm **Xác nhận hoàn tất** để gửi lại mà không xoá chip.
-- Chưa kiểm thử nạp chip thật qua Web Serial; kiểm thử tự động dùng mô phỏng serial. Nếu USB đổi định danh sau reset và trình duyệt không mở lại được, chọn lại cổng USB rồi thử nạp lại.
+- Kiểm thử tự động Web Serial dùng mô phỏng serial. Sau reset, trang giữ kết nối để chờ INFO khi firmware khởi động chậm; nếu cổng đổi định danh, trang tìm lại cổng đã cấp quyền cùng hãng USB và kiểm tra MAC. Nếu chưa tìm được, bấm **Chọn cổng sau reset để tiếp tục** ngay trong phiên nạp, thả BOOT và nhấn RESET một lần nếu cần. Không phải ghi lại firmware chỉ vì chọn lại cổng; danh tính chỉ được gửi khi MAC khớp chip ban đầu.
 - Bản firmware dùng để nạp chip mới phải được phát hành kèm **factory image** (`scripts/build-firmware.ps1` sinh `.local/releases/factory-<phiên bản>.bin`).
 - Không ghi trước Wi-Fi nhà của người mua và không nhận cửa vào tài khoản thử trước khi giao. QR không chứa khóa xác thực thiết bị hay địa chỉ máy chủ tùy ý.
 

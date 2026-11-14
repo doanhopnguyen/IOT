@@ -63,7 +63,7 @@ test('provisions over local serial and verifies identity after reboot', async ()
   const result = await flasher.provision({ factoryMac: mac, deviceUid: uid }, () => { verifying = true; });
   assert.deepEqual(result, { factoryMac: mac, uid });
   assert.equal(verifying, true);
-  assert.equal(port.opens, 3);
+  assert.equal(port.opens, 2);
   assert.deepEqual(port.writes.map((line) => line.split(' ')[0]), ['INFO', 'FACTORY', 'INFO']);
   assert.equal(port.readable, null);
   assert.equal(port.writable, null);
@@ -78,4 +78,58 @@ test('rejects FACTORY rejection and releases serial stream locks', async () => {
   await assert.rejects(new BrowserFlasher(port).provision({ factoryMac: mac, deviceUid: uid }, () => {}), /từ chối/);
   assert.equal(port.readable, null);
   assert.equal(port.writable, null);
+});
+
+test('waits for a slow firmware response without reopening/resetting the port', async () => {
+  const port = new FakePort();
+  const reply = port.reply;
+  let firstInfo = true;
+  port.reply = function (line) {
+    if (firstInfo && line.includes('FACTORY_INFO')) {
+      firstInfo = false;
+      setTimeout(() => reply.call(this, line), 7000);
+    } else reply.call(this, line);
+  };
+  const result = await new BrowserFlasher(port).provision({ factoryMac: mac, deviceUid: uid }, () => {});
+  assert.equal(result.uid, uid);
+  assert.equal(port.opens, 2);
+  assert.deepEqual(port.writes.map((line) => line.split(' ')[0]), ['INFO', 'FACTORY', 'INFO']);
+});
+
+test('automatically recovers a unique authorized replacement USB port after reset', async () => {
+  const oldPort = new FakePort(); oldPort.connected = false;
+  const replacement = new FakePort();
+  Object.defineProperty(navigator, 'serial', { configurable: true, value: { getPorts: async () => [oldPort, replacement] } });
+  try {
+    const flasher = new BrowserFlasher(oldPort);
+    const result = await flasher.provision({ factoryMac: mac, deviceUid: uid }, () => {});
+    assert.equal(result.uid, uid);
+    assert.equal(flasher.port, replacement);
+    assert.equal(oldPort.opens, 0);
+    assert.equal(replacement.opens, 2);
+  } finally { delete navigator.serial; }
+});
+
+test('asks for a new port and continues the same provisioning operation', async () => {
+  const oldPort = new FakePort(); oldPort.connected = false;
+  const replacement = new FakePort();
+  let prompts = 0;
+  const flasher = new BrowserFlasher(oldPort);
+  const result = await flasher.provision({ factoryMac: mac, deviceUid: uid }, () => {}, async () => {
+    prompts++;
+    return replacement;
+  });
+  assert.equal(prompts, 1);
+  assert.equal(result.uid, uid);
+  assert.equal(flasher.port, replacement);
+  assert.equal(replacement.writes.filter((line) => line.startsWith('FACTORY ')).length, 1);
+});
+
+test('never sends factory credentials to a replacement chip with a different MAC', async () => {
+  const port = new FakePort();
+  const reply = port.reply;
+  port.reply = function (line) { reply.call(this, line.replace(`mac=${mac}`, 'mac=112233445566')); };
+  await assert.rejects(new BrowserFlasher(port).provision({ factoryMac: mac, deviceUid: uid }, () => {}), /chip khác/);
+  assert.equal(port.writes.some((line) => line.startsWith('FACTORY ')), false);
+  assert.equal(port.readable, null);
 });

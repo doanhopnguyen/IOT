@@ -61,7 +61,9 @@ class SerialLink {
       if (this.error || this.ended) throw Error('USB đã ngắt kết nối. Cắm lại chip rồi chọn lại cổng USB.');
       await sleep(50);
     }
-    throw Error('ESP32 chưa phản hồi. Kiểm tra cáp USB và đóng Serial Monitor rồi thử lại.');
+    const error = Error('ESP32 chưa phản hồi. Kiểm tra cáp USB và đóng Serial Monitor rồi thử lại.');
+    error.code = 'SERIAL_TIMEOUT';
+    throw error;
   }
   async close() {
     try { await this.reader?.cancel(); } catch { /* device may reboot */ }
@@ -75,22 +77,38 @@ class SerialLink {
 async function readInfo(port, mac, timeout = 45000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
+    if (port.connected === false) break;
     const link = new SerialLink(port);
+    let connected = false;
     try {
       await link.open();
-      await link.send('INFO');
-      return await link.until((line) => {
-        const info = parseInfo(line);
-        if (!info) return null;
-        if (normalizeMac(info.mac) !== normalizeMac(mac)) throw Error('Cổng USB đang kết nối với chip khác.');
-        return info;
-      }, Math.min(5000, Math.max(1, deadline - Date.now())));
+      // Opening/closing a UART bridge can reset the board. Keep the same link
+      // while firmware initializes peripherals, and reuse it to send FACTORY.
+      while (Date.now() < deadline) {
+        await link.send('INFO');
+        try {
+          const info = await link.until((line) => {
+            const info = parseInfo(line);
+            if (!info) return null;
+            if (normalizeMac(info.mac) !== normalizeMac(mac)) {
+              const error = Error('Cổng USB đang kết nối với chip khác. Chưa gửi danh tính vào chip này.');
+              error.code = 'CHIP_MISMATCH';
+              throw error;
+            }
+            return info;
+          }, Math.min(12000, Math.max(1, deadline - Date.now())));
+          connected = true;
+          return { info, link };
+        } catch (error) {
+          if (error.code !== 'SERIAL_TIMEOUT') throw error;
+        }
+      }
     } catch (error) {
-      if (error.message.includes('chip khác')) throw error;
-    } finally { await link.close(); }
+      if (error.code === 'CHIP_MISMATCH') throw error;
+    } finally { if (!connected) await link.close(); }
     await sleep(1000);
   }
-  throw Error('Không nhận được INFO sau khi chip khởi động. Nếu cổng USB đổi sau reset, bấm Chọn cổng USB rồi thử nạp lại.');
+  throw Error('Chưa nhận được INFO. Thả nút BOOT, nhấn RESET một lần rồi chọn cổng USB đang chạy firmware để tiếp tục.');
 }
 
 /** Keep the ROM connection open between reading MAC and writing the image. */
@@ -124,11 +142,30 @@ export class BrowserFlasher {
   async close() {
     if (this.port.readable || this.port.writable) await this.transport.disconnect();
   }
-  async provision(payload, onVerify) {
-    await readInfo(this.port, payload.factoryMac);
-    const link = new SerialLink(this.port);
+  async connectFirmware(mac, onReconnect) {
+    const attempted = new Set();
+    for (let attempt = 0; attempt < 3; attempt++) {
+      attempted.add(this.port);
+      try { return await readInfo(this.port, mac); }
+      catch (error) {
+        if (error.code === 'CHIP_MISMATCH' || attempt === 2) throw error;
+        // USB CDC may enumerate as a new SerialPort after the ROM resets.
+        // Only try a unique authorized replacement with the same USB vendor;
+        // its factory MAC must still match before sending any credentials.
+        const vendor = this.port.getInfo().usbVendorId;
+        const available = await globalThis.navigator?.serial?.getPorts().catch(() => []) || [];
+        const replacements = available.filter((port) => !attempted.has(port) && port.connected !== false
+          && vendor !== undefined && port.getInfo().usbVendorId === vendor);
+        if (replacements.length === 1) { this.port = replacements[0]; continue; }
+        if (!onReconnect) throw error;
+        this.port = await onReconnect(error.message);
+        if (!this.port) throw Error('Chưa chọn cổng USB sau reset.');
+      }
+    }
+  }
+  async provision(payload, onVerify, onReconnect) {
+    const { link } = await this.connectFirmware(payload.factoryMac, onReconnect);
     try {
-      await link.open();
       await link.send('FACTORY ' + JSON.stringify(payload));
       await link.until((line) => {
         if (line === 'FACTORY_REJECTED') throw Error('Chip từ chối gói cấp phát. Hãy nạp lại firmware.');
@@ -138,8 +175,10 @@ export class BrowserFlasher {
     } finally { await link.close(); }
     onVerify();
     await sleep(3000);
-    const info = await readInfo(this.port, payload.factoryMac);
-    if (info.uid !== payload.deviceUid) throw Error('Danh tính đọc lại từ chip không khớp gói vừa nạp.');
-    return { factoryMac: normalizeMac(info.mac), uid: info.uid };
+    const verified = await this.connectFirmware(payload.factoryMac, onReconnect);
+    try {
+      if (verified.info.uid !== payload.deviceUid) throw Error('Danh tính đọc lại từ chip không khớp gói vừa nạp.');
+      return { factoryMac: normalizeMac(verified.info.mac), uid: verified.info.uid };
+    } finally { await verified.link.close(); }
   }
 }

@@ -45,6 +45,7 @@ export function openFlashDialog(api, device, releases, onDone, onBusy = () => {}
         <select name="releaseId" required>${flashable.map((r) => `<option value="${r.id}">${esc(r.label)} · ${esc(r.version)}</option>`).join('')}</select></label>
       ${flashable.length ? '' : '<div class="notice">Chưa có bản firmware kèm factory image. Vào Cập nhật firmware để phát hành bản có factory image.</div>'}
       <label>Mật khẩu tài khoản hiện tại<input name="password" type="password" autocomplete="current-password" required></label>
+      <div class="usb-reconnect notice" hidden><p></p><button type="button" class="secondary reconnect">Chọn cổng sau reset để tiếp tục</button></div>
       <div class="flash-progress" hidden></div>
       <div class="error" role="alert" hidden></div>
       <div class="actions"><button type="button" class="secondary cancel">Đóng</button><button type="submit" class="start">Bắt đầu nạp</button></div>
@@ -54,8 +55,10 @@ export function openFlashDialog(api, device, releases, onDone, onBusy = () => {}
   const form = dialog.querySelector('form');
   const port = form.elements.port, status = dialog.querySelector('.usb-status'), error = dialog.querySelector('.error');
   const start = dialog.querySelector('.start'), panel = dialog.querySelector('.flash-progress');
+  const reconnectPanel = dialog.querySelector('.usb-reconnect'), reconnectButton = dialog.querySelector('.reconnect');
   let busy = false, ports = [], sessionId = null, verified = null, stage = 'READING_MAC';
   let scanVersion = 0, choosingPort = false, stopped = false;
+  let cancelReconnect = null;
   const scanButton = dialog.querySelector('.scan'), chooseButton = dialog.querySelector('.find');
   const unavailable = serialUnavailable();
   const refreshStart = () => { start.disabled = busy || !!unavailable || !flashable.length || (!verified && !port.value); };
@@ -138,6 +141,7 @@ export function openFlashDialog(api, device, releases, onDone, onBusy = () => {}
   window.addEventListener('beforeunload', preventUnload);
   const cleanup = () => {
     stopped = true;
+    cancelReconnect?.();
     ++scanVersion;
     clearInterval(scanTimer);
     observer.disconnect();
@@ -168,6 +172,35 @@ export function openFlashDialog(api, device, releases, onDone, onBusy = () => {}
       scanButton.disabled = chooseButton.disabled = !!unavailable || busy || !!verified;
     }
   };
+  const reconnect = (message) => new Promise((resolve, reject) => {
+    reconnectPanel.hidden = false;
+    reconnectPanel.querySelector('p').textContent = `${message} Firmware đã ghi xong; chọn lại cổng để tiếp tục, không cần nạp lại.`;
+    reconnectButton.disabled = false;
+    const finish = () => {
+      clearTimeout(timer);
+      reconnectPanel.hidden = true;
+      reconnectButton.disabled = true;
+      reconnectButton.onclick = null;
+      cancelReconnect = null;
+    };
+    const timer = setTimeout(() => { finish(); reject(Error('Hết thời gian chờ chọn cổng USB sau reset.')); }, 120000);
+    cancelReconnect = () => { finish(); reject(Error('Hộp thoại nạp đã đóng.')); };
+    reconnectButton.onclick = async () => {
+      reconnectButton.disabled = true;
+      try {
+        // Permission requests must run directly in a real click handler.
+        const selected = await navigator.serial.requestPort();
+        if (!dialog.isConnected) return;
+        finish();
+        resolve(selected);
+      } catch (error) {
+        reconnectPanel.querySelector('p').textContent = error.name === 'NotFoundError'
+          ? 'Chưa chọn cổng. Thả BOOT, nhấn RESET rồi chọn lại cổng của ESP32-S3 để tiếp tục.'
+          : 'Không mở được hộp thoại USB. Kiểm tra quyền trình duyệt rồi chọn lại.';
+        reconnectButton.disabled = false;
+      }
+    };
+  });
   form.onsubmit = async (event) => {
     event.preventDefault();
     if (busy) return;
@@ -196,7 +229,7 @@ export function openFlashDialog(api, device, releases, onDone, onBusy = () => {}
         const image = await api(`/api/admin/browser-flash/${encodeURIComponent(sessionId)}/image`);
         await flasher.flash(image, session.imageSha256, (percent) => renderStage('FLASHING', `Đang ghi firmware: ${percent}%. Đừng rút cáp USB.`));
         renderStage('PROVISIONING');
-        verified = await flasher.provision(session.payload, () => renderStage('VERIFYING'));
+        verified = await flasher.provision(session.payload, () => renderStage('VERIFYING'), reconnect);
         session.payload = null;
       }
       renderStage('VERIFYING', 'Chip đã xác nhận danh tính. Đang lưu kết quả lên máy chủ…');
