@@ -10,6 +10,17 @@ export function serialUnavailable() {
   return '';
 }
 
+// Firmware dùng ARDUINO_USB_CDC_ON_BOOT=1: INFO/FACTORY chỉ đi qua USB native (VID Espressif).
+// Cổng COM/UART (FTDI, CP210x, CH340...) vẫn đọc MAC và ghi được qua ROM, nhưng sau khi khởi động
+// firmware không trả lời, nên phải chặn trước khi xoá chip.
+const ESPRESSIF_USB_VID = 0x303a;
+export function wrongPortReason(port) {
+  const vendor = port?.getInfo?.()?.usbVendorId;
+  if (vendor === undefined || vendor === ESPRESSIF_USB_VID) return '';
+  return 'Cổng đang chọn là cổng COM/UART của board, firmware không nhận lệnh qua cổng này. '
+    + 'Cắm cáp vào cổng USB (native) của ESP32-S3, bấm Chọn cổng USB rồi nạp lại. Chip chưa bị xoá.';
+}
+
 export function parseInfo(line) {
   if (!line.startsWith('FACTORY_INFO ')) return null;
   return Object.fromEntries(line.slice(13).trim().split(/\s+/).filter((part) => part.includes('='))

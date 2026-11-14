@@ -133,3 +133,11 @@ test('never sends factory credentials to a replacement chip with a different MAC
   assert.equal(port.writes.some((line) => line.startsWith('FACTORY ')), false);
   assert.equal(port.readable, null);
 });
+
+test('UART bridge ports are rejected before the chip is erased', async () => {
+  const { wrongPortReason } = await import('../src/web-serial.js');
+  const port = (usbVendorId) => ({ getInfo: () => ({ usbVendorId }) });
+  assert.equal(wrongPortReason(port(0x303a)), '');
+  assert.equal(wrongPortReason({ getInfo: () => ({}) }), '');
+  for (const bridge of [0x0403, 0x10c4, 0x1a86]) assert.match(wrongPortReason(port(bridge)), /COM\/UART/);
+});

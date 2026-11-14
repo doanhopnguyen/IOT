@@ -1,4 +1,4 @@
-import { BrowserFlasher, serialUnavailable } from './web-serial.js';
+import { BrowserFlasher, serialUnavailable, wrongPortReason } from './web-serial.js';
 
 /** USB belongs to the computer running this browser. */
 const STEPS = [
@@ -217,6 +217,8 @@ export function openFlashDialog(api, device, releases, onDone, onBusy = () => {}
         }
         const selected = ports[Number(body.port)];
         if (!selected || body.port === '') throw Error('Chọn cổng USB trước khi nạp.');
+        const portProblem = wrongPortReason(selected);
+        if (portProblem) throw Error(portProblem);
         flasher = new BrowserFlasher(selected);
         renderStage('READING_MAC', 'Đang kết nối ESP32-S3. Nếu cần, giữ BOOT rồi nhấn RESET.');
         const factoryMac = await flasher.readMac();
