@@ -8,9 +8,29 @@ from pathlib import Path
 from urllib.parse import urlsplit, unquote
 import mimetypes
 import requests
+import ipaddress
 
 ROOT=Path(__file__).resolve().parents[1]
 HOP={'connection','keep-alive','proxy-authenticate','proxy-authorization','te','trailers','transfer-encoding','upgrade'}
+
+
+def proxy_headers(incoming, upstream, trusted_forwarder=False):
+    """Translate a same-origin browser request to the upstream origin.
+
+    Preserve foreign/null origins for backend CORS checks and preserve CSRF/session
+    headers. Only a loopback TLS proxy may supply the public protocol.
+    """
+    values={k.lower():v for k,v in incoming.items()}
+    connection_headers={v.strip().lower() for v in values.get('connection','').split(',')}
+    headers={k:v for k,v in values.items()
+             if k not in HOP|connection_headers|{'host','content-length','forwarded'}
+             and not k.startswith('x-forwarded-')}
+    scheme=values.get('x-forwarded-proto','http') if trusted_forwarder else 'http'
+    public_origin=f"{scheme}://{values.get('host','')}"
+    if scheme in ('http','https') and values.get('origin','').lower()==public_origin.lower():
+        target=urlsplit(upstream)
+        headers['origin']=f'{target.scheme}://{target.netloc}'
+    return headers
 
 
 def handler(upstream, admin):
@@ -49,8 +69,8 @@ def handler(upstream, admin):
             if not 0<=length<=21*1024*1024:
                 self.send_error(413);return
             body=self.rfile.read(length) if length else None
-            connection_headers={v.strip().lower() for v in self.headers.get('Connection','').split(',')}
-            headers={k:v for k,v in self.headers.items() if k.lower() not in HOP|connection_headers|{'host','content-length'}}
+            headers=proxy_headers(self.headers,upstream,
+                                  trusted_forwarder=ipaddress.ip_address(self.client_address[0]).is_loopback)
             started=False
             try:
                 with requests.request(self.command,upstream+self.path,headers=headers,data=body,
