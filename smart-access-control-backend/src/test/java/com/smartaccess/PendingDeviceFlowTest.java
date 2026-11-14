@@ -197,4 +197,77 @@ class PendingDeviceFlowTest {
   verify(brokers).upsertDevice(eq("ESP32-"+mac),anyString());
   assertThat(issued.connection()).containsEntry("mqttUser","ESP32-"+mac).containsEntry("mqttHost","192.168.1.10");
  }
+
+ @Test void browserFlashWorksWithBackendUsbDisabledAndOnlyIssuesQrAfterReadback() throws Exception {
+  when(usb.enabled()).thenReturn(false);
+  var device=pending();
+  var session=provisioning.prepareBrowser(device.deviceId(),colonMac,release,PASSWORD);
+  assertThat(stored(device.deviceId()).getClaimHash()).isNull();
+  assertThat(stored(device.deviceId()).getState()).isEqualTo("AWAITING_FLASH");
+  assertThat(provisioning.browserImage(session.jobId())).containsExactly((byte)0xE9,(byte)1,(byte)2);
+  assertThat(session.payload()).containsEntry("factoryMac",mac).containsEntry("deviceUid","ESP32-"+mac);
+  String jobJson=json.writeValueAsString(provisioning.job(session.jobId()));
+  assertThat(jobJson).doesNotContain((String)session.payload().get("deviceSecret"))
+    .doesNotContain((String)session.payload().get("mqttPassword"));
+  var done=provisioning.completeBrowser(session.jobId(),mac,"ESP32-"+mac);
+  assertThat(done.stage()).isEqualTo(Stage.DONE);
+  assertThat(deployment.inspect(done.result().activationCode()).deviceUid()).isEqualTo("ESP32-"+mac);
+  assertThat(provisioning.completeBrowser(session.jobId(),mac,"ESP32-"+mac)).isEqualTo(done);
+  assertThatThrownBy(()->provisioning.browserImage(session.jobId())).isInstanceOf(BusinessException.class);
+  verifyNoInteractions(usb);
+ }
+ @Test void browserSessionRejectsOtherAdminsAndNonAdmins(){
+  var session=provisioning.prepareBrowser(pending().deviceId(),colonMac,release,PASSWORD);
+  login(otherAdmin);
+  assertThatThrownBy(()->provisioning.browserImage(session.jobId())).isInstanceOf(BusinessException.class);
+  assertThatThrownBy(()->provisioning.completeBrowser(session.jobId(),mac,"ESP32-"+mac)).isInstanceOf(BusinessException.class);
+  assertThatThrownBy(()->provisioning.cancelBrowser(session.jobId())).isInstanceOf(BusinessException.class);
+  login(owner);
+  assertThatThrownBy(()->provisioning.browserImage(session.jobId())).isInstanceOf(BusinessException.class);
+  login(admin);provisioning.cancelBrowser(session.jobId());
+ }
+ @Test void browserSessionLocksAgainstBackendFlashAndDeleteAndCancelAllowsRetry(){
+  var device=pending();var session=provisioning.prepareBrowser(device.deviceId(),colonMac,release,PASSWORD);
+  assertThatThrownBy(()->flash(device.deviceId())).hasMessageContaining("đang được nạp");
+  assertThatThrownBy(()->provisioning.deletePending(device.deviceId())).hasMessageContaining("đang được nạp");
+  assertThatThrownBy(()->provisioning.completeBrowser(session.jobId(),mac,"wrong-uid")).hasMessageContaining("khác gói");
+  assertThat(stored(device.deviceId()).getClaimHash()).isNull();
+  provisioning.cancelBrowser(session.jobId());
+  assertThatThrownBy(()->provisioning.completeBrowser(session.jobId(),mac,"ESP32-"+mac)).hasMessageContaining("kết thúc");
+  var retry=provisioning.prepareBrowser(device.deviceId(),colonMac,release,PASSWORD);
+  assertThat(retry.payload().get("deviceSecret")).isNotEqualTo(session.payload().get("deviceSecret"));
+  provisioning.cancelBrowser(retry.jobId());
+ }
+ @Test void browserPrepareRejectsBadPasswordMissingImageAndOccupiedChip(){
+  var device=pending();
+  assertThatThrownBy(()->provisioning.prepareBrowser(device.deviceId(),colonMac,release,"bad")).isInstanceOf(BusinessException.class);
+  assertThatThrownBy(()->provisioning.prepareBrowser(device.deviceId(),colonMac,bareRelease,PASSWORD)).hasMessageContaining("factory image");
+  assertThatThrownBy(()->provisioning.prepareBrowser(device.deviceId(),"00:00:00:00:00:00",release,PASSWORD)).hasMessageContaining("MAC");
+  deployment.register(mac,"Cửa đang dùng");clearInvocations(brokers);
+  assertThatThrownBy(()->provisioning.prepareBrowser(device.deviceId(),colonMac,release,PASSWORD)).hasMessageContaining("đã thuộc");
+  verifyNoInteractions(brokers,usb);
+ }
+ @Test void browserBrokerFailureReleasesLockWithoutIssuingClaim(){
+  var device=pending();
+  doThrow(new BusinessException(org.springframework.http.HttpStatus.BAD_GATEWAY,"Broker lỗi")).when(brokers).upsertDevice(anyString(),anyString());
+  assertThatThrownBy(()->provisioning.prepareBrowser(device.deviceId(),colonMac,release,PASSWORD)).hasMessageContaining("Broker lỗi");
+  assertThat(stored(device.deviceId()).getClaimHash()).isNull();
+  reset(brokers);
+  var session=provisioning.prepareBrowser(device.deviceId(),colonMac,release,PASSWORD);
+  provisioning.cancelBrowser(session.jobId());
+ }
+ @Test void abandonedBrowserSessionExpiresAndReleasesDevice() throws Exception {
+  var device=pending();var session=provisioning.prepareBrowser(device.deviceId(),colonMac,release,PASSWORD);
+  var field=DeviceProvisioningService.class.getDeclaredField("jobs");field.setAccessible(true);
+  Object job=((Map<?,?>)field.get(provisioning)).get(session.jobId());
+  var expires=job.getClass().getDeclaredField("expiresAt");expires.setAccessible(true);
+  expires.set(job,java.time.Instant.now().minusSeconds(1));
+  provisioning.expireBrowserSessions();
+  assertThat(provisioning.job(session.jobId()).stage()).isEqualTo(Stage.FAILED);
+  assertThatThrownBy(()->provisioning.browserImage(session.jobId())).isInstanceOf(BusinessException.class);
+  var bundle=job.getClass().getDeclaredField("bundle");bundle.setAccessible(true);assertThat(bundle.get(job)).isNull();
+  assertThat(stored(device.deviceId()).getClaimHash()).isNull();
+  var retry=provisioning.prepareBrowser(device.deviceId(),colonMac,release,PASSWORD);
+  provisioning.cancelBrowser(retry.jobId());
+ }
 }

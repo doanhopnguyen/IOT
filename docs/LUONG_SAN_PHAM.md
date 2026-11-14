@@ -1,6 +1,6 @@
 # Luồng sản phẩm Smart Door — 06/11/2026
 
-Cập nhật 11/11/2026: admin thêm thiết bị trước rồi nạp code từ web (xem mục dưới); CLI chỉ còn là đường dự phòng. Firmware cơ sở **1.14.0** hỗ trợ OTA, chủ cửa tự xác nhận nhận bản do admin phát hành. Xem [hướng dẫn demo OTA và cấp phát hiện tại](DEMO_CAP_NHAT_FIRMWARE_TU_XA.md).
+Cập nhật 14/11/2026: admin nạp chip qua Web Serial trên **máy đang mở trình duyệt**; backend có thể ở máy khác hoặc Docker. CLI chỉ còn là đường dự phòng. Firmware cơ sở **1.14.0** hỗ trợ OTA, chủ cửa tự xác nhận nhận bản do admin phát hành. Xem [hướng dẫn demo OTA và cấp phát hiện tại](DEMO_CAP_NHAT_FIRMWARE_TU_XA.md).
 
 Đây là luồng mới theo yêu cầu người dùng, thay cho các hướng dẫn demo trước đây bắt người mua nhập hoặc đổi địa chỉ backend.
 
@@ -11,10 +11,10 @@ Cập nhật 11/11/2026: admin **thêm thiết bị trước**, rồi mới nạ
 | Bước | Ai | Việc | Trạng thái kho |
 |---|---|---|---|
 | 1 | Admin (web) | **Thêm thiết bị**: chỉ nhập tên. Hệ thống tạo bản ghi với UID tạm `PENDING-…`, chưa có secret | `AWAITING_FLASH` — Chờ nạp code |
-| 2 | Admin (web) | Cắm ESP32-S3 vào **máy chạy backend** → **Nạp code**: chọn cổng USB, chọn bản firmware có factory image, nhập lại mật khẩu | `AWAITING_FLASH` |
-| 3 | Backend | Đọc MAC → gắn chip, UID thành `ESP32-<MAC>`, sinh secret/mã nhận cửa/mật khẩu mạng thiết lập/mật khẩu MQTT | `AWAITING_FLASH` |
+| 2 | Admin (web) | Cắm ESP32-S3 vào **máy đang mở admin** → **Nạp code**: cấp quyền cổng USB, chọn bản firmware có factory image, nhập lại mật khẩu | `AWAITING_FLASH` |
+| 3 | Trình duyệt + Backend | Trình duyệt đọc MAC; BE gắn chip, UID thành `ESP32-<MAC>`, sinh secret/mã nhận cửa/mật khẩu mạng thiết lập/mật khẩu MQTT | `AWAITING_FLASH` |
 | 4 | Backend | Tạo tài khoản MQTT riêng cho UID qua Mosquitto dynamic security (không restart broker) | — |
-| 5 | Backend | Xoá flash, ghi factory image, gửi gói `FACTORY` qua serial, kiểm tra `INFO` khớp UID | — |
+| 5 | Trình duyệt | Kiểm tra SHA-256 của factory image, xoá flash, ghi và kiểm tra MD5, gửi gói `FACTORY` qua Web Serial, đọc lại `INFO` khớp MAC/UID sau reset | — |
 | 6 | Backend | Mở mã nhận cửa; web hiện QR để in và dán sản phẩm | `INVENTORY` — Chưa nhận cửa |
 
 Quy tắc an toàn:
@@ -22,7 +22,9 @@ Quy tắc an toàn:
 - Tài khoản broker được tạo trước khi xoá flash: broker lỗi thì chip còn nguyên.
 - Mã nhận cửa chỉ có hiệu lực sau khi chip xác nhận `FACTORY_PROVISIONED`. Nạp lại sinh bộ bí mật mới, QR cũ hết hiệu lực.
 - Thu hồi thiết bị (`DECOMMISSIONED`) khoá luôn tài khoản MQTT.
-- Nạp từ web cần backend chạy **trực tiếp** trên máy cắm chip (`USB_ENABLED=true`, `USB_ESPTOOL_SCRIPT`, `PROVISION_MQTT_HOST`). Backend chạy trong Docker không thấy cổng COM: dùng đường CLI dự phòng (`scripts/register_local_device.py` rồi `scripts/device_tool.py provision`).
+- Nạp từ web dùng Chrome/Edge desktop, mở admin qua **HTTPS hoặc localhost**. Hộp thoại tự quét cổng đã cấp quyền mỗi 1,5 giây và khi cắm/rút USB; tự chọn nếu chỉ có một cổng, giữ lựa chọn hiện tại khi quét lại. Có nút **Quét lại cổng USB**. Cổng chưa cấp quyền lần nào vẫn cần bấm **Chọn cổng USB** một lần theo yêu cầu của trình duyệt. Tạm dừng quét khi nạp và dừng hẳn khi đóng hộp thoại. Backend vẫn cần `PROVISION_MQTT_HOST` và broker dynamic security, nhưng không cần Python/esptool hoặc `USB_ENABLED` cho Web Serial.
+- Giữ trang mở và không rút USB khi nạp. Phiên nạp bỏ dở hết hạn sau 15 phút. Nếu chip đã nạp xong nhưng mất mạng khi lưu kết quả, bấm **Xác nhận hoàn tất** để gửi lại mà không xoá chip.
+- Chưa kiểm thử nạp chip thật qua Web Serial; kiểm thử tự động dùng mô phỏng serial. Nếu USB đổi định danh sau reset và trình duyệt không mở lại được, chọn lại cổng USB rồi thử nạp lại.
 - Bản firmware dùng để nạp chip mới phải được phát hành kèm **factory image** (`scripts/build-firmware.ps1` sinh `.local/releases/factory-<phiên bản>.bin`).
 - Không ghi trước Wi-Fi nhà của người mua và không nhận cửa vào tài khoản thử trước khi giao. QR không chứa khóa xác thực thiết bị hay địa chỉ máy chủ tùy ý.
 

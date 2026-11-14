@@ -78,7 +78,7 @@ Thông tin đăng nhập admin được lưu riêng trong [`.local/ADMIN_ACCESS.
 
 Admin quản lý tài khoản và danh mục thiết bị. Chủ cửa dùng mobile để quản lý thành viên và quyền của cửa.
 
-Trang admin hiện vẫn có công cụ đọc USB của **máy backend**. Khi server và máy kỹ thuật khác nhau, hãy đọc MAC bằng công cụ cục bộ ở [mục 5.3](#53-cấp-phát-một-chip-mới-trước-khi-giao), sau đó nhập MAC vào web. Công cụ trên server không đọc được COM của máy đang mở trình duyệt. Luồng sản xuất tách riêng/Web Serial được mô tả trong [thiết kế điều chỉnh](docs/DIEU_CHINH_NGHIEP_VU_SAN_PHAM.md).
+Trang admin nạp thiết bị bằng **Web Serial trên máy đang mở trình duyệt**. Dùng Chrome/Edge desktop qua HTTPS hoặc localhost, cắm chip vào máy này rồi bấm **Nạp code → Chọn cổng USB** và cấp quyền lần đầu. Những lần sau trang tìm lại các cổng đã cấp quyền. Backend có thể chạy trên máy khác; xem [luồng sản phẩm](LUONG_SAN_PHAM.md). Công cụ CLI ở [mục 5.3](#53-cấp-phát-một-chip-mới-trước-khi-giao) vẫn là đường dự phòng.
 
 ## 4. Chạy mobile bằng Expo Go
 

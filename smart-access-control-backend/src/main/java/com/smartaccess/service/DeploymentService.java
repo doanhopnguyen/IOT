@@ -30,7 +30,7 @@ public class DeploymentService {
         public Issued(InventoryView device,String activationCode,String deviceSecret,String setupSsid,String setupPassword,
                       com.smartaccess.dto.manager.CommandResponse syncCommand){this(device,activationCode,deviceSecret,setupSsid,setupPassword,syncCommand,null);}
     }
-    /** Gói nạp vào chip qua serial; chỉ sống trong bộ nhớ của job nạp, không lưu, không trả ra API. */
+    /** Gói nạp qua serial; chỉ giữ trong bộ nhớ, gửi riêng cho admin đã xác thực lại khi dùng Web Serial. */
     public record FactoryBundle(InventoryView device,Map<String,Object> serialPayload,String mqttPassword,String activationCode,String setupPassword) {
         @Override public String toString(){return "FactoryBundle["+device.deviceUid()+"]";}
     }

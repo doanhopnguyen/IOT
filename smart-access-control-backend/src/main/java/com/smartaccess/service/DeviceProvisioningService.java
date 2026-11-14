@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.server.ResponseStatusException;
 import java.time.Duration;
 import java.time.Instant;
@@ -25,6 +26,10 @@ import static org.springframework.http.HttpStatus.*;
 public class DeviceProvisioningService {
     public enum Stage { READING_MAC, BINDING, BROKER, FLASHING, PROVISIONING, VERIFYING, DONE, FAILED }
     public record JobView(String jobId, Long deviceId, Stage stage, Stage failedAt, String error, DeploymentService.Issued result) {}
+    /** Only returned to the reauthenticated admin who owns this browser session. */
+    public record BrowserSession(String jobId, Map<String,Object> payload, String imageSha256) {
+        @Override public String toString() { return "BrowserSession[" + jobId + "]"; }
+    }
     private static final Logger log = LoggerFactory.getLogger(DeviceProvisioningService.class);
     private static final Duration KEEP = Duration.ofMinutes(30);
     private static final String HARDWARE = "esp32s3-n16r8";
@@ -34,6 +39,7 @@ public class DeviceProvisioningService {
         final Long deviceId; final Long actorId;
         volatile Stage stage = Stage.READING_MAC; volatile Stage failedAt; volatile String error;
         volatile DeploymentService.Issued result; volatile Instant finishedAt;
+        DeploymentService.FactoryBundle bundle; Long releaseId; Instant expiresAt;
         Job(Long deviceId, Long actorId) { this.deviceId = deviceId; this.actorId = actorId; }
     }
 
@@ -79,6 +85,108 @@ public class DeviceProvisioningService {
             throw new BusinessException(SERVICE_UNAVAILABLE, "Không bắt đầu được job nạp code");
         }
         return view(job, true);
+    }
+
+    public BrowserSession prepareBrowser(Long deviceId, String mac, Long releaseId, String password) {
+        Account actor = admin();
+        if (password == null || !passwords.matches(password, actor.getPasswordHash()))
+            throw new BusinessException(FORBIDDEN, "Cần xác thực lại mật khẩu tài khoản");
+        if (mac == null || !mac.matches("(?i)[0-9a-f]{2}(:[0-9a-f]{2}){5}")
+                || mac.equalsIgnoreCase("00:00:00:00:00:00") || mac.equalsIgnoreCase("FF:FF:FF:FF:FF:FF"))
+            throw new BusinessException(BAD_REQUEST, "MAC đọc từ chip không hợp lệ");
+        connection.requireConfigured();
+        FirmwareRelease release = releaseId == null ? null : releases.findById(releaseId).orElse(null);
+        if (release == null) throw new BusinessException(NOT_FOUND, "Không tìm thấy bản firmware");
+        if (!HARDWARE.equals(release.getHardwareVersion()) || release.getFactorySha256() == null
+                || release.getFactoryImage() == null || release.getFactoryImage().length == 0)
+            throw new BusinessException(CONFLICT, "Bản firmware này chưa có factory image");
+        deployment.requireFlashable(deviceId);
+        expireBrowserSessions();
+        Job job = new Job(deviceId, actor.getAccountId());
+        if (running.putIfAbsent(deviceId, job.id) != null)
+            throw new BusinessException(CONFLICT, "Thiết bị đang được nạp");
+        try {
+            job.bundle = deployment.bindForFlash(deviceId, mac, actor.getAccountId());
+            brokers.upsertDevice(job.bundle.device().deviceUid(), job.bundle.mqttPassword());
+            job.releaseId = releaseId;
+            job.expiresAt = Instant.now().plus(Duration.ofMinutes(15));
+            job.stage = Stage.FLASHING;
+            jobs.put(job.id, job);
+            return new BrowserSession(job.id, job.bundle.serialPayload(), release.getFactorySha256());
+        } catch (RuntimeException e) {
+            running.remove(deviceId, job.id);
+            throw e;
+        }
+    }
+
+    public byte[] browserImage(String jobId) {
+        Job job = browserOwner(jobId);
+        synchronized (job) {
+            requireBrowserActive(job);
+            return releases.findById(job.releaseId).map(FirmwareRelease::getFactoryImage)
+                    .orElseThrow(() -> new BusinessException(NOT_FOUND, "Không tìm thấy bản firmware"));
+        }
+    }
+
+    /** Browser reports the identity read back from INFO after the chip restarts. */
+    public JobView completeBrowser(String jobId, String mac, String uid) {
+        Job job = browserOwner(jobId);
+        synchronized (job) {
+            if (job.stage == Stage.DONE) return view(job, true); // retry after a lost HTTP response
+            requireBrowserActive(job);
+            String expected = String.valueOf(job.bundle.serialPayload().get("factoryMac"));
+            if (!expected.equalsIgnoreCase(mac) || !job.bundle.device().deviceUid().equals(uid))
+                throw new BusinessException(CONFLICT, "Chip khởi động lại với danh tính khác gói vừa nạp");
+            job.result = deployment.markFlashed(job.releaseId, job.bundle);
+            job.stage = Stage.DONE;
+            finishBrowser(job);
+            return view(job, true);
+        }
+    }
+
+    public void cancelBrowser(String jobId) {
+        Job job = browserOwner(jobId);
+        synchronized (job) {
+            if (job.finishedAt == null) {
+                fail(job, "Phiên nạp trên trình duyệt đã dừng; có thể thử nạp lại");
+                finishBrowser(job);
+            }
+        }
+    }
+
+    private Job browserOwner(String jobId) {
+        Account actor = admin();
+        Job job = jobs.get(jobId);
+        if (job == null || job.expiresAt == null) throw new BusinessException(NOT_FOUND, "Không tìm thấy phiên nạp");
+        if (!Objects.equals(job.actorId, actor.getAccountId())) throw new BusinessException(FORBIDDEN, "Phiên nạp thuộc admin khác");
+        return job;
+    }
+
+    private void requireBrowserActive(Job job) {
+        if (job.finishedAt == null && Instant.now().isAfter(job.expiresAt)) {
+            fail(job, "Phiên nạp đã hết hạn; hãy nạp lại");
+            finishBrowser(job);
+        }
+        if (job.finishedAt != null) throw new BusinessException(CONFLICT, "Phiên nạp đã kết thúc; hãy nạp lại");
+    }
+
+    private void finishBrowser(Job job) {
+        job.bundle = null;
+        job.finishedAt = Instant.now();
+        running.remove(job.deviceId, job.id);
+    }
+
+    @Scheduled(fixedDelay = 60000)
+    public void expireBrowserSessions() {
+        for (Job job : jobs.values()) {
+            synchronized (job) {
+                if (job.expiresAt != null && job.finishedAt == null && Instant.now().isAfter(job.expiresAt)) {
+                    fail(job, "Phiên nạp đã hết hạn; hãy nạp lại");
+                    finishBrowser(job);
+                }
+            }
+        }
+        prune();
     }
 
     /** Xoá thiết bị chờ nạp; giữ chỗ trong `running` để không có job nào bắt đầu giữa chừng. */

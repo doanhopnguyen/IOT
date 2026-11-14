@@ -120,7 +120,9 @@ async function api(path, method = 'GET', body) {
         : message,
     );
   }
-  return response.status === 204 ? null : response.json();
+  if (response.status === 204) return null;
+  return response.headers.get('Content-Type')?.includes('application/octet-stream')
+    ? response.arrayBuffer() : response.json();
 }
 function notify(message, error = false) {
   document.querySelector('.toast')?.remove();

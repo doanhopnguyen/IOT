@@ -67,10 +67,10 @@ Khác LAN: cần broker TLS có DNS mà cả ESP32 và backend đều truy cập
 
 ## Chuẩn bị thêm một ESP32 và cấp QR
 
-1. Gắn thiết bị USB, xem cổng COM trong Device Manager. Không mặc định mọi thiết bị đều là COM5.
-2. Trên web admin mở **Đăng ký chip & QR** → **Tìm cổng USB** → chọn cổng của ESP32-S3 (ví dụ COM5) → **Đọc MAC qua USB**. MAC tự điền vào form. USB phải cắm vào **máy đang chạy backend**; điện thoại/máy khác mở admin qua Tailscale vẫn đọc cổng của máy backend. Đóng Serial Monitor trước khi đọc. ESP32 sẽ khởi động lại; thao tác chỉ đọc, không xóa hoặc nạp firmware.
+1. Mở web admin bằng Chrome/Edge trên máy tính qua HTTPS hoặc localhost. Gắn ESP32-S3 vào **máy đang mở admin**, đóng Serial Monitor.
+2. **Thêm thiết bị** nếu chưa có → **Nạp code** → **Chọn cổng USB**, cấp quyền trong hộp thoại trình duyệt → chọn firmware có factory image, nhập lại mật khẩu → **Bắt đầu nạp**. Luồng này xoá flash và nạp lại chip. Giữ trang mở tới khi hiện QR bàn giao. Những lần sau trang tự tìm lại các cổng đã được cấp quyền; xem [luồng sản phẩm](LUONG_SAN_PHAM.md).
 
-Script `scripts/start-local.ps1 backend` tự bật tính năng nếu tìm thấy Python/esptool của PlatformIO trên máy. Triển khai ở máy khác có thể cấu hình `USB_ENABLED=true`, `USB_PYTHON_EXECUTABLE` và `USB_ESPTOOL_SCRIPT` trong backend `.env`; Python cần có `pyserial`. Nếu không dùng USB trên backend, để `USB_ENABLED=false`. API `/api/admin/usb/*` chỉ dành cho admin; thao tác đọc dùng POST và CSRF.
+Web Serial không cần Python/esptool hoặc bật USB trên backend. Backend có thể chạy trong Docker hoặc máy khác, nhưng cần cấu hình broker cho cấp phát thiết bị. API USB máy chủ cũ `/api/admin/usb/*` vẫn được giữ làm đường dự phòng: chỉ khi dùng API này mới cần `USB_ENABLED=true`, `USB_PYTHON_EXECUTABLE`, `USB_ESPTOOL_SCRIPT` và `pyserial` trên máy backend; API này không đọc USB máy trình duyệt.
 
 Cách dự phòng bằng PowerShell:
 

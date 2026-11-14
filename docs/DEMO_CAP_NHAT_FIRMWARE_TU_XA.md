@@ -138,7 +138,7 @@ Lệnh chỉ build và tạo tệp trong `.local/releases`; không nạp chip ho
 
 Chip đang bàn giao đã được làm bước này.
 
-**Đường chính (web admin):** Thêm thiết bị → cắm ESP32-S3 vào máy chạy backend → **Nạp code** ở dòng thiết bị → chọn cổng và bản firmware có factory image → chờ các bước ✓ → in QR. Backend cần `USB_ENABLED=true`, `USB_ESPTOOL_SCRIPT` và `PROVISION_MQTT_HOST` (địa chỉ broker ESP32 truy cập được). Broker phải chạy plugin dynamic security (`scripts/bootstrap_local.py broker` hoặc `deployment/team`).
+**Đường chính (web admin, Web Serial):** Mở admin bằng Chrome/Edge desktop qua HTTPS hoặc localhost. Thêm thiết bị → cắm ESP32-S3 vào **máy đang mở admin** → **Nạp code** ở dòng thiết bị → **Chọn cổng USB**, cấp quyền lần đầu → chọn bản firmware có factory image, nhập lại mật khẩu → chờ các bước ✓ → in QR. Những lần sau trang tự tìm các cổng đã cấp quyền. Backend có thể ở máy khác hoặc Docker, không cần bật USB/Python/esptool cho luồng này; vẫn cần `PROVISION_MQTT_HOST` (địa chỉ broker ESP32 truy cập được). Broker phải chạy plugin dynamic security (`scripts/bootstrap_local.py broker` hoặc `deployment/team`). Giữ trang mở khi nạp. Nếu mất mạng sau khi chip đã xác nhận, dùng **Xác nhận hoàn tất** để thử lưu lại kết quả. Chi tiết tại [luồng sản phẩm](LUONG_SAN_PHAM.md).
 
 **Đường dự phòng (backend chạy Docker, không thấy USB):**
 
