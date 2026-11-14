@@ -72,10 +72,13 @@ services:
       MQTT_BROKER_URL: tcp://mosquitto:1884
       FACE_PROCESSOR_URL: http://face-api:8091/extract
       SERVER_ADDRESS: 0.0.0.0
+      # Đường dẫn CA trong container (file ở .local/team/certs/), vì PROVISION_MQTT_CA_FILE thường là đường dẫn Windows.
+      PROVISION_MQTT_CA_FILE: ${DOCKER_PROVISION_MQTT_CA_FILE:-${PROVISION_MQTT_CA_FILE:-}}
     ports:
       - "8080:8080"
     volumes:
       - uploads:/app/uploads
+      - ../../.local/team/certs:/app/certs:ro
 
 volumes:
   mysql-data:
