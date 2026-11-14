@@ -28,6 +28,12 @@ public class AdminProvisioningController {
     public DeploymentService.InventoryView create(@Valid @RequestBody Pending input) { return deployment.createPending(input.name()); }
     @DeleteMapping("/api/admin/inventory/pending/{deviceId}") @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long deviceId) { provisioning.deletePending(deviceId); }
+    public record Reauth(@NotBlank @Size(max = 200) String password) {}
+    /** Thiết bị đã thu hồi: giữ lịch sử, trả MAC/UID để chip được nạp lại thành thiết bị mới. */
+    @PostMapping("/api/admin/inventory/{deviceId}/release-chip")
+    public DeploymentService.InventoryView releaseChip(@PathVariable Long deviceId, @Valid @RequestBody Reauth input) {
+        return deployment.releaseChip(deviceId, input.password());
+    }
     @PostMapping("/api/admin/inventory/{deviceId}/flash") @ResponseStatus(HttpStatus.ACCEPTED)
     public DeviceProvisioningService.JobView flash(@PathVariable Long deviceId, @Valid @RequestBody Flash input) {
         return provisioning.start(deviceId, input.port(), input.releaseId(), input.password());

@@ -445,7 +445,7 @@ function deviceRow(d) {
     <td><span class="connection ${online(d) ? 'online' : ''}"><span class="dot"></span>${online(d) ? 'Online' : 'Offline'}</span><small>${date(d.lastSeenAt)}</small></td>
     <td class="actions"><button class="secondary" data-device-detail="${esc(d.deviceUid)}">Chi tiết</button>
     ${d.allowedTransitions?.length ? `<button class="secondary" data-lifecycle="${esc(d.deviceUid)}">Thay đổi trạng thái</button>` : ''}
-    ${retired ? '' : d.state === 'RESETTING' ? '<small>Đang chờ xác nhận xóa từ thiết bị</small>' : d.unitId ? `<button class="danger-outline" data-reset="${esc(d.deviceUid)}" ${resetAvailable(d) ? '' : 'disabled title="Cần thiết bị hoạt động và online để reset"'}>Đặt lại / Chuyển giao</button>` : d.state === 'INVENTORY' && d.operationUuid ? `<button class="secondary" data-code="${esc(d.deviceUid)}">Cấp mã mới</button>` : flashActions(d)}</td></tr>`;
+    ${retired ? (d.factoryMac ? `<button class="danger-outline" data-release="${d.deviceId}" title="Giữ lịch sử thiết bị này, trả MAC để nạp chip thành thiết bị mới">Giải phóng chip</button>` : '<small>Đã giải phóng chip</small>') : d.state === 'RESETTING' ? '<small>Đang chờ xác nhận xóa từ thiết bị</small>' : d.unitId ? `<button class="danger-outline" data-reset="${esc(d.deviceUid)}" ${resetAvailable(d) ? '' : 'disabled title="Cần thiết bị hoạt động và online để reset"'}>Đặt lại / Chuyển giao</button>` : d.state === 'INVENTORY' && d.operationUuid ? `<button class="secondary" data-code="${esc(d.deviceUid)}">Cấp mã mới</button>` : flashActions(d)}</td></tr>`;
 }
 function accountPagination(pageCount) {
   const pages = Array.from({ length: pageCount }, (_, i) => i + 1).filter(
@@ -559,6 +559,9 @@ function wireRows() {
   document
     .querySelectorAll('[data-code]')
     .forEach((b) => (b.onclick = () => issueCode(b.dataset.code)));
+  document
+    .querySelectorAll('[data-release]')
+    .forEach((b) => (b.onclick = () => releaseChip(b.dataset.release)));
   document
     .querySelectorAll('[data-status]')
     .forEach((b) => (b.onclick = () => setStatus(b.dataset.status, b.dataset.next)));
@@ -745,6 +748,22 @@ function resetDialog(uid) {
   pin.inputMode = 'numeric'; pin.pattern = '[0-9]{6}'; pin.maxLength = 6;
   pin.required = true; pin.autocomplete = 'off'; label.append(pin);
   accountPassword.closest('label').after(label);
+}
+function releaseChip(deviceId) {
+  const d = inventory.find((item) => String(item.deviceId) === String(deviceId));
+  if (!d) return;
+  createDialog(
+    'Giải phóng chip để tái sử dụng',
+    `Thiết bị "${esc(d.name)}" vẫn ở trạng thái thu hồi và giữ nguyên lịch sử. MAC ${esc(d.factoryMac)} được trả lại để chip này thêm và nạp code thành thiết bị mới (nạp code sẽ xoá toàn bộ chip).`,
+    '<label>Mật khẩu admin hiện tại<input name="password" type="password" autocomplete="current-password" required></label>',
+    'Giải phóng chip',
+    async (body) => {
+      await api(`/api/admin/inventory/${encodeURIComponent(deviceId)}/release-chip`, 'POST', body);
+      notify('Đã giải phóng chip. Thêm thiết bị mới rồi bấm Nạp code với chip này.');
+      setTimeout(() => { void refresh(true); }, 0);
+    },
+    true,
+  );
 }
 function issueCode(uid) {
   createDialog(

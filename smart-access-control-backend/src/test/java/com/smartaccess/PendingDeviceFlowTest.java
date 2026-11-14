@@ -46,6 +46,7 @@ class PendingDeviceFlowTest {
  @Autowired AccountRepository accounts;@Autowired FirmwareReleaseRepository releases;@Autowired PasswordEncoder passwords;
  @Autowired BrokerAccounts brokers;@Autowired UsbDeviceService usb;@Autowired TestExecutor executor;
  @Autowired DeviceAuthenticationService authentication;@Autowired ObjectMapper json;
+ @jakarta.persistence.PersistenceContext jakarta.persistence.EntityManager em;
  static int seq;Long admin,owner,otherAdmin,release,bareRelease;String mac,colonMac;
 
  @BeforeEach void seed(){
@@ -162,6 +163,32 @@ class PendingDeviceFlowTest {
   var view=pending();
   assertThatThrownBy(()->provisioning.start(view.deviceId(),"COM5",bareRelease,PASSWORD)).isInstanceOf(RuntimeException.class).hasMessageContaining("factory image");
   verifyNoInteractions(brokers);verify(usb,never()).read(any());
+ }
+ @Test void decommissionedChipCanBeReleasedAndReflashedAsNewDeviceKeepingHistory(){
+  var old=pending();assertThat(flash(old.deviceId()).stage()).isEqualTo(Stage.DONE);
+  // Chưa thu hồi thì không được giải phóng; mật khẩu sai cũng bị chặn.
+  assertThatThrownBy(()->deployment.releaseChip(old.deviceId(),PASSWORD)).isInstanceOf(RuntimeException.class);
+  tx.executeWithoutResult(s->{Device d=devices.findById(old.deviceId()).orElseThrow();
+   d.setLifecycleStatus(DeviceLifecycleStatus.DECOMMISSIONED);d.setDeviceSecretHash(null);});
+  assertThatThrownBy(()->deployment.releaseChip(old.deviceId(),"wrong")).isInstanceOf(RuntimeException.class);
+  login(owner);assertThatThrownBy(()->deployment.releaseChip(old.deviceId(),PASSWORD)).isInstanceOf(RuntimeException.class);
+  login(admin);
+  // Trước khi giải phóng, chip đã thu hồi không gắn được vào thiết bị mới.
+  var blocked=pending();flash(blocked.deviceId());
+  assertThat(stored(blocked.deviceId()).getFactoryMac()).isNull();
+
+  var released=deployment.releaseChip(old.deviceId(),PASSWORD);
+  assertThat(released.factoryMac()).isNull();assertThat(released.deviceUid()).isEqualTo("RETIRED-"+old.deviceId()+"-"+mac);
+  assertThat(released.lifecycleStatus()).isEqualTo(DeviceLifecycleStatus.DECOMMISSIONED);
+  assertThatThrownBy(()->deployment.releaseChip(old.deviceId(),PASSWORD)).isInstanceOf(RuntimeException.class);
+
+  var reused=pending();assertThat(flash(reused.deviceId()).stage()).isEqualTo(Stage.DONE);
+  assertThat(stored(reused.deviceId()).getFactoryMac()).isEqualTo(mac);
+  assertThat(devices.findById(reused.deviceId()).orElseThrow().getDeviceUid()).isEqualTo("ESP32-"+mac);
+  assertThat(devices.findById(old.deviceId())).isPresent(); // bản ghi và lịch sử cũ vẫn còn
+  Long audits=tx.execute(s->(Long)em.createQuery("select count(a) from AuditLog a where a.action='RELEASE_CHIP' and a.entityId=:id")
+   .setParameter("id",old.deviceId()).getSingleResult());
+  assertThat(audits).isEqualTo(1L);
  }
  @Test void wrongPasswordIsRejected(){
   var view=pending();

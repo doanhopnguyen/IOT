@@ -113,6 +113,27 @@ public class DeploymentService {
         inventory.delete(i);inventory.flush();devices.delete(d);
         events.publishEvent(new RealtimeConfig.DeviceUpdated());
     }
+    /**
+     * Thiết bị đã thu hồi: giữ nguyên bản ghi, trạng thái DECOMMISSIONED và lịch sử, nhưng trả lại MAC và UID ESP32-&lt;MAC&gt;
+     * để chính chip đó được thêm và nạp lại thành thiết bị mới (nạp code xoá toàn bộ flash, kể cả cờ thu hồi trên chip).
+     */
+    public InventoryView releaseChip(Long deviceId,String password) {
+        Account actor=admin();reauthenticate(actor,password);
+        DeviceInventory i=inventory.lock(deviceId).orElseThrow(()->error(NOT_FOUND,"Không tìm thấy thiết bị"));
+        Device d=devices.findByDeviceUidForUpdate(i.getDevice().getDeviceUid()).orElseThrow();
+        if(d.getLifecycleStatus()!=DeviceLifecycleStatus.DECOMMISSIONED)
+            throw error(CONFLICT,"Chỉ giải phóng chip của thiết bị đã thu hồi");
+        String mac=i.getFactoryMac();
+        if(mac==null)throw error(CONFLICT,"Chip của thiết bị này đã được giải phóng");
+        String previousUid=d.getDeviceUid();
+        d.setDeviceUid("RETIRED-"+d.getDeviceId()+"-"+mac);
+        i.setFactoryMac(null);i.setClaimHash(null);i.setStateUpdatedAt(LocalDateTime.now());
+        AuditLog log=new AuditLog();log.setActor(actor);log.setAction("RELEASE_CHIP");log.setEntityType("DEVICE");
+        log.setEntityId(d.getDeviceId());log.setDetails(Map.of("factoryMac",mac,"previousUid",previousUid));em.persist(log);
+        devices.flush();
+        events.publishEvent(new RealtimeConfig.DeviceUpdated());
+        return view(i);
+    }
     private static boolean flashable(DeviceInventory i) {
         return DeviceInventory.AWAITING_FLASH.equals(i.getState()) || (DeviceInventory.INVENTORY.equals(i.getState())
             && i.getDevice().getAccessUnit()==null && i.getOperationUuid()==null);
