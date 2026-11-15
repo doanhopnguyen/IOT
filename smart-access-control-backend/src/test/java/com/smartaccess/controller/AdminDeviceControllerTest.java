@@ -32,6 +32,31 @@ class AdminDeviceControllerTest {
     }
     final AccountPrincipal actor = new AccountPrincipal(1L);
 
+    @Test void edgeListingIncludesHealthAndOwnerAndLifecycleIsAuditedWithoutChipCommands() {
+        Account owner = new Account(); owner.setFullName("Owner");
+        AccessUnit unit = new AccessUnit(); unit.setUnitId(7L); unit.setUnitName("Door"); unit.setManager(owner);
+        Device edge = new Device(); edge.setDeviceUid("FACE-laptop"); edge.setDeviceId(9L);
+        edge.setDeviceType(DeviceType.FACE_CAMERA_NODE); edge.setAccessUnit(unit);
+        edge.setLifecycleStatus(DeviceLifecycleStatus.ACTIVE); edge.setEdgeCameraStatus("READY");
+        edge.setDeviceSecretHash("must-not-be-returned");
+        Device door = new Device(); door.setDeviceType(DeviceType.DOOR_CONTROLLER);
+        when(devices.findAll()).thenReturn(List.of(door, edge));
+        when(devices.findByDeviceUidForUpdate("FACE-laptop")).thenReturn(Optional.of(edge));
+        var result = controller.edges();
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).owner()).isEqualTo("Owner");
+        assertThat(result.get(0).cameraStatus()).isEqualTo("READY");
+        assertThat(result.get(0).allowedTransitions()).containsExactly(DeviceLifecycleStatus.SUSPENDED, DeviceLifecycleStatus.DECOMMISSIONED);
+        controller.lifecycle(actor,"FACE-laptop", new AdminDeviceController.Lifecycle(DeviceLifecycleStatus.SUSPENDED));
+        controller.lifecycle(actor,"FACE-laptop", new AdminDeviceController.Lifecycle(DeviceLifecycleStatus.ACTIVE));
+        controller.lifecycle(actor,"FACE-laptop", new AdminDeviceController.Lifecycle(DeviceLifecycleStatus.DECOMMISSIONED));
+        assertThat(edge.getDeviceSecretHash()).isNull();
+        verifyNoInteractions(notifier, brokers);
+        verify(audits, times(3)).save(any());
+        assertThatThrownBy(() -> controller.lifecycle(actor,"FACE-laptop", new AdminDeviceController.Lifecycle(DeviceLifecycleStatus.ACTIVE)))
+                .isInstanceOf(ResponseStatusException.class);
+    }
+
     @Test void registrationReturnsOneTimeSecretAndStoresOnlyBcrypt() {
         when(devices.saveAndFlush(any())).thenAnswer(invocation -> {
             Device d = invocation.getArgument(0); d.setDeviceId(2L); return d;

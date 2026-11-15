@@ -21,7 +21,7 @@ public class OwnerCameraController {
  public record Issued(String deviceUid,String deviceSecret){}
  private final CurrentAccountService current;private final ManagerAccessGuard guard;private final DeviceRepository devices;private final PasswordEncoder passwords;
  public OwnerCameraController(CurrentAccountService current,ManagerAccessGuard guard,DeviceRepository devices,PasswordEncoder passwords){this.current=current;this.guard=guard;this.devices=devices;this.passwords=passwords;}
- @GetMapping public List<DeviceResponse> list(@PathVariable Long unitId){owner(unitId);return devices.findAll().stream().filter(d->d.getAccessUnit()!=null&&d.getAccessUnit().getUnitId().equals(unitId)&&d.getDeviceType()==DeviceType.FACE_CAMERA_NODE).map(DeviceResponse::from).toList();}
+ @GetMapping public List<DeviceResponse> list(@PathVariable Long unitId){owner(unitId);return devices.findAll().stream().filter(d->d.getAccessUnit()!=null&&d.getAccessUnit().getUnitId().equals(unitId)&&d.getDeviceType()==DeviceType.FACE_CAMERA_NODE&&d.getLifecycleStatus()!=DeviceLifecycleStatus.DECOMMISSIONED).map(DeviceResponse::from).toList();}
  @PostMapping public Issued create(@PathVariable Long unitId,@Valid @RequestBody Password input){
   Account actor=owner(unitId);if(!passwords.matches(input.password(),actor.getPasswordHash()))throw new ResponseStatusException(FORBIDDEN,"Cần xác thực lại mật khẩu");
   if(!list(unitId).isEmpty())throw new ResponseStatusException(CONFLICT,"Gỡ camera cũ trước khi cấp camera mới");

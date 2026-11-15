@@ -37,6 +37,12 @@ public class AdminDeviceController {
     @GetMapping @Transactional(readOnly = true)
     public List<DeviceResponse> list() { return devices.findAll().stream().map(DeviceResponse::from).toList(); }
 
+    @GetMapping("/edge-ai") @Transactional(readOnly = true)
+    public List<com.smartaccess.dto.manager.EdgeAiResponse> edges() {
+        return devices.findAll().stream().filter(d -> d.getDeviceType() == DeviceType.FACE_CAMERA_NODE)
+                .map(com.smartaccess.dto.manager.EdgeAiResponse::from).toList();
+    }
+
     @PostMapping @ResponseStatus(HttpStatus.CREATED) @Transactional
     public Provisioned register(@AuthenticationPrincipal AccountPrincipal actor, @Valid @RequestBody Register request) {
         if (devices.existsByDeviceUid(request.deviceUid())) throw new ResponseStatusException(HttpStatus.CONFLICT, "UID đã tồn tại");
@@ -67,7 +73,7 @@ public class AdminDeviceController {
         device.setLifecycleStatus(request.status());
         if (request.status() == DeviceLifecycleStatus.DECOMMISSIONED) {
             device.setDeviceSecretHash(null);
-            notifyAfterCommit(device.getDeviceUid());
+            if (device.getDeviceType() != DeviceType.FACE_CAMERA_NODE) notifyAfterCommit(device.getDeviceUid());
         }
         audit(actor, device, "DEVICE_" + request.status()); return DeviceResponse.from(device);
     }

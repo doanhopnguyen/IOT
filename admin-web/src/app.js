@@ -1,3 +1,4 @@
+import { isEdge, mergeDevices, edgeHealth } from './edge-ai';
 import { openFlashDialog } from './provisioning';
 import { icon } from './icons';
 import QRCode from 'qrcode';
@@ -22,7 +23,7 @@ let usbBusy = false,
 const ACCOUNT_PAGE_SIZE = 10;
 let accountPage = 1;
 const filters = {
-  devices: { query: '', state: '', connection: '' },
+  devices: { query: '', state: '', connection: '', type: '' },
   accounts: { query: '', state: '', role: '' },
 };
 const tabs = [
@@ -213,9 +214,11 @@ async function refresh(force = false) {
       api('/api/admin/accounts'),
       api('/api/admin/dashboard').catch(() => null),
       api('/api/admin/firmware'),
+      api('/api/admin/devices/edge-ai'),
     ]);
     if (!account) return;
     [inventory, accounts, dashboard, firmware] = result;
+    inventory = mergeDevices(inventory, result[4]);
     loaded = true;
     loadError = '';
     lastUpdated = new Date();
@@ -314,7 +317,7 @@ function content() {
   const heading = tab === 'overview' ? 'Thiết bị trong hệ thống' : 'Tất cả thiết bị';
   const table = `<section class="panel"><div class="section-header"><div><h2>${heading} <span class="count">${inventory.length}</span></h2></div>${tab === 'overview' ? '<button data-tab="devices" class="link-button">Xem tất cả ' + icon('arrow') + '</button>' : ''}</div>${filterBar('devices')}<div id="results">${deviceTable()}</div></section>`;
   if (tab !== 'overview') return table;
-  const live = dashboard?.online ?? inventory.filter(online).length;
+  const live = inventory.filter(online).length;
   const metrics = [
     ['door', 'Tổng thiết bị', inventory.length, '', ''],
     ['wifi', 'Đang trực tuyến', live, 'Có tín hiệu trong 90 giây', 'green'],
@@ -350,7 +353,7 @@ function content() {
         `Từ chối ${dashboard.accessToday.denied}`,
         '',
       ],
-      ['wifi', 'Thiết bị ngoại tuyến', dashboard.offline, '', ''],
+      ['wifi', 'Thiết bị ngoại tuyến', inventory.filter(d => !online(d)).length, '', ''],
     );
   return `<div class="metrics">${metrics.map(([symbol, label, value, note, tone]) => `<article class="panel metric ${tone === 'red' ? 'critical' : ''}"><div class="metric-top"><span>${label}</span><span class="metric-icon">${icon(symbol)}</span></div><b>${value}</b><small>${note}</small></article>`).join('')}</div>${table}`;
 }
@@ -409,7 +412,7 @@ function filterBar(kind) {
       ([key, label]) =>
         `<option value="${key}" ${(kind === 'accounts' ? f.role : f.connection) === key ? 'selected' : ''}>${label}</option>`,
     )
-    .join('')}</select></div>`;
+    .join('')}</select>${kind === 'devices' ? `<select id="type-filter" aria-label="Lọc loại thiết bị">${[['', 'Tất cả loại thiết bị'], ['DOOR_CONTROLLER', 'Bộ điều khiển ESP32'], ['FACE_CAMERA_NODE', 'Edge AI / Laptop']].map(([key, label]) => `<option value="${key}" ${f.type === key ? 'selected' : ''}>${label}</option>`).join('')}</select>` : ''}</div>`;
 }
 function footer(count, total) {
   return `<div class="table-footer"><span>Hiển thị ${count} / ${total} ${tab === 'accounts' ? 'tài khoản' : 'thiết bị'}</span><span>Cập nhật ${lastUpdated ? lastUpdated.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '—'}</span></div>`;
@@ -419,9 +422,10 @@ function deviceTable() {
   const q = f.query.trim().toLocaleLowerCase('vi');
   const rows = inventory.filter(
     (d) =>
-      `${d.name} ${d.deviceUid} ${d.factoryMac ?? ''} ${d.owner ?? ''}`
+      `${d.name} ${d.unitName ?? ''} ${d.deviceUid} ${d.factoryMac ?? ''} ${d.owner ?? ''}`
         .toLocaleLowerCase('vi')
         .includes(q) &&
+      (!f.type || d.deviceType === f.type) &&
       (!f.state || d.lifecycleStatus === f.state) &&
       (!f.connection || online(d) === (f.connection === 'online')),
   );
@@ -437,6 +441,7 @@ function deviceTable() {
   return `<p class="scroll-hint">Vuốt ngang bảng để xem đủ thông tin và thao tác.</p><div class="tablewrap" role="region" aria-label="Danh sách thiết bị" tabindex="0"><table><thead><tr><th>Thiết bị / định danh</th><th>Chủ cửa</th><th>Trạng thái thiết bị</th><th>Kết nối</th><th>Thao tác</th></tr></thead><tbody>${rows.map(deviceRow).join('')}</tbody></table></div>${footer(rows.length, inventory.length)}`;
 }
 function deviceRow(d) {
+  if (isEdge(d)) return edgeRow(d);
   const warning = lifecycleNotice(d.lifecycleStatus);
   const retired = d.lifecycleStatus === 'DECOMMISSIONED';
   return `<tr><td><div class="device-cell"><span class="device-symbol">${icon('door')}</span><div><b>${esc(d.name)}</b><code>${esc(d.deviceUid)}</code><small>MAC: ${esc(d.factoryMac || 'Chưa có')}</small></div></div></td>
@@ -446,6 +451,13 @@ function deviceRow(d) {
     <td class="actions"><button class="secondary" data-device-detail="${esc(d.deviceUid)}">Chi tiết</button>
     ${d.allowedTransitions?.length ? `<button class="secondary" data-lifecycle="${esc(d.deviceUid)}">Thay đổi trạng thái</button>` : ''}
     ${retired ? (d.factoryMac ? `<button class="danger-outline" data-release="${d.deviceId}" title="Giữ lịch sử thiết bị này, trả MAC để nạp chip thành thiết bị mới">Giải phóng chip</button>` : '<small>Đã giải phóng chip</small>') : d.state === 'RESETTING' ? '<small>Đang chờ xác nhận xóa từ thiết bị</small>' : d.unitId ? `<button class="danger-outline" data-reset="${esc(d.deviceUid)}" ${resetAvailable(d) ? '' : 'disabled title="Cần thiết bị hoạt động và online để reset"'}>Đặt lại / Chuyển giao</button>` : d.state === 'INVENTORY' && d.operationUuid ? `<button class="secondary" data-code="${esc(d.deviceUid)}">Cấp mã mới</button>` : flashActions(d)}</td></tr>`;
+}
+function edgeRow(d) {
+  return `<tr><td><div class="device-cell"><span class="device-symbol">${icon('chip')}</span><div><b>${esc(d.name)}</b><code>${esc(d.deviceUid)}</code><small>Edge AI / Laptop</small></div></div></td>
+    <td>${esc(d.owner || 'Chưa có chủ cửa')}<small>${esc(d.unitName || 'Chưa gắn cửa')}</small></td>
+    <td>${stateBadge(d.lifecycleStatus)}<small>${esc(edgeHealth(d))}</small></td>
+    <td><span class="connection ${online(d) ? 'online' : ''}"><span class="dot"></span>${online(d) ? 'Online' : 'Offline'}</span><small>${date(d.lastSeenAt)}</small></td>
+    <td class="actions"><button class="secondary" data-device-detail="${esc(d.deviceUid)}">Chi tiết</button>${d.allowedTransitions?.length ? `<button class="secondary" data-lifecycle="${esc(d.deviceUid)}">Thay đổi trạng thái</button>` : ''}</td></tr>`;
 }
 function accountPagination(pageCount) {
   const pages = Array.from({ length: pageCount }, (_, i) => i + 1).filter(
@@ -489,6 +501,9 @@ function wireFilters() {
     f.query = event.target.value;
     update();
   });
+  document.querySelector('#type-filter')?.addEventListener('change', event => {
+    f.type = event.target.value; update();
+  });
   document.querySelector('#state-filter')?.addEventListener('change', (event) => {
     f.state = event.target.value;
     update();
@@ -512,7 +527,7 @@ function startFlash(deviceId) {
     issued = result;
     notify('Đã nạp code. In QR bàn giao trước khi rời màn hình.');
     showIssued();
-    void api('/api/admin/inventory').then((list) => { inventory = list; }).catch(() => {});
+    void refresh(true);
   }, (value) => { usbBusy = value; });
 }
 async function deletePending(deviceId) {
@@ -678,9 +693,16 @@ function deviceDetails(uid) {
   const d = inventory.find(item => item.deviceUid === uid);
   if (!d) return;
   const warning = lifecycleNotice(d.lifecycleStatus);
+  const edgeFields = isEdge(d) ? `<dt>Loại thiết bị</dt><dd>Edge AI / Laptop</dd>
+    <dt>Cửa</dt><dd>${esc(d.unitName || 'Chưa gắn cửa')}</dd><dt>Tình trạng AI</dt><dd>${esc(edgeHealth(d))}</dd>
+    <dt>Camera báo cáo</dt><dd>${esc(({READY:'Hoạt động',NO_SIGNAL:'Mất tín hiệu',STARTING:'Đang khởi động'})[d.cameraStatus] || 'Chưa có')}</dd>
+    <dt>Nhận diện báo cáo</dt><dd>${esc(({READY:'Sẵn sàng',WAITING:'Đang chờ',ERROR:'Lỗi'})[d.recognitionStatus] || 'Chưa có')}</dd>
+    <dt>Phần mềm</dt><dd>${esc(d.softwareVersion || 'Chưa có')}</dd><dt>Model</dt><dd>${esc(d.modelVersion || 'Chưa có')}</dd>
+    <dt>Khung hình cuối</dt><dd>${date(d.lastFrameAt)}</dd><dt>Báo cáo AI cuối</dt><dd>${date(d.reportedAt)}</dd>
+    <dt>Mã lỗi</dt><dd>${esc(d.errorCode || 'Không có')}</dd>` : `<dt>MAC</dt><dd>${esc(d.factoryMac || 'Chưa có')}</dd>`;
   const fields = `<dl class="device-details">
     <dt>Tên thiết bị</dt><dd>${esc(d.name)}</dd><dt>Mã thiết bị</dt><dd><code>${esc(d.deviceUid)}</code></dd>
-    <dt>MAC</dt><dd>${esc(d.factoryMac || 'Chưa có')}</dd><dt>Chủ cửa</dt><dd>${esc(d.owner || 'Chưa có chủ cửa')}</dd>
+    ${edgeFields}<dt>Chủ cửa</dt><dd>${esc(d.owner || 'Chưa có chủ cửa')}</dd>
     <dt>Trạng thái</dt><dd>${stateBadge(d.lifecycleStatus)}</dd><dt>Kết nối</dt><dd>${badge(online(d) ? 'Online' : 'Offline', online(d) ? 'green' : 'slate', true)}</dd>
     <dt>Kết nối cuối</dt><dd>${date(d.lastSeenAt)}</dd></dl>${warning ? `<div class="notice">${esc(warning)}</div>` : ''}`;
   const dialog = createDialog('Chi tiết thiết bị', '', fields, 'Đóng', async () => {});

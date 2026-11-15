@@ -38,6 +38,9 @@ class FaceRecognitionFlowTest {
     }
     @Autowired RecordingGateway gateway;
     @Autowired FaceRecognitionService faces;
+    @Autowired EdgeAiService edgeAi;
+    @Autowired DeviceAuthenticationService deviceAuthentication;
+    @Autowired org.springframework.security.crypto.password.PasswordEncoder passwords;
     @Autowired CommandAckService acks;
     @Autowired CommandTimeoutScheduler scheduler;
     @Autowired AccountRepository accounts;
@@ -55,6 +58,39 @@ class FaceRecognitionFlowTest {
     Long accountId, ownerId, unitId, credentialId;
     String cameraUid, controllerUid;
     static int sequence;
+
+    @Test
+    void edgeHealthPersistsAndSuspensionOrRevocationCannotBeUndoneByHeartbeat() {
+        String secret = "edge-test-identity-secret-12345678";
+        tx.executeWithoutResult(s -> {
+            Device edge = devices.findByDeviceUid(cameraUid).orElseThrow();
+            edge.setDeviceSecretHash(passwords.encode(secret));
+            edge.setLifecycleStatus(DeviceLifecycleStatus.PROVISIONED);
+        });
+        var health = new EdgeAiService.Health("1.1.0", FaceRecognitionService.MODEL, "READY", "READY", null, Instant.now());
+        edgeAi.heartbeat(cameraUid, secret, health);
+        Device saved = devices.findByDeviceUid(cameraUid).orElseThrow();
+        assertThat(saved.getLifecycleStatus()).isEqualTo(DeviceLifecycleStatus.ACTIVE);
+        assertThat(saved.getEdgeCameraStatus()).isEqualTo("READY");
+        assertThat(saved.getEdgeReportedAt()).isNotNull();
+        tx.executeWithoutResult(s -> devices.findByDeviceUid(cameraUid).orElseThrow().setLifecycleStatus(DeviceLifecycleStatus.SUSPENDED));
+        edgeAi.heartbeat(cameraUid, secret, health);
+        assertThat(devices.findByDeviceUid(cameraUid).orElseThrow().getLifecycleStatus()).isEqualTo(DeviceLifecycleStatus.SUSPENDED);
+        assertThatThrownBy(() -> deviceAuthentication.authenticate(cameraUid, secret))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        faces.receive(cameraUid, event());
+        assertThat(gateway.sent).isEmpty();
+        tx.executeWithoutResult(s -> devices.findByDeviceUid(cameraUid).orElseThrow().setLifecycleStatus(DeviceLifecycleStatus.ACTIVE));
+        edgeAi.heartbeat(cameraUid, secret, health);
+        faces.receive(cameraUid, event());
+        assertThat(gateway.sent).hasSize(1);
+        tx.executeWithoutResult(s -> {
+            Device edge = devices.findByDeviceUid(cameraUid).orElseThrow();
+            edge.setLifecycleStatus(DeviceLifecycleStatus.DECOMMISSIONED); edge.setDeviceSecretHash(null);
+        });
+        assertThatThrownBy(() -> edgeAi.heartbeat(cameraUid, secret, health))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+    }
 
     @BeforeEach
     void seed() {

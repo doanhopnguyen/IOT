@@ -24,10 +24,21 @@ public class DeviceAuthenticationService {
 
     @Transactional(readOnly = true)
     public Device authenticate(String uid, String secret) {
+        return authenticateAllowed(uid, secret, ALLOWED);
+    }
+
+    /** Status endpoints only: suspension blocks recognition but must not block health reporting. */
+    @Transactional(readOnly = true)
+    public Device authenticateRuntimeStatus(String uid, String secret) {
+        return authenticateAllowed(uid, secret, Set.of(DeviceLifecycleStatus.REGISTERED,
+                DeviceLifecycleStatus.PROVISIONED, DeviceLifecycleStatus.ACTIVE, DeviceLifecycleStatus.SUSPENDED));
+    }
+
+    private Device authenticateAllowed(String uid, String secret, Set<DeviceLifecycleStatus> allowed) {
         if (uid == null || uid.length() > 64 || secret == null || secret.length() < 24 || secret.length() > 128)
             throw invalid();
         Device device = devices.findByDeviceUid(uid).orElseThrow(DeviceAuthenticationService::invalid);
-        if ((device.getAccessUnit() == null && device.getBootstrapSecretHash() == null) || !ALLOWED.contains(device.getLifecycleStatus())
+        if ((device.getAccessUnit() == null && device.getBootstrapSecretHash() == null) || !allowed.contains(device.getLifecycleStatus())
                 || device.getDeviceSecretHash() == null || !passwords.matches(secret, device.getDeviceSecretHash()))
             throw invalid();
         // Nạp cửa để có thể dùng quan hệ này sau khi giao dịch của bộ lọc kết thúc.

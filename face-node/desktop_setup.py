@@ -219,10 +219,11 @@ class DesktopController:
                     return
                 if connection['doorCode'] != selected['doorCode']:
                     raise ValueError('Camera không còn thuộc cửa đã chọn. Hãy ghép lại.')
-                if not connection['ready'] or not connection['doorOnline'] or not connection['faceEnabled']:
-                    self._stop_process()
+                if not connection.get('enabled', True) or not connection['ready'] or not connection['doorOnline'] or not connection['faceEnabled']:
                     self.phase = 'WAITING'
-                    self.message = 'Chờ cửa hoàn tất thiết lập và online.' if not connection['ready'] or not connection['doorOnline'] else 'Nhận diện đang tắt tại cửa. Bật quyền khuôn mặt trên mobile.'
+                    self.message = ('Thiết bị AI bị tạm ngừng. Camera vẫn mở; chờ quản trị viên bật lại.' if not connection.get('enabled', True)
+                                    else 'Chờ cửa hoàn tất thiết lập và online. Camera đang mở sẽ được giữ nguyên.' if not connection['ready'] or not connection['doorOnline']
+                                    else 'Nhận diện đang tắt tại cửa. Bật quyền khuôn mặt trên mobile.')
                 elif self.process is None:
                     self.process = self.process_factory(selected)
                     self.phase, self.message = 'STARTING', 'Đang tải AI và mở camera trên laptop…'
@@ -242,16 +243,17 @@ class DesktopController:
             with self.lock:
                 if revision != self.revision:
                     return
-                self._stop_process()
                 response = getattr(error, 'response', None)
                 if response is not None and response.status_code in {401, 403, 404}:
+                    self._stop_process()
                     self.store['armed'] = False; self._save()
                     self.phase, self.message = 'ERROR', 'Camera đã bị gỡ hoặc mã kết nối hết hiệu lực. Đăng nhập chủ cửa để ghép lại.'
                 elif isinstance(error, ValueError):
+                    self._stop_process()
                     self.store['armed'] = False; self._save()
                     self.phase, self.message = 'ERROR', str(error)
                 else:
-                    self.phase, self.message = 'WAITING', 'Chưa kết nối được cửa. Kiểm tra Internet/Tailscale; AI sẽ tự tiếp tục khi có mạng.'
+                    self.phase, self.message = 'WAITING', 'Mất kết nối máy chủ. Giữ camera mở, tạm dừng xác minh mở cửa; tự kết nối lại khi có mạng.'
 
     def stop(self, logout=False):
         with self.operation, self.lock:

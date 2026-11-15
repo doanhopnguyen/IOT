@@ -22,8 +22,8 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(FaceNodeRuntimeController.class)
-@Import({FaceNodeSecurityConfig.class,GlobalExceptionHandler.class})
+@WebMvcTest({FaceNodeRuntimeController.class, FaceNodeController.class})
+@Import({FaceNodeSecurityConfig.class,GlobalExceptionHandler.class, EdgeAiService.class})
 class FaceNodeRuntimeControllerTest {
     @Autowired MockMvc mvc;
     @MockitoBean DeviceAuthenticationService authentication;
@@ -44,6 +44,8 @@ class FaceNodeRuntimeControllerTest {
         });
         when(devices.findFirstByAccessUnit_UnitIdAndDeviceType(7L,DeviceType.DOOR_CONTROLLER)).thenReturn(Optional.of(controller));
         when(inventory.findById(8L)).thenReturn(Optional.of(item));
+        when(devices.findByDeviceUidForUpdate("FACE-laptop")).thenReturn(Optional.of(camera));
+        when(authentication.authenticateRuntimeStatus(any(),any())).thenAnswer(i -> authentication.authenticate(i.getArgument(0), i.getArgument(1)));
     }
     @Test void cameraCanWaitForReadinessButOnlyAfterFullActivationIsReadyTrue() throws Exception {
         mvc.perform(get("/api/face-node/connection").header("X-Device-Uid","FACE-laptop").header("X-Device-Secret","valid-key"))
@@ -80,5 +82,31 @@ class FaceNodeRuntimeControllerTest {
                     .contentType("application/json").content(body)).andExpect(status().isBadRequest());
         }
         verifyNoInteractions(enrollment,recognition);
+    }
+
+    @Test void healthIsValidatedAndStoredWithoutAcceptingArbitraryErrorMessages() throws Exception {
+        String health = "{\"softwareVersion\":\"1.1.0\",\"modelVersion\":\"model:v1\",\"cameraStatus\":\"READY\",\"recognitionStatus\":\"WAITING\",\"lastFrameAt\":\"2026-01-01T00:00:00Z\"}";
+        mvc.perform(post("/api/face-node/heartbeat").header("X-Device-Uid","FACE-laptop").header("X-Device-Secret","valid-key")
+                .contentType("application/json").content(health)).andExpect(status().isNoContent());
+        org.assertj.core.api.Assertions.assertThat(camera.getEdgeSoftwareVersion()).isEqualTo("1.1.0");
+        org.assertj.core.api.Assertions.assertThat(camera.getEdgeReportedAt()).isNotNull();
+        mvc.perform(post("/api/face-node/heartbeat").header("X-Device-Uid","FACE-laptop").header("X-Device-Secret","valid-key")
+                .contentType("application/json").content(health.replace("READY", "arbitrary"))).andExpect(status().isBadRequest());
+    }
+
+    @Test void suspendedEdgeCanReportAndReadDisabledStateButCannotFetchTemplatesOrRecognize() throws Exception {
+        camera.setLifecycleStatus(DeviceLifecycleStatus.SUSPENDED);
+        when(authentication.authenticate("FACE-laptop","valid-key")).thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED));
+        doReturn(camera).when(authentication).authenticateRuntimeStatus("FACE-laptop","valid-key");
+        mvc.perform(post("/api/face-node/heartbeat").header("X-Device-Uid","FACE-laptop").header("X-Device-Secret","valid-key"))
+                .andExpect(status().isNoContent());
+        org.assertj.core.api.Assertions.assertThat(camera.getLifecycleStatus()).isEqualTo(DeviceLifecycleStatus.SUSPENDED);
+        mvc.perform(get("/api/face-node/connection").header("X-Device-Uid","FACE-laptop").header("X-Device-Secret","valid-key"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(false));
+        mvc.perform(get("/api/face-node/templates").header("X-Device-Uid","FACE-laptop").header("X-Device-Secret","valid-key"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/face-node/events").header("X-Device-Uid","FACE-laptop").header("X-Device-Secret","valid-key")
+                .contentType("application/json").content("{}")).andExpect(status().isUnauthorized());
+        verifyNoInteractions(recognition);
     }
 }

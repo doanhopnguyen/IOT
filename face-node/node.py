@@ -13,6 +13,67 @@ from config import Config, MODEL
 from matching import RecognitionGate, TemplateCache
 
 LOG = logging.getLogger("face-node")
+SOFTWARE_VERSION = "1.1.0"
+
+
+class RuntimeSync:
+    """Network I/O runs outside the preview loop; published template snapshots are never mutated."""
+    def __init__(self, config, capture=None):
+        self.config, self.capture = config, capture
+        self.lock = threading.Lock()
+        self.cache = TemplateCache()
+        self.network_ready = False
+        self.error = None
+        self.stopped = threading.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self):
+        self.thread.start()
+
+    def snapshot(self):
+        with self.lock:
+            return self.cache, self.network_ready
+
+    def report_error(self, code):
+        with self.lock:
+            self.error = code
+
+    def health(self):
+        frame_age = self.capture.frame_age() if self.capture else None
+        camera_ready = frame_age is not None and frame_age <= self.config.max_frame_age
+        with self.lock:
+            enabled = self.cache.valid and self.network_ready
+            error = self.error
+        return {"softwareVersion": SOFTWARE_VERSION, "modelVersion": MODEL,
+                "cameraStatus": "READY" if camera_ready else "NO_SIGNAL",
+                "recognitionStatus": "ERROR" if error else "READY" if camera_ready and enabled else "WAITING",
+                "errorCode": error or ("CAMERA_NO_SIGNAL" if not camera_ready else None),
+                "lastFrameAt": datetime.fromtimestamp(time.time() - frame_age, timezone.utc).isoformat() if frame_age is not None else None}
+
+    def sync_once(self, api):
+        cache, ready = TemplateCache(), False
+        try:
+            api.sync(cache, health=self.health())
+            ready = True
+        except Exception as exc:
+            # Drop this snapshot; never replay offline recognition events.
+            cache = TemplateCache()
+            LOG.warning("Backend sync failed; waiting for reconnection (%s).", type(exc).__name__)
+        with self.lock:
+            self.cache, self.network_ready = cache, ready
+
+    def _run(self):
+        api = Backend(self.config)
+        try:
+            while not self.stopped.is_set():
+                self.sync_once(api)
+                self.stopped.wait(self.config.sync_seconds)
+        finally:
+            api.session.close()
+
+    def close(self):
+        self.stopped.set()
+        self.thread.join(timeout=1)
 
 
 class Publisher:
@@ -131,6 +192,10 @@ class LatestCamera:
         with self.lock:
             return self.serial, self.received_at, None if self.frame is None else self.frame.copy()
 
+    def frame_age(self):
+        with self.lock:
+            return time.monotonic() - self.received_at if self.frame is not None else None
+
     def close(self):
         self.stopped.set()
         # Luồng đọc tự giải phóng camera; không giải phóng khi đang đọc khung hình.
@@ -160,10 +225,10 @@ def draw_preview(frame, boxes, message, detail, color):
 def run(config, engine, camera=False, video=None, show=True):
     import cv2
     config.require_device()
-    api, cache = Backend(config), TemplateCache()
+    cache = TemplateCache()
     gate = RecognitionGate(config.stable_frames, config.cooldown)
     publisher = HttpPublisher(config) if config.event_transport == "http" else Publisher(config)
-    capture, recording = None, None
+    capture, recording, sync = None, None, None
     window = "Smart Door - Face Check"
     try:
         capture = LatestCamera(config.camera_source) if camera else None
@@ -175,22 +240,14 @@ def run(config, engine, camera=False, video=None, show=True):
             cv2.resizeWindow(window, 960, 600)
         if camera:
             LOG.info("AI_CAMERA_READY")
-        next_sync, last_frame, last_unknown = 0.0, -1, -1e10
+        sync = RuntimeSync(config, capture)
+        sync.start()
+        last_frame, last_unknown = -1, -1e10
         if config.allow_unverified_liveness:
             LOG.warning("DEVELOPMENT MODE: liveness can be bypassed; do not use for production.")
         while True:
             now = time.monotonic()
-            if now >= next_sync:
-                try:
-                    api.sync(cache)
-                    if publisher.connected.is_set():
-                        publisher.publish("status", {"schemaVersion": 1, "model": MODEL})
-                except Exception as exc:
-                    cache.clear()
-                    gate.reset()
-                    # Never log headers, response bodies, credential URLs, or images.
-                    LOG.warning("Backend sync failed; recognition disabled (%s).", type(exc).__name__)
-                next_sync = time.monotonic() + config.sync_seconds
+            cache, network_ready = sync.snapshot()
             if not camera and not video:
                 time.sleep(0.1)
                 continue
@@ -221,7 +278,10 @@ def run(config, engine, camera=False, video=None, show=True):
 
             boxes, match = [], None
             message, detail, color = "CHO KHUON MAT", "GIU MAT TRONG KHUNG HINH", (0, 190, 255)
-            if not cache.valid or time.monotonic() - cache.refreshed_at > config.sync_seconds * 3:
+            if not network_ready:
+                gate.reset()
+                message, detail, color = "MAT KET NOI - DANG THU LAI", "GIU CAMERA MO; CHO MAY CHU XAC MINH QUYEN", (0, 190, 255)
+            elif not cache.valid or time.monotonic() - cache.refreshed_at > config.sync_seconds * 3:
                 gate.reset()
                 message, detail, color = "TU CHOI - MAY CHU KHONG SAN SANG", "KHONG THE KIEM TRA QUYEN KHUON MAT", (45, 65, 235)
             elif not publisher.connected.is_set():
@@ -230,6 +290,7 @@ def run(config, engine, camera=False, video=None, show=True):
             else:
                 try:
                     embedding, live, error = engine.analyze(frame)
+                    sync.report_error(None)
                     boxes = getattr(engine, "last_boxes", [])
                     if time.monotonic() - captured_at > config.max_frame_age:
                         gate.reset()
@@ -265,6 +326,7 @@ def run(config, engine, camera=False, video=None, show=True):
                     else:
                         message, detail, color = "DANG XAC MINH KHUON MAT", "GIU MAT ON DINH TRONG VAI GIAY", (0, 190, 255)
                 except Exception as exc:
+                    sync.report_error("RECOGNITION_ERROR")
                     gate.reset()
                     if match is not None:
                         gate.last_sent.pop(match.credential_id, None)
@@ -277,6 +339,8 @@ def run(config, engine, camera=False, video=None, show=True):
                     break
         return True
     finally:
+        if sync:
+            sync.close()
         publisher.close()
         if capture:
             capture.close()

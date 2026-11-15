@@ -37,7 +37,11 @@ public class FaceNodeSecurityConfig {
                     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
                             throws ServletException, IOException {
                         try {
-                            var device = devices.authenticate(request.getHeader("X-Device-Uid"), request.getHeader("X-Device-Secret"));
+                            boolean statusOnly = ("POST".equals(request.getMethod()) && "/api/face-node/heartbeat".equals(request.getRequestURI()))
+                                    || ("GET".equals(request.getMethod()) && "/api/face-node/connection".equals(request.getRequestURI()));
+                            var device = statusOnly
+                                    ? devices.authenticateRuntimeStatus(request.getHeader("X-Device-Uid"), request.getHeader("X-Device-Secret"))
+                                    : devices.authenticate(request.getHeader("X-Device-Uid"), request.getHeader("X-Device-Secret"));
                             if (device.getDeviceType() != DeviceType.FACE_CAMERA_NODE) {
                                 error(response, json);
                                 return;

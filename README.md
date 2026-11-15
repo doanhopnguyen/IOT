@@ -206,6 +206,12 @@ powershell -ExecutionPolicy Bypass -File scripts/start-edge-ai.ps1
 
 Giao diện laptop mặc định ở `http://127.0.0.1:8092`. Chủ cửa đăng nhập, chọn cửa và kết nối camera. Camera nhận diện cần cấu hình backend, mẫu khuôn mặt, quyền truy cập và cửa sẵn sàng; tiến trình camera laptop chạy riêng với các dịch vụ Docker máy chủ.
 
+Admin xem laptop tại **Quản lý thiết bị → loại Edge AI / Laptop**. Chi tiết gồm cửa/chủ cửa, kết nối cuối, trạng thái camera/nhận diện, phiên bản phần mềm/model và mã lỗi. Có thể tạm ngừng, bật lại hoặc thu hồi vĩnh viễn; Edge không có thao tác nạp firmware/reset chip ESP32. Backend bổ sung dữ liệu sức khỏe bằng migration `V9__edge_ai_health.sql`; node cũ chưa gửi báo cáo vẫn được liệt kê nhưng không được hiển thị là AI sẵn sàng chỉ dựa vào heartbeat.
+
+Khi mất mạng hoặc cửa offline, camera đang chạy được giữ mở; đồng bộ máy chủ chạy ở luồng nền và tự thử lại. Node tạm ngừng xác minh mở cửa, bỏ mẫu cache khi đồng bộ thất bại và không lưu sự kiện nhận diện để gửi bù. Khi kết nối và quyền hợp lệ trở lại, node tải mẫu mới rồi tiếp tục. Tạm ngừng trên admin giữ camera nhưng chặn lấy mẫu/gửi sự kiện; thu hồi hoặc sai danh tính cửa sẽ dừng worker và yêu cầu ghép lại. Nút Dừng nhận diện vẫn dừng theo yêu cầu người dùng.
+
+Kiểm thử Python: chạy `python -m unittest discover -s tests -p "test_*.py"` trong thư mục `face-node/`.
+
 Nếu chạy backend trực tiếp, dịch vụ trích xuất mẫu có thể chạy riêng bằng `python enrollment_server.py` trong `face-node/`. Chuẩn bị dependency, model và `.env.enrollment` chứa `FACE_PROCESSOR_TOKEN`; backend cần cùng token và `FACE_PROCESSOR_URL` đúng địa chỉ. Mặc định dịch vụ nghe tại `127.0.0.1:8091`; Docker đặt `FACE_PROCESSOR_HOST=0.0.0.0` để backend truy cập qua mạng container. Bộ Compose cơ bản `deployment/docker-compose.yml` chưa có Face API; bộ `deployment/team/` đã có.
 
 ## Thiết lập cửa

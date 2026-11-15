@@ -230,6 +230,7 @@ public class FaceEnrollmentService {
 
     @Transactional
     public void heartbeat(String uid, String secret) {
+        devices.findByDeviceUidForUpdate(uid).orElseThrow(() -> error(UNAUTHORIZED, "Node camera không hợp lệ."));
         Device device = node(uid, secret);
         device.setLifecycleStatus(DeviceLifecycleStatus.ACTIVE);
         device.setLastSeenAt(LocalDateTime.now());

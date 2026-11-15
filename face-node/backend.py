@@ -6,6 +6,7 @@ import requests
 class Backend:
     def __init__(self, config):
         self.base = config.base_url
+        self.transport = config.event_transport
         self.session = requests.Session()
         self.session.trust_env = False
         self.session.headers.update({"X-Device-Uid": config.device_uid,
@@ -22,9 +23,14 @@ class Backend:
         response.raise_for_status()
         return response
 
-    def sync(self, cache):
+    def sync(self, cache, health=None):
         try:
-            self.call("POST", "/api/face-node/heartbeat")
+            self.call("POST", "/api/face-node/heartbeat", **({"json": health} if health is not None else {}))
+            if self.transport == "http":
+                connection = self.call("GET", "/api/face-node/connection").json()
+                if not all(connection.get(key, False) for key in ("ready", "doorOnline", "faceEnabled")) or not connection.get("enabled", True):
+                    cache.clear()
+                    return
             cache.replace(self.call("GET", "/api/face-node/templates").json())
         except Exception:
             cache.clear()

@@ -59,6 +59,27 @@ public class Device {
     @Column(name = "last_seen_at", nullable = true, columnDefinition = "datetime(3)")
     private LocalDateTime lastSeenAt;
 
+    @Column(name = "edge_software_version", length = 100)
+    private String edgeSoftwareVersion;
+
+    @Column(name = "edge_model_version", length = 100)
+    private String edgeModelVersion;
+
+    @Column(name = "edge_camera_status", length = 30)
+    private String edgeCameraStatus;
+
+    @Column(name = "edge_recognition_status", length = 30)
+    private String edgeRecognitionStatus;
+
+    @Column(name = "edge_error_code", length = 100)
+    private String edgeErrorCode;
+
+    @Column(name = "edge_last_frame_at", columnDefinition = "datetime(3)")
+    private LocalDateTime edgeLastFrameAt;
+
+    @Column(name = "edge_reported_at", columnDefinition = "datetime(3)")
+    private LocalDateTime edgeReportedAt;
+
     @Column(name = "created_at", nullable = false, columnDefinition = "datetime(3)")
     private LocalDateTime createdAt;
 

@@ -78,10 +78,30 @@ class DesktopTests(unittest.TestCase):
     def test_lost_connection_pauses_and_recovers_but_stop_does_not_restart(self):
         self.controller.connect('SD-000007'); self.state['ready'] = True; self.controller.tick()
         self.state['doorOnline'] = False; self.controller.tick()
-        self.process.terminate.assert_called_once()
-        self.state['doorOnline'] = True; self.controller.tick(); self.assertEqual(2, self.start.call_count)
-        self.controller.stop(); self.controller.tick(); self.assertEqual(2, self.start.call_count)
+        self.process.terminate.assert_not_called()
+        self.state['doorOnline'] = True; self.controller.tick(); self.assertEqual(1, self.start.call_count)
+        self.controller.stop(); self.controller.tick(); self.assertEqual(1, self.start.call_count)
         self.assertFalse(json.loads(self.path.read_text())['armed'])
+
+    def test_network_timeout_keeps_the_same_camera_worker_and_recovers(self):
+        self.controller.connect('SD-000007'); self.state['ready'] = True; self.controller.tick()
+        self.controller.connection_reader = Mock(side_effect=requests.ConnectionError('offline'))
+        for _ in range(3): self.controller.tick()
+        self.process.terminate.assert_not_called()
+        self.assertTrue(self.controller.snapshot()['armed'])
+        self.assertEqual('WAITING', self.controller.snapshot()['phase'])
+        self.controller.connection_reader = lambda _: dict(self.state)
+        self.controller.tick()
+        self.start.assert_called_once()
+
+    def test_suspension_keeps_preview_armed_and_resume_does_not_restart_worker(self):
+        self.controller.connect('SD-000007'); self.state['ready'] = True; self.controller.tick()
+        self.state['enabled'] = False; self.controller.tick()
+        self.process.terminate.assert_not_called()
+        self.assertTrue(self.controller.snapshot()['armed'])
+        self.assertEqual('WAITING', self.controller.snapshot()['phase'])
+        self.state['enabled'] = True; self.controller.tick()
+        self.start.assert_called_once()
 
     def test_credential_revocation_disarms_instead_of_retrying_or_replaying(self):
         self.controller.connect('SD-000007')

@@ -19,21 +19,25 @@ import java.time.LocalDateTime;
 @RestController
 @RequestMapping("/api/face-node")
 public class FaceNodeRuntimeController {
-    public record Connection(String doorCode,String doorName,boolean ready,boolean doorOnline,boolean faceEnabled) {}
+    public record Connection(String doorCode,String doorName,boolean ready,boolean doorOnline,boolean faceEnabled,boolean enabled) {}
     private final DeviceAuthenticationService authentication;
     private final DeviceRepository devices;
     private final DeviceInventoryRepository inventory;
     private final FaceEnrollmentService enrollment;
     private final FaceRecognitionService recognition;
     private final ApplicationEventPublisher notifications;
+    private final com.smartaccess.service.EdgeAiService edge;
     public FaceNodeRuntimeController(DeviceAuthenticationService authentication,DeviceRepository devices,DeviceInventoryRepository inventory,
-            FaceEnrollmentService enrollment,FaceRecognitionService recognition,ApplicationEventPublisher notifications) {
+            FaceEnrollmentService enrollment,FaceRecognitionService recognition,ApplicationEventPublisher notifications,
+            com.smartaccess.service.EdgeAiService edge) {
         this.authentication=authentication;this.devices=devices;this.inventory=inventory;
         this.enrollment=enrollment;this.recognition=recognition;this.notifications=notifications;
+        this.edge=edge;
     }
     @GetMapping("/connection")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public Connection connection(@RequestHeader("X-Device-Uid") String uid,@RequestHeader("X-Device-Secret") String secret) {
-        Device camera=authentication.authenticate(uid,secret);
+        Device camera=edge.runtimeDevice(uid,secret);
         if(camera.getDeviceType()!=DeviceType.FACE_CAMERA_NODE || camera.getAccessUnit()==null)
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         var unit=camera.getAccessUnit();
@@ -42,7 +46,8 @@ public class FaceNodeRuntimeController {
                 .map(i->i.isSetupReady() && "ACTIVE".equals(i.getState())).orElse(false);
         boolean online=controller.map(d->d.getLifecycleStatus()==DeviceLifecycleStatus.ACTIVE && d.getLastSeenAt()!=null
                 && d.getLastSeenAt().isAfter(LocalDateTime.now().minusSeconds(90))).orElse(false);
-        return new Connection(String.format(java.util.Locale.ROOT,"SD-%06d",unit.getUnitId()),unit.getUnitName(),ready,online,unit.isFaceEnabled());
+        return new Connection(String.format(java.util.Locale.ROOT,"SD-%06d",unit.getUnitId()),unit.getUnitName(),ready,online,unit.isFaceEnabled(),
+                camera.getLifecycleStatus()!=DeviceLifecycleStatus.SUSPENDED);
     }
     @PostMapping("/events")
     @ResponseStatus(HttpStatus.NO_CONTENT)
