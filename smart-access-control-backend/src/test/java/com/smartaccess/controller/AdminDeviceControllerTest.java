@@ -18,7 +18,8 @@ class AdminDeviceControllerTest {
     final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
     final com.smartaccess.service.DecommissionNotifier notifier = mock(com.smartaccess.service.DecommissionNotifier.class);
     final com.smartaccess.service.BrokerAccounts brokers = mock(com.smartaccess.service.BrokerAccounts.class);
-    final AdminDeviceController controller = new AdminDeviceController(devices, accounts, audits, encoder, notifier, brokers);
+    final AdminDeviceController controller = new AdminDeviceController(devices, accounts, audits, encoder, notifier, brokers,
+            mock(com.smartaccess.service.EdgeAiPairingService.class));
 
     @Test void decommissionNotifiesDeviceOnlyForDecommission() {
         Device d = new Device(); d.setDeviceUid("door-1"); d.setDeviceSecretHash(encoder.encode("old-secret"));

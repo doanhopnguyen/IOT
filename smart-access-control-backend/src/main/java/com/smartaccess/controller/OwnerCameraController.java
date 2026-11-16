@@ -14,20 +14,19 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.*;
 import static org.springframework.http.HttpStatus.*;
 
-/** A camera belongs to a door and is provisioned by that door's owner. */
+/** A camera belongs to a door; the owner pairs an admin-issued AI kit by its one-time pairing code. */
 @RestController @RequestMapping("/api/manager/units/{unitId}/camera-node") @Transactional
 public class OwnerCameraController {
  public record Password(@NotBlank String password){}
- public record Issued(String deviceUid,String deviceSecret){}
+ public record Pair(@NotBlank String password,String pairingCode){}
  private final CurrentAccountService current;private final ManagerAccessGuard guard;private final DeviceRepository devices;private final PasswordEncoder passwords;
- public OwnerCameraController(CurrentAccountService current,ManagerAccessGuard guard,DeviceRepository devices,PasswordEncoder passwords){this.current=current;this.guard=guard;this.devices=devices;this.passwords=passwords;}
+ private final EdgeAiPairingService pairing;
+ public OwnerCameraController(CurrentAccountService current,ManagerAccessGuard guard,DeviceRepository devices,PasswordEncoder passwords,EdgeAiPairingService pairing){this.current=current;this.guard=guard;this.devices=devices;this.passwords=passwords;this.pairing=pairing;}
  @GetMapping public List<DeviceResponse> list(@PathVariable Long unitId){owner(unitId);return devices.findAll().stream().filter(d->d.getAccessUnit()!=null&&d.getAccessUnit().getUnitId().equals(unitId)&&d.getDeviceType()==DeviceType.FACE_CAMERA_NODE&&d.getLifecycleStatus()!=DeviceLifecycleStatus.DECOMMISSIONED).map(DeviceResponse::from).toList();}
- @PostMapping public Issued create(@PathVariable Long unitId,@Valid @RequestBody Password input){
-  Account actor=owner(unitId);if(!passwords.matches(input.password(),actor.getPasswordHash()))throw new ResponseStatusException(FORBIDDEN,"Cần xác thực lại mật khẩu");
-  if(!list(unitId).isEmpty())throw new ResponseStatusException(CONFLICT,"Gỡ camera cũ trước khi cấp camera mới");
-  String uid="FACE-"+UUID.randomUUID();String secret=UUID.randomUUID().toString()+UUID.randomUUID();
-  Device d=new Device();d.setDeviceUid(uid);d.setDeviceName("Camera cửa "+unitId);d.setDeviceType(DeviceType.FACE_CAMERA_NODE);d.setAccessUnit(guard.requireManagedUnit(actor.getAccountId(),unitId));
-  d.setDeviceSecretHash(passwords.encode(secret));d.setBootstrapSecretHash(passwords.encode(UUID.randomUUID().toString()));d.setLifecycleStatus(DeviceLifecycleStatus.PROVISIONED);devices.saveAndFlush(d);return new Issued(uid,secret);
+ /** Ghép bộ camera AI do admin cấp. Endpoint tự cấp camera cũ (POST không có /pair) đã bị bỏ. */
+ @PostMapping("/pair") public EdgeAiPairingService.Issued pair(@PathVariable Long unitId,@Valid @RequestBody Pair input){
+  Account actor=owner(unitId);
+  return pairing.pair(actor.getAccountId(),unitId,input.pairingCode(),input.password());
  }
  @DeleteMapping("/{uid}") public void remove(@PathVariable Long unitId,@PathVariable String uid,@Valid @RequestBody Password input){
   Account actor=owner(unitId);if(!passwords.matches(input.password(),actor.getPasswordHash()))throw new ResponseStatusException(FORBIDDEN);

@@ -37,6 +37,10 @@ public class Device {
     @Column(name = "bootstrap_secret_hash", nullable = true, length = 255)
     private String bootstrapSecretHash;
 
+    /** SHA-256 của mã ghép bộ camera AI (dùng một lần); null khi đã ghép hoặc không phải bộ camera chờ ghép. */
+    @Column(name = "pairing_code_hash", nullable = true, length = 64, unique = true)
+    private String pairingCodeHash;
+
     @Column(name = "device_secret_hash", nullable = true, length = 255)
     private String deviceSecretHash;
 

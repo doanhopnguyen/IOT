@@ -29,10 +29,12 @@ public class AdminDeviceController {
     private final PasswordEncoder passwords;
     private final com.smartaccess.service.DecommissionNotifier decommissions;
     private final com.smartaccess.service.BrokerAccounts brokers;
+    private final com.smartaccess.service.EdgeAiPairingService pairing;
     public AdminDeviceController(DeviceRepository devices, AccountRepository accounts, AuditLogRepository audits, PasswordEncoder passwords,
-                                 com.smartaccess.service.DecommissionNotifier decommissions, com.smartaccess.service.BrokerAccounts brokers) {
+                                 com.smartaccess.service.DecommissionNotifier decommissions, com.smartaccess.service.BrokerAccounts brokers,
+                                 com.smartaccess.service.EdgeAiPairingService pairing) {
         this.devices = devices; this.accounts = accounts; this.audits = audits; this.passwords = passwords; this.decommissions = decommissions;
-        this.brokers = brokers;
+        this.brokers = brokers; this.pairing = pairing;
     }
     @GetMapping @Transactional(readOnly = true)
     public List<DeviceResponse> list() { return devices.findAll().stream().map(DeviceResponse::from).toList(); }
@@ -41,6 +43,19 @@ public class AdminDeviceController {
     public List<com.smartaccess.dto.manager.EdgeAiResponse> edges() {
         return devices.findAll().stream().filter(d -> d.getDeviceType() == DeviceType.FACE_CAMERA_NODE)
                 .map(com.smartaccess.dto.manager.EdgeAiResponse::from).toList();
+    }
+
+    public record EdgeKit(@NotBlank @Size(max = 100) String name) {}
+    /** Tạo bộ camera AI chờ ghép; mã ghép chỉ trả về một lần. */
+    @PostMapping("/edge-ai") @ResponseStatus(HttpStatus.CREATED)
+    public com.smartaccess.service.EdgeAiPairingService.Kit createEdgeKit(@AuthenticationPrincipal AccountPrincipal actor,
+                                                                         @Valid @RequestBody EdgeKit request) {
+        return pairing.createKit(actor.accountId(), request.name());
+    }
+    @PostMapping("/edge-ai/{uid}/pairing-code")
+    public com.smartaccess.service.EdgeAiPairingService.Kit reissueEdgeCode(@AuthenticationPrincipal AccountPrincipal actor,
+                                                                           @PathVariable String uid) {
+        return pairing.reissueCode(actor.accountId(), uid);
     }
 
     @PostMapping @ResponseStatus(HttpStatus.CREATED) @Transactional

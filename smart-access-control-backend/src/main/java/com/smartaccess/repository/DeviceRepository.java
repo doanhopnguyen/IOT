@@ -17,6 +17,10 @@ public interface DeviceRepository extends JpaRepository<Device, Long> {
     @Query("select d from Device d where d.deviceUid = :deviceUid")
     Optional<Device> findByDeviceUidForUpdate(@Param("deviceUid") String deviceUid);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select d from Device d where d.pairingCodeHash = :hash")
+    Optional<Device> findByPairingCodeHashForUpdate(@Param("hash") String hash);
+
     Optional<Device> findFirstByAccessUnit_UnitIdAndDeviceType(Long unitId, DeviceType deviceType);
 
     java.util.List<Device> findByDeviceTypeAndLifecycleStatusAndAccessUnitIsNotNull(

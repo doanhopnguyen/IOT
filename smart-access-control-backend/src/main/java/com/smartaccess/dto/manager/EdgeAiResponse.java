@@ -11,7 +11,8 @@ public record EdgeAiResponse(Long deviceId, String deviceUid, String name, Devic
         Long unitId, String unitName, String owner, DeviceLifecycleStatus lifecycleStatus,
         LocalDateTime lastSeenAt, String softwareVersion, String modelVersion,
         String cameraStatus, String recognitionStatus, String errorCode,
-        LocalDateTime lastFrameAt, LocalDateTime reportedAt, List<DeviceLifecycleStatus> allowedTransitions) {
+        LocalDateTime lastFrameAt, LocalDateTime reportedAt, List<DeviceLifecycleStatus> allowedTransitions,
+        boolean awaitingPairing) {
     public static EdgeAiResponse from(Device d) {
         var unit = d.getAccessUnit();
         return new EdgeAiResponse(d.getDeviceId(), d.getDeviceUid(), d.getDeviceName(), d.getDeviceType(),
@@ -19,6 +20,7 @@ public record EdgeAiResponse(Long deviceId, String deviceUid, String name, Devic
                 unit == null || unit.getManager() == null ? null : unit.getManager().getFullName(),
                 d.getLifecycleStatus(), d.getLastSeenAt(), d.getEdgeSoftwareVersion(), d.getEdgeModelVersion(),
                 d.getEdgeCameraStatus(), d.getEdgeRecognitionStatus(), d.getEdgeErrorCode(),
-                d.getEdgeLastFrameAt(), d.getEdgeReportedAt(), DeviceLifecyclePolicy.allowed(d));
+                d.getEdgeLastFrameAt(), d.getEdgeReportedAt(), DeviceLifecyclePolicy.allowed(d),
+                d.getPairingCodeHash() != null);
     }
 }
