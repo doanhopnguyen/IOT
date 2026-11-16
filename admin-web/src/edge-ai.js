@@ -7,6 +7,7 @@ export function mergeDevices(inventory, edges) {
 export function edgeHealth(device, now = Date.now()) {
   if (device.lifecycleStatus === 'DECOMMISSIONED') return 'Đã thu hồi';
   if (device.lifecycleStatus === 'SUSPENDED') return 'Đã tạm ngừng';
+  if (device.awaitingPairing) return 'Chờ chủ cửa ghép';
   const age = value => value ? now - new Date(value).getTime() : Infinity;
   const fresh = value => Number.isFinite(age(value)) && age(value) >= -5000 && age(value) < 90000;
   if (!fresh(device.lastSeenAt)) return 'Mất kết nối';

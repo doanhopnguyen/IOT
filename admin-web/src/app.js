@@ -302,6 +302,7 @@ function render() {
     else void refresh(true);
   };
   document.querySelector('#register')?.addEventListener('submit', register);
+  document.querySelector('#register-edge')?.addEventListener('submit', createEdgeKit);
   document.querySelector('#firmware-upload')?.addEventListener('submit', publishFirmware);
   wireFilters();
   wireRows();
@@ -457,7 +458,39 @@ function edgeRow(d) {
     <td>${esc(d.owner || 'Chưa có chủ cửa')}<small>${esc(d.unitName || 'Chưa gắn cửa')}</small></td>
     <td>${stateBadge(d.lifecycleStatus)}<small>${esc(edgeHealth(d))}</small></td>
     <td><span class="connection ${online(d) ? 'online' : ''}"><span class="dot"></span>${online(d) ? 'Online' : 'Offline'}</span><small>${date(d.lastSeenAt)}</small></td>
-    <td class="actions"><button class="secondary" data-device-detail="${esc(d.deviceUid)}">Chi tiết</button>${d.allowedTransitions?.length ? `<button class="secondary" data-lifecycle="${esc(d.deviceUid)}">Thay đổi trạng thái</button>` : ''}</td></tr>`;
+    <td class="actions"><button class="secondary" data-device-detail="${esc(d.deviceUid)}">Chi tiết</button>${d.awaitingPairing && d.lifecycleStatus === 'REGISTERED' ? `<button class="secondary" data-edge-code="${esc(d.deviceUid)}" title="Mã cũ hết hiệu lực">Cấp lại mã ghép</button>` : ''}${d.allowedTransitions?.length ? `<button class="secondary" data-lifecycle="${esc(d.deviceUid)}">Thay đổi trạng thái</button>` : ''}</td></tr>`;
+}
+// Mã ghép chỉ hiện một lần; backend chỉ lưu SHA-256.
+function showEdgeCode(kit) {
+  createDialog(
+    'Mã ghép bộ camera AI',
+    `Đưa mã này cho chủ cửa để ghép "${esc(kit.device.name)}" vào cửa trong ứng dụng Smart Door AI trên laptop. Mã dùng một lần và chỉ hiện lúc này.`,
+    `<div class="dialog-uid" style="user-select:all;font-size:1.25rem;letter-spacing:1px">${esc(kit.pairingCode)}</div><small>${esc(kit.device.deviceUid)}</small>`,
+    'Đã lưu mã',
+    async () => {},
+  );
+}
+async function createEdgeKit(event) {
+  event.preventDefault();
+  const button = event.submitter; button.disabled = true;
+  const errorEl = document.querySelector('#register-edge-error'); errorEl.hidden = true;
+  try {
+    const kit = await api('/api/admin/devices/edge-ai', 'POST', Object.fromEntries(new FormData(event.target)));
+    event.target.reset();
+    showEdgeCode(kit);
+    void refresh(true);
+  } catch (err) {
+    errorEl.textContent = err.message; errorEl.hidden = false;
+  } finally {
+    if (button.isConnected) button.disabled = false;
+  }
+}
+async function reissueEdgeCode(uid) {
+  const d = inventory.find((item) => item.deviceUid === uid);
+  if (!(await confirmAction('Cấp lại mã ghép?', `Mã cũ của "${esc(d?.name || uid)}" sẽ hết hiệu lực ngay.`, 'Cấp mã mới'))) return;
+  try {
+    showEdgeCode(await api(`/api/admin/devices/edge-ai/${encodeURIComponent(uid)}/pairing-code`, 'POST', {}));
+  } catch (err) { notify(err.message, true); }
 }
 function accountPagination(pageCount) {
   const pages = Array.from({ length: pageCount }, (_, i) => i + 1).filter(
@@ -578,6 +611,9 @@ function wireRows() {
     .querySelectorAll('[data-release]')
     .forEach((b) => (b.onclick = () => releaseChip(b.dataset.release)));
   document
+    .querySelectorAll('[data-edge-code]')
+    .forEach((b) => (b.onclick = () => reissueEdgeCode(b.dataset.edgeCode)));
+  document
     .querySelectorAll('[data-status]')
     .forEach((b) => (b.onclick = () => setStatus(b.dataset.status, b.dataset.next)));
   document
@@ -585,7 +621,7 @@ function wireRows() {
     .forEach((b) => (b.onclick = () => navigate(b.dataset.tab)));
 }
 function registration() {
-  return `<section class="panel panel-pad"><form id="register"><div class="step"><span class="step-number">1</span><div class="step-content"><h2>Thêm thiết bị</h2><p>Chưa cần chip. Thiết bị được tạo ở trạng thái <b>Chờ nạp code</b>; danh tính, QR và tài khoản MQTT chỉ được cấp khi nạp code.</p><label>Tên thiết bị<input name="name" maxlength="100" placeholder="Ví dụ: Cửa chính" required></label></div></div><div class="step"><span class="step-number">2</span><div class="step-content"><h2>Nạp code sau</h2><p>Cắm ESP32-S3 vào máy chạy backend, mở <b>Quản lý thiết bị</b> và bấm <b>Nạp code</b> ở dòng của thiết bị.</p><div id="register-error" class="error" role="alert" hidden></div><button type="submit">${icon('plus')} Thêm thiết bị</button></div></div></form></section><div id="issued"></div>`;
+  return `<section class="panel panel-pad"><form id="register"><div class="step"><span class="step-number">1</span><div class="step-content"><h2>Thêm thiết bị</h2><p>Chưa cần chip. Thiết bị được tạo ở trạng thái <b>Chờ nạp code</b>; danh tính, QR và tài khoản MQTT chỉ được cấp khi nạp code.</p><label>Tên thiết bị<input name="name" maxlength="100" placeholder="Ví dụ: Cửa chính" required></label></div></div><div class="step"><span class="step-number">2</span><div class="step-content"><h2>Nạp code sau</h2><p>Cắm ESP32-S3 vào máy chạy backend, mở <b>Quản lý thiết bị</b> và bấm <b>Nạp code</b> ở dòng của thiết bị.</p><div id="register-error" class="error" role="alert" hidden></div><button type="submit">${icon('plus')} Thêm thiết bị</button></div></div></form></section><section class="panel panel-pad"><form id="register-edge"><div class="step"><span class="step-number">AI</span><div class="step-content"><h2>Thêm bộ camera AI (laptop)</h2><p>Tạo danh tính cho một laptop nhận diện khuôn mặt. Hệ thống trả <b>mã ghép dùng một lần</b>; chủ cửa nhập mã này trong ứng dụng Smart Door AI để gắn laptop vào cửa. Không có mã thì không ghép được.</p><label>Tên bộ camera<input name="name" maxlength="100" placeholder="Ví dụ: Laptop cổng chính" required></label><div id="register-edge-error" class="error" role="alert" hidden></div><button type="submit">${icon('plus')} Tạo bộ camera AI</button></div></div></form></section><div id="issued"></div>`;
 }
 async function register(event) {
   event.preventDefault();

@@ -24,3 +24,9 @@ test('heartbeat alone does not mean camera and recognition are ready', () => {
   assert.equal(edgeHealth({...edge, lifecycleStatus:'DECOMMISSIONED'}, now), 'Đã thu hồi');
   assert.equal(edgeHealth(edge, now + 100000), 'Mất kết nối');
 });
+
+test('admin-issued kit waiting for the owner is not reported as a lost connection', () => {
+  const kit = {lifecycleStatus:'REGISTERED', awaitingPairing:true, lastSeenAt:null};
+  assert.equal(edgeHealth(kit), 'Chờ chủ cửa ghép');
+  assert.equal(edgeHealth({...kit, lifecycleStatus:'DECOMMISSIONED'}), 'Đã thu hồi');
+});
