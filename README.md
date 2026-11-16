@@ -208,6 +208,8 @@ Giao diện laptop mặc định ở `http://127.0.0.1:8092`. Chủ cửa đăng
 
 Admin xem laptop tại **Quản lý thiết bị → loại Edge AI / Laptop**. Chi tiết gồm cửa/chủ cửa, kết nối cuối, trạng thái camera/nhận diện, phiên bản phần mềm/model và mã lỗi. Có thể tạm ngừng, bật lại hoặc thu hồi vĩnh viễn; Edge không có thao tác nạp firmware/reset chip ESP32. Backend bổ sung dữ liệu sức khỏe bằng migration `V9__edge_ai_health.sql`; node cũ chưa gửi báo cáo vẫn được liệt kê nhưng không được hiển thị là AI sẵn sàng chỉ dựa vào heartbeat.
 
+Laptop chỉ có danh tính khi **admin tạo bộ camera AI** (Thêm thiết bị → Thêm bộ camera AI). Hệ thống trả **mã ghép dùng một lần** (`AI-XXXXXX-…`, backend chỉ lưu SHA-256); chủ cửa nhập mã cùng mật khẩu trong Smart Door AI trên laptop (hoặc mục Ghép camera thủ công trên mobile) để gắn laptop vào cửa (`POST /api/manager/units/{unitId}/camera-node/pair`). Endpoint tự cấp camera cũ `POST /api/manager/units/{unitId}/camera-node` đã bị bỏ (trả 405). Mã chưa dùng có thể **Cấp lại mã ghép** trên admin; bộ đã tạm ngưng/thu hồi không ghép được. Cột `pairing_code_hash` được thêm bằng migration `V10__edge_ai_pairing_code.sql`.
+
 Khi mất mạng hoặc cửa offline, camera đang chạy được giữ mở; đồng bộ máy chủ chạy ở luồng nền và tự thử lại. Node tạm ngừng xác minh mở cửa, bỏ mẫu cache khi đồng bộ thất bại và không lưu sự kiện nhận diện để gửi bù. Khi kết nối và quyền hợp lệ trở lại, node tải mẫu mới rồi tiếp tục. Tạm ngừng trên admin giữ camera nhưng chặn lấy mẫu/gửi sự kiện; thu hồi hoặc sai danh tính cửa sẽ dừng worker và yêu cầu ghép lại. Nút Dừng nhận diện vẫn dừng theo yêu cầu người dùng.
 
 Kiểm thử Python: chạy `python -m unittest discover -s tests -p "test_*.py"` trong thư mục `face-node/`.

@@ -56,8 +56,8 @@ export function LaptopAiSetup({ unitId }: { unitId: number }) {
       </View>
 
       <Text style={s.caption}>
-        Đăng nhập cùng tài khoản chủ cửa trên ứng dụng Smart Door AI (Laptop) và chọn mã cửa trên để
-        đồng bộ khuôn mặt tự động.
+        Đăng nhập cùng tài khoản chủ cửa trên ứng dụng Smart Door AI (Laptop), chọn mã cửa trên và nhập
+        mã ghép bộ camera AI do admin cấp (chỉ cần ở lần ghép đầu) để đồng bộ khuôn mặt tự động.
       </Text>
     </Card>
   );

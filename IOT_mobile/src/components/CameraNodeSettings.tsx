@@ -11,14 +11,14 @@ export function CameraNodeSettings({ unitId }: { unitId: number }) {
     <>
       <LaptopAiSetup unitId={unitId} />
       <Button
-        title="Cấp phát camera thủ công"
+        title="Ghép camera thủ công"
         icon="options-outline"
         variant="ghost"
         onPress={() => setManual(true)}
       />
       <AppModal
         visible={manual}
-        title="Cấp phát camera thủ công"
+        title="Ghép camera thủ công"
         onClose={() => setManual(false)}
       >
         <ManualCameraNodeSettings unitId={unitId} />
@@ -30,6 +30,7 @@ function ManualCameraNodeSettings({ unitId }: { unitId: number }) {
   const confirm = useConfirm();
   const [nodes, setNodes] = useState<{ deviceCode: string; lifecycleStatus: string }[]>([]);
   const [password, setPassword] = useState('');
+  const [pairingCode, setPairingCode] = useState('');
   const [issued, setIssued] = useState('');
   const [showIssued, setShowIssued] = useState(false);
   const [message, setMessage] = useState('');
@@ -79,11 +80,12 @@ function ManualCameraNodeSettings({ unitId }: { unitId: number }) {
         });
         setIssued('');
       } else {
-        const result = await request<{ deviceUid: string; deviceSecret: string }>(path, {
+        const result = await request<{ deviceUid: string; deviceSecret: string }>(`${path}/pair`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password }),
+          body: JSON.stringify({ password, pairingCode: pairingCode.trim() }),
         });
+        setPairingCode('');
         setIssued(
           `FACE_API_URL=${getApiBaseUrl()}\nFACE_DEVICE_UID=${result.deviceUid}\nFACE_DEVICE_SECRET=${result.deviceSecret}`,
         );
@@ -94,7 +96,7 @@ function ManualCameraNodeSettings({ unitId }: { unitId: number }) {
       setMessage(
         uid
           ? 'Đã gỡ camera và vô hiệu khóa cũ.'
-          : 'Đã cấp camera. Lưu thông tin riêng trước khi rời màn hình.',
+          : 'Đã ghép camera. Lưu thông tin riêng trước khi rời màn hình.',
       );
     } catch (e) {
       setFailed(true);
@@ -137,13 +139,23 @@ function ManualCameraNodeSettings({ unitId }: { unitId: number }) {
         value={password}
         onChangeText={setPassword}
         secureTextEntry
-        placeholder="Xác thực để cấp / gỡ camera"
+        placeholder="Xác thực để ghép / gỡ camera"
       />
       {!loading && !nodes.length ? (
+        <Input
+          label="Mã ghép bộ camera AI"
+          value={pairingCode}
+          onChangeText={setPairingCode}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          placeholder="AI-XXXXXX-XXXXXX-XXXXXX-XXXXXX (do admin cấp)"
+        />
+      ) : null}
+      {!loading && !nodes.length ? (
         <Button
-          title="Cấp camera mới"
+          title="Ghép camera bằng mã"
           icon="videocam-outline"
-          disabled={busy || !password}
+          disabled={busy || !password || !pairingCode.trim()}
           loading={busy}
           onPress={() => {
             void act();
