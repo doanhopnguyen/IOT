@@ -141,7 +141,7 @@ class DesktopController:
                 raise ApiFailure(401, 'Đăng nhập tài khoản chủ cửa trước.')
             return self.owner.doors()
 
-    def connect(self, code, camera=0, replace=False, auto=True):
+    def connect(self, code, camera=0, replace=False, auto=True, pairing_code=''):
         if not isinstance(camera, int) or isinstance(camera, bool) or not 0 <= camera <= 10:
             raise ValueError('Chọn camera từ 0 đến 10.')
         with self.operation:
@@ -157,11 +157,14 @@ class DesktopController:
             if not reuse:
                 if nodes and not replace:
                     raise ApiFailure(409, 'Cửa đã có camera khác. Bật “Thay camera cũ” nếu muốn chuyển sang laptop này.')
+                pairing_code = (pairing_code or '').strip()
+                if not pairing_code:
+                    raise ApiFailure(400, 'Nhập mã ghép bộ camera AI do admin cấp để ghép laptop này với cửa.')
                 if not self.password:
-                    raise ApiFailure(401, 'Đăng nhập lại để xác thực cấp camera mới.')
+                    raise ApiFailure(401, 'Đăng nhập lại để xác thực ghép camera mới.')
                 for node in nodes:
                     self.owner.call('DELETE', path + '/' + node['deviceCode'], {'password': self.password})
-                issued = self.owner.call('POST', path, {'password': self.password})
+                issued = self.owner.call('POST', path + '/pair', {'password': self.password, 'pairingCode': pairing_code})
                 cached = {'deviceUid': issued['deviceUid'], 'deviceSecret': issued['deviceSecret'], 'server': self.owner.server}
             self.password = None
             selected = dict(cached, unitId=door['unitId'], doorName=door['name'], doorCode=door['code'], camera=camera,
@@ -317,7 +320,7 @@ def handler_for(controller, token, port, default_server):
                 if not 0 < length <= 4096: raise ValueError('Yêu cầu không hợp lệ.')
                 body = json.loads(self.rfile.read(length))
                 if self.path == '/api/login': result = controller.login(body['server'], body['identifier'], body['password'])
-                elif self.path == '/api/connect': result = controller.connect(body['doorCode'], body.get('camera', 0), body.get('replace') is True, body.get('auto') is True)
+                elif self.path == '/api/connect': result = controller.connect(body['doorCode'], body.get('camera', 0), body.get('replace') is True, body.get('auto') is True, str(body.get('pairingCode') or ''))
                 elif self.path == '/api/stop': result = controller.stop()
                 elif self.path == '/api/logout': result = controller.stop(logout=True)
                 else: return self.reply(404, {'message': 'Không tìm thấy thao tác.'})

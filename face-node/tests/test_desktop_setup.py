@@ -11,6 +11,8 @@ from desktop_setup import ApiFailure, DesktopController, OwnerClient, handler_fo
 from config import Config
 from node import HttpPublisher
 
+CODE = 'AI-0A1B2C-3D4E5F-60718A-9BACBD'
+
 
 class Owner:
     server = 'http://127.0.0.1:8080'
@@ -39,7 +41,7 @@ class DesktopTests(unittest.TestCase):
     def tearDown(self): self.controller.close(); self.folder.cleanup()
 
     def test_same_owner_code_arms_without_opening_camera_until_door_is_ready(self):
-        self.controller.connect('SD-000007')
+        self.controller.connect('SD-000007', pairing_code=CODE)
         self.controller.tick(); self.start.assert_not_called()
         self.assertEqual('WAITING', self.controller.snapshot()['phase'])
         self.state['ready'] = True
@@ -57,7 +59,7 @@ class DesktopTests(unittest.TestCase):
         self.start.assert_not_called()
 
     def test_switching_owner_accounts_stops_the_previous_door_camera(self):
-        self.controller.connect('SD-000007'); self.state['ready'] = True; self.controller.tick()
+        self.controller.connect('SD-000007', pairing_code=CODE); self.state['ready'] = True; self.controller.tick()
         other = Owner(Owner.server); other.login = Mock(return_value={'accountId': 2, 'fullName': 'Other'})
         self.controller.owner_factory = lambda _: other
         self.controller.login(Owner.server, 'other@test', 'other-password')
@@ -65,18 +67,28 @@ class DesktopTests(unittest.TestCase):
 
     def test_existing_camera_requires_explicit_replacement(self):
         self.controller.owner.nodes = [{'deviceCode': 'FACE-other-laptop'}]
-        with self.assertRaises(ApiFailure): self.controller.connect('SD-000007')
+        with self.assertRaises(ApiFailure): self.controller.connect('SD-000007', pairing_code=CODE)
         self.assertFalse(any(call[0] == 'DELETE' for call in self.controller.owner.calls))
-        self.controller.connect('SD-000007', replace=True)
+        self.controller.connect('SD-000007', pairing_code=CODE, replace=True)
         self.assertTrue(any(call[0] == 'DELETE' for call in self.controller.owner.calls))
 
+    def test_new_camera_requires_admin_pairing_code_and_sends_it(self):
+        with self.assertRaises(ApiFailure) as raised: self.controller.connect('SD-000007')
+        self.assertEqual(400, raised.exception.status)
+        self.assertFalse(any(call[0] in ('POST', 'DELETE') for call in self.controller.owner.calls))
+        self.controller.connect('SD-000007', pairing_code='  ' + CODE + ' ')
+        posts = [call for call in self.controller.owner.calls if call[0] == 'POST']
+        self.assertEqual([{'password': 'account-password', 'pairingCode': CODE}], [call[2] for call in posts])
+        self.assertEqual(['/api/manager/units/7/camera-node/pair'], [call[1] for call in posts])
+        self.assertNotIn(CODE, self.path.read_text())
+
     def test_reconnect_reuses_local_node_without_duplicate_provisioning(self):
-        self.controller.connect('SD-000007'); self.controller.connect('SD-000007')
+        self.controller.connect('SD-000007', pairing_code=CODE); self.controller.connect('SD-000007', pairing_code=CODE)
         creates = [call for call in self.controller.owner.calls if call[0] == 'POST']
         self.assertEqual(1, len(creates))
 
     def test_lost_connection_pauses_and_recovers_but_stop_does_not_restart(self):
-        self.controller.connect('SD-000007'); self.state['ready'] = True; self.controller.tick()
+        self.controller.connect('SD-000007', pairing_code=CODE); self.state['ready'] = True; self.controller.tick()
         self.state['doorOnline'] = False; self.controller.tick()
         self.process.terminate.assert_not_called()
         self.state['doorOnline'] = True; self.controller.tick(); self.assertEqual(1, self.start.call_count)
@@ -84,7 +96,7 @@ class DesktopTests(unittest.TestCase):
         self.assertFalse(json.loads(self.path.read_text())['armed'])
 
     def test_network_timeout_keeps_the_same_camera_worker_and_recovers(self):
-        self.controller.connect('SD-000007'); self.state['ready'] = True; self.controller.tick()
+        self.controller.connect('SD-000007', pairing_code=CODE); self.state['ready'] = True; self.controller.tick()
         self.controller.connection_reader = Mock(side_effect=requests.ConnectionError('offline'))
         for _ in range(3): self.controller.tick()
         self.process.terminate.assert_not_called()
@@ -95,7 +107,7 @@ class DesktopTests(unittest.TestCase):
         self.start.assert_called_once()
 
     def test_suspension_keeps_preview_armed_and_resume_does_not_restart_worker(self):
-        self.controller.connect('SD-000007'); self.state['ready'] = True; self.controller.tick()
+        self.controller.connect('SD-000007', pairing_code=CODE); self.state['ready'] = True; self.controller.tick()
         self.state['enabled'] = False; self.controller.tick()
         self.process.terminate.assert_not_called()
         self.assertTrue(self.controller.snapshot()['armed'])
@@ -104,23 +116,23 @@ class DesktopTests(unittest.TestCase):
         self.start.assert_called_once()
 
     def test_credential_revocation_disarms_instead_of_retrying_or_replaying(self):
-        self.controller.connect('SD-000007')
+        self.controller.connect('SD-000007', pairing_code=CODE)
         response = requests.Response(); response.status_code = 401
         self.controller.connection_reader = Mock(side_effect=requests.HTTPError(response=response))
         self.controller.tick(); self.assertFalse(self.controller.snapshot()['armed'])
         self.assertEqual('ERROR', self.controller.snapshot()['phase'])
 
     def test_camera_switched_to_another_door_is_not_used(self):
-        self.controller.connect('SD-000007'); self.state['doorCode'] = 'SD-000008'
+        self.controller.connect('SD-000007', pairing_code=CODE); self.state['doorCode'] = 'SD-000008'
         self.state['ready'] = True; self.controller.tick()
         self.start.assert_not_called(); self.assertFalse(self.controller.snapshot()['armed'])
 
     def test_auto_restart_uses_saved_device_identity_without_saving_owner_password(self):
-        self.controller.connect('SD-000007', auto=True)
+        self.controller.connect('SD-000007', pairing_code=CODE, auto=True)
         resumed = DesktopController(self.path, Owner, lambda _: dict(self.state), self.start)
         self.assertFalse(resumed.snapshot()['authenticated']); self.assertTrue(resumed.snapshot()['armed'])
         self.state['ready'] = True; resumed.tick(); self.start.assert_called_once(); resumed.close()
-        self.controller.connect('SD-000007', auto=False)
+        self.controller.connect('SD-000007', pairing_code=CODE, auto=False)
         resumed = DesktopController(self.path, Owner, lambda _: dict(self.state), self.start)
         self.assertFalse(resumed.snapshot()['armed']); resumed.close()
 
