@@ -7,11 +7,12 @@ from http.server import ThreadingHTTPServer
 from unittest.mock import Mock
 
 import requests
-from desktop_setup import ApiFailure, DesktopController, OwnerClient, handler_for, server_origin
+from desktop_setup import ApiFailure, DesktopController, OwnerClient, handler_for, server_origin, parse_device_config
 from config import Config
 from node import HttpPublisher
 
 CODE = 'AI-0A1B2C-3D4E5F-60718A-9BACBD'
+DEVICE_CONFIG = 'FACE_API_URL=http://127.0.0.1:8080\nFACE_DEVICE_UID=FACE-existing\nFACE_DEVICE_SECRET=imported-private-key'
 
 
 class Owner:
@@ -52,6 +53,42 @@ class DesktopTests(unittest.TestCase):
         self.assertNotIn('account-password', self.path.read_text())
         self.assertNotIn('private-camera-key', json.dumps(self.controller.snapshot()))
         self.assertIsNone(self.controller.password)
+
+    def test_import_device_without_owner_waits_for_readiness_and_resumes(self):
+        self.controller.stop(logout=True)
+        self.state['doorName'] = 'Imported door'
+        result = self.controller.connect_device(DEVICE_CONFIG, camera=1)
+        self.assertFalse(result['authenticated'])
+        self.assertEqual('Imported door', result['doorName'])
+        self.assertNotIn('imported-private-key', json.dumps(result))
+        self.controller.tick(); self.start.assert_not_called()
+        self.state['ready'] = True
+        self.controller.tick()
+        self.assertEqual('FACE-existing', self.start.call_args.args[0]['deviceUid'])
+        self.assertEqual(1, self.start.call_args.args[0]['camera'])
+        self.controller.stop()
+        resumed = DesktopController(self.path, Owner, lambda _: dict(self.state), self.start)
+        self.assertFalse(resumed.snapshot()['armed'])
+        resumed.close()
+
+    def test_invalid_import_does_not_replace_working_connection(self):
+        self.controller.connect('SD-000007', pairing_code=CODE)
+        previous = self.path.read_text()
+        response = requests.Response(); response.status_code = 401
+        self.controller.connection_reader = Mock(side_effect=requests.HTTPError(response=response))
+        with self.assertRaises(ApiFailure): self.controller.connect_device(DEVICE_CONFIG)
+        self.assertEqual(previous, self.path.read_text())
+        self.assertTrue(self.controller.snapshot()['armed'])
+
+    def test_pasted_config_accepts_escaped_url_quotes_and_trailing_slashes(self):
+        config = parse_device_config('FACE_API_URL=http\\://127.0.0.1:8080\\\nFACE_DEVICE_UID="FACE-existing"\\\nFACE_DEVICE_SECRET=private-key')
+        self.assertEqual('http://127.0.0.1:8080', config['server'])
+        self.assertEqual('FACE-existing', config['deviceUid'])
+        for text in [DEVICE_CONFIG + '\nFACE_DEVICE_SECRET=duplicate',
+                     DEVICE_CONFIG + '\nUNSUPPORTED=value',
+                     DEVICE_CONFIG.replace('imported-private-key', ''),
+                     DEVICE_CONFIG.replace('http://127.0.0.1:8080', 'http://server/api')]:
+            with self.assertRaises(ValueError): parse_device_config(text)
 
     def test_foreign_code_cannot_provision_or_start_a_camera(self):
         with self.assertRaises(ApiFailure): self.controller.connect('SD-000008')
@@ -145,17 +182,30 @@ class DesktopTests(unittest.TestCase):
         try:
             session = requests.Session(); session.trust_env = False
             self.assertEqual(403, session.post(base + '/api/connect', json={'doorCode': 'SD-000007'}).status_code)
+            self.assertEqual(403, session.post(base + '/api/connect-device', json={'configuration': DEVICE_CONFIG}).status_code)
             self.assertEqual(403, session.get(base + '/api/state', headers={'Host': 'attacker.invalid'}).status_code)
             self.assertEqual(403, session.post(base + '/api/stop', json={}, headers={'X-Local-Token': 'private-local-token', 'Origin': 'https://attacker.invalid'}).status_code)
             page = session.get(base).text
             self.assertIn('private-local-token', page); self.assertNotIn('account-password', page)
             state = session.get(base + '/api/state', headers={'X-Local-Token': 'private-local-token'})
             self.assertEqual(200, state.status_code); self.assertNotIn('private-camera-key', state.text)
+            imported = session.post(base + '/api/connect-device', json={'configuration': DEVICE_CONFIG, 'auto': True}, headers={'X-Local-Token': 'private-local-token'})
+            self.assertEqual(200, imported.status_code)
+            self.assertNotIn('imported-private-key', imported.text)
         finally:
             server.shutdown(); server.server_close(); worker.join(timeout=3)
 
     def test_backend_origin_does_not_accept_credentials_paths_or_redirect_targets(self):
         for value in ['file:///etc/passwd', 'http://user:pass@server', 'https://server/path', 'https://server?key=secret']:
+            with self.assertRaises(ValueError): server_origin(value)
+
+    def test_server_accepts_bare_ip_with_default_or_explicit_port(self):
+        self.assertEqual('http://100.95.248.100:8080', server_origin(' 100.95.248.100 '))
+        self.assertEqual('http://192.168.1.10:9000', server_origin('192.168.1.10:9000'))
+        self.assertEqual('https://server.ts.net', server_origin('https://server.ts.net/'))
+        config = parse_device_config(DEVICE_CONFIG.replace('http://127.0.0.1:8080', '100.95.248.100'))
+        self.assertEqual('http://100.95.248.100:8080', config['server'])
+        for value in ['999.95.248.100', '100.95.248.100:0', '100.95.248.100:65536', 'http://server:invalid']:
             with self.assertRaises(ValueError): server_origin(value)
 
     def test_picker_uses_the_owner_chosen_door_name_instead_of_the_factory_device_label(self):

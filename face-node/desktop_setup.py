@@ -5,9 +5,11 @@ keeps the same recognition/liveness/authorization pipeline as node.py.
 """
 import argparse
 import hmac
+import ipaddress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import subprocess
@@ -31,14 +33,44 @@ class ApiFailure(RuntimeError):
 
 def server_origin(value):
     value = value.strip().rstrip('/')
+    address = re.fullmatch(r'(\d{1,3}(?:\.\d{1,3}){3})(?::(\d+))?', value)
+    if address:
+        host = ipaddress.IPv4Address(address[1])
+        value = f'http://{host}:{address[2] or "8080"}'
     url = urlsplit(value)
     if url.scheme not in {'http', 'https'} or not url.hostname or url.username or url.password or url.path or url.query or url.fragment:
         raise ValueError('Nhập địa chỉ máy chủ Smart Door, ví dụ http://100.x.x.x:8080.')
+    if url.port is not None and not 1 <= url.port <= 65535:
+        raise ValueError('Cổng máy chủ phải từ 1 đến 65535.')
     return value
 
 
 def door_code(unit_id):
     return f'SD-{int(unit_id):06d}'
+
+
+def parse_device_config(value):
+    """Read only the three device settings; never execute pasted shell text."""
+    keys = {'FACE_API_URL', 'FACE_DEVICE_UID', 'FACE_DEVICE_SECRET'}
+    values = {}
+    for line in value.splitlines():
+        line = line.strip().rstrip('\\').strip()
+        if not line or line.startswith('#'):
+            continue
+        key, separator, setting = line.partition('=')
+        key = key.strip()
+        if not separator or key not in keys or key in values:
+            raise ValueError('Chỉ nhập một lần mỗi dòng FACE_API_URL, FACE_DEVICE_UID, FACE_DEVICE_SECRET.')
+        setting = setting.strip()
+        if len(setting) >= 2 and setting[0] == setting[-1] and setting[0] in {'"', "'"}:
+            setting = setting[1:-1]
+        values[key] = setting.replace('\\:', ':') if key == 'FACE_API_URL' else setting
+    if set(values) != keys or any(not value for value in values.values()):
+        raise ValueError('Nhập đủ FACE_API_URL, FACE_DEVICE_UID và FACE_DEVICE_SECRET.')
+    if any(any(ord(char) < 32 or ord(char) == 127 for char in value) for value in values.values()):
+        raise ValueError('Cấu hình chứa ký tự không hợp lệ.')
+    return {'server': server_origin(values['FACE_API_URL']),
+            'deviceUid': values['FACE_DEVICE_UID'], 'deviceSecret': values['FACE_DEVICE_SECRET']}
 
 
 class OwnerClient:
@@ -189,6 +221,31 @@ class DesktopController:
         finally:
             api.session.close()
 
+    def connect_device(self, configuration, camera=0, auto=True):
+        if not isinstance(camera, int) or isinstance(camera, bool) or not 0 <= camera <= 10:
+            raise ValueError('Chọn camera từ 0 đến 10.')
+        selected = dict(parse_device_config(configuration), camera=camera)
+        with self.operation:
+            try:
+                connection = self.connection_reader(selected)
+            except requests.HTTPError as error:
+                if error.response is not None and error.response.status_code in {401, 403, 404}:
+                    raise ApiFailure(400, 'UID hoặc secret không hợp lệ, thiết bị chưa gắn với cửa hoặc đã bị thu hồi.') from None
+                raise
+            code = connection.get('doorCode', '')
+            if not re.fullmatch(r'SD-\d+', code):
+                raise ValueError('Máy chủ chưa trả về cửa hợp lệ cho camera này.')
+            selected.update(unitId=int(code[3:]), doorCode=code,
+                            doorName=connection.get('doorName') or code, mode='device')
+            with self.lock:
+                self._stop_process()
+                self.store['connections'][str(selected['unitId'])] = selected
+                self.store.update(selected=str(selected['unitId']), armed=True, autoRestart=bool(auto))
+                self._save()
+                self.revision += 1
+                self.phase, self.message = 'WAITING', 'Đã xác thực camera. AI sẽ chạy khi cửa sẵn sàng.'
+        return self.snapshot()
+
     def _start_process(self, selected):
         env = os.environ.copy()
         env.update(FACE_API_URL=selected['server'], FACE_DEVICE_UID=selected['deviceUid'],
@@ -321,6 +378,7 @@ def handler_for(controller, token, port, default_server):
                 body = json.loads(self.rfile.read(length))
                 if self.path == '/api/login': result = controller.login(body['server'], body['identifier'], body['password'])
                 elif self.path == '/api/connect': result = controller.connect(body['doorCode'], body.get('camera', 0), body.get('replace') is True, body.get('auto') is True, str(body.get('pairingCode') or ''))
+                elif self.path == '/api/connect-device': result = controller.connect_device(body['configuration'], body.get('camera', 0), body.get('auto') is True)
                 elif self.path == '/api/stop': result = controller.stop()
                 elif self.path == '/api/logout': result = controller.stop(logout=True)
                 else: return self.reply(404, {'message': 'Không tìm thấy thao tác.'})

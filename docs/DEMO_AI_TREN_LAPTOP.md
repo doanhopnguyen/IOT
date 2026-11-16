@@ -28,6 +28,19 @@ Mobile chạy bằng **Expo Go**, không cần cài APK riêng. Xem [cách mở 
 
 Không phải chạy `node.py --camera` riêng khi dùng launcher này; tránh hai tiến trình tranh cùng webcam.
 
+### Hai cách kết nối trong Smart Door AI
+
+- **Cách A · Tài khoản và mã ghép:** đăng nhập chủ cửa, chọn cửa và nhập mã `AI-…` do admin cấp khi ghép lần đầu. Admin tạo mã tại **Thêm thiết bị → Thêm bộ camera AI**.
+- **Cách B · Cấu hình camera:** dành cho camera đã được cấp UID/secret và gắn với cửa. Không cần đăng nhập chủ cửa. Nhập giá trị bên dưới vào ba ô riêng: địa chỉ máy chủ, UID camera và secret camera; chọn camera rồi bấm **Kết nối bằng cấu hình và bật AI**:
+
+```dotenv
+FACE_API_URL=http://<IP-Tailscale-máy-chủ>:8080
+FACE_DEVICE_UID=FACE-<UID-đã-cấp>
+FACE_DEVICE_SECRET=<secret-đã-cấp>
+```
+
+Ứng dụng xác thực camera với máy chủ và tự lấy cửa tương ứng. Nếu sai thông tin hoặc thiết bị chưa gắn với cửa, ứng dụng báo lỗi trước khi thay kết nối đang dùng. Cấu hình được lưu trong `.local/edge-ai/connections.json` để tự chạy lại; không chia sẻ file này. Hai cách cùng chờ cửa sẵn sàng và dùng chung luồng nhận diện, kiểm tra quyền, xác minh người thật.
+
 ## Kịch bản trình diễn với thầy
 
 1. Mobile và laptop dùng cùng tài khoản chủ cửa. Nhận cửa bằng QR, đặt tên; mã `SD-…` của cửa có trong phần Nhận diện bằng laptop.
