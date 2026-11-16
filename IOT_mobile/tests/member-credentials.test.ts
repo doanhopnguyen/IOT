@@ -22,6 +22,7 @@ test('removing a member returns a device command instead of assuming deletion co
     setApiBaseUrl('http://member-removal.test:8080');
     globalThis.fetch = async (input, init) => {
       if (String(input).endsWith('/api/auth/csrf')) return Response.json({ token: 'csrf' });
+      if (String(input).endsWith('/api/units')) return Response.json([{ unitId: 7, lifecycleStatus: 'ACTIVE' }]);
       assert.equal(String(input), 'http://member-removal.test:8080/api/manager/units/7/users/43');
       assert.equal(init?.method, 'DELETE');
       return Response.json({ commandUuid: 'removal-uuid', status: 'PENDING', resultMessage: null }, { status: 202 });

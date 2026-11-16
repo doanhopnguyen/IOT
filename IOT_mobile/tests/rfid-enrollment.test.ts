@@ -1,10 +1,30 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { enrollScannedRfid } from '../src/services/api/rfidEnrollment';
+import { enrollmentStopped, enrollScannedRfid } from '../src/services/api/rfidEnrollment';
 import type { CommandDto } from '../src/services/api/managerService';
 
 const sent: CommandDto = { commandUuid: 'reader-session', status: 'SENT', resultMessage: null };
 const acknowledged = (message = 'RFID_UID:A1B2C3D4'): CommandDto => ({ ...sent, status: 'ACKNOWLEDGED', resultMessage: message });
+
+test('gateway failure or command timeout is not proof that the controller stopped scanning', () => {
+  assert.equal(enrollmentStopped({ ...sent, status: 'FAILED', resultMessage: 'Không gửi được lệnh tới thiết bị' }), false);
+  assert.equal(enrollmentStopped({ ...sent, status: 'TIMEOUT' }), false);
+  assert.equal(enrollmentStopped({ ...sent, status: 'FAILED', resultMessage: 'ENROLL_TIMEOUT', acknowledgedAt: new Date().toISOString() }), true);
+  assert.equal(enrollmentStopped(acknowledged()), true);
+});
+
+test('late RFID results cannot assign a card after cancellation was requested', async () => {
+  let cancel = false, captured = '', saved = false;
+  let complete!: (value: CommandDto) => void;
+  const pending = new Promise<CommandDto>(resolve => { complete = resolve; });
+  const operation = enrollScannedRfid(7, 42, () => {}, {
+    scanRfid: async () => sent, waitForCommand: async () => pending,
+    assignRfid: async () => { saved = true; throw new Error('must not assign'); },
+  }, { started: command => { captured = command.commandUuid; }, cancelled: () => cancel });
+  await Promise.resolve(); assert.equal(captured, sent.commandUuid);
+  cancel = true; complete(acknowledged());
+  await assert.rejects(operation, /hủy/); assert.equal(saved, false);
+});
 
 test('card enrollment waits for the reader ACK before saving the UID for the selected person', async () => {
   let complete!: (value: CommandDto) => void;

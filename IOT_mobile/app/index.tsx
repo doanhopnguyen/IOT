@@ -60,7 +60,7 @@ import { colors, fonts, radius } from '../src/theme/tokens';
 import { canManageDoor, canRemoteUnlock, canRemoteLock } from '../src/utils/permissions';
 import { memberContactLabel } from '../src/utils/memberProfileInput';
 import { NewPersonMember } from '../src/components/NewPersonMember';
-import { lifecycleNotice, reconcileSelection } from '../src/services/api/deviceState';
+import { lifecycleNotice, reconcileSelection, sortUsableDevicesFirst, isDeviceReadOnly } from '../src/services/api/deviceState';
 
 type ViewName =
   | TabKey
@@ -198,7 +198,7 @@ function SmartDoorApp() {
     const revision = ++loadRevision.current;
     if (!silent) setDataLoading(true);
     try {
-      const next = (await unitService.listMine()).map(toDoor);
+      const next = sortUsableDevicesFirst((await unitService.listMine()).map(toDoor));
       if (actor !== accountId.current || revision !== loadRevision.current) return;
       setDoors(next);
       setDataError('');
@@ -430,7 +430,13 @@ function SmartDoorApp() {
     );
   return (
     <Screen>
-      {body}
+      {selected && isDeviceReadOnly(selected.lifecycleStatus) &&
+        ['members', 'member-detail', 'add-member', 'new-person-member', 'invite-member', 'approvals'].includes(view)
+        ? <ScrollView contentContainerStyle={x.page}>
+          <PageHeader title="Thông tin cửa" back={() => setView('detail')} />
+          <Notice tone="warning">{lifecycleNotice(selected.lifecycleStatus)} Chỉ cho phép xem thông tin.</Notice>
+          <Text style={x.cardTitle}>{selected.name}</Text>
+        </ScrollView> : body}
       {(['home', 'devices', 'invitations', 'profile'] as ViewName[]).includes(view) && (
         <FloatingNav
           active={view as TabKey}
@@ -781,6 +787,7 @@ function DoorCard({
           </View>
           <Status online={door.connectivity === 'ONLINE'} />
         </View>
+        {isDeviceReadOnly(door.lifecycleStatus) ? <Badge label={door.lifecycleStatus === 'SUSPENDED' ? 'Bị tạm ngưng' : 'Đã thu hồi'} tone="warning" /> : null}
         <View style={x.doorMeta}>
           <View style={x.sensorLine}>
             <Ionicons
@@ -809,7 +816,7 @@ function DoorCard({
             colors.muted,
           )}
           <Text style={[x.caption, { flex: 1 }]}>
-            {door.connectivity === 'OFFLINE'
+            {isDeviceReadOnly(door.lifecycleStatus) ? 'Thiết bị chỉ cho phép xem thông tin' : door.connectivity === 'OFFLINE'
               ? 'Thiết bị ngoại tuyến · chưa thể mở từ xa'
               : 'Bạn chưa được cấp quyền mở từ xa'}
           </Text>
@@ -907,6 +914,7 @@ function Devices({
                 </View>
                 <Status online={d.connectivity === 'ONLINE'} />
               </View>
+              {isDeviceReadOnly(d.lifecycleStatus) ? <Badge label={d.lifecycleStatus === 'SUSPENDED' ? 'Bị tạm ngưng' : 'Đã thu hồi'} tone="warning" /> : null}
               <Button
                 title="Quản lý thiết bị"
                 variant="ghost"

@@ -54,6 +54,18 @@ public class CommandAckService {
         handleAck(deviceUid, commandUuid, success, message, null);
     }
 
+    /** Suspension may finish an already-running enrollment, but cannot acknowledge other owner mutations. */
+    @Transactional
+    public boolean handleEnrollmentCleanupAck(String deviceUid,String uuid,boolean success,String message) {
+        devices.findByDeviceUidForUpdate(deviceUid);
+        var command=commands.findByCommandUuid(uuid).orElse(null);
+        if(command==null || !command.getDevice().getDeviceUid().equals(deviceUid) ||
+                !(EnrollmentService.CANCEL.equals(command.getCommandType()) ||
+                  (!success && java.util.Set.of("FP_ENROLL","RFID_SCAN").contains(command.getCommandType())))) return false;
+        handleAck(deviceUid,uuid,success,message,null);
+        return true;
+    }
+
     /**
      * reportedTemplateId: ô vân tay firmware thực sự đã lưu (firmware mới có thể chọn ô khác ô đề nghị
      * khi cảm biến còn mẫu cũ). Null với firmware cũ hoặc lệnh không phải FP_ENROLL.
@@ -69,11 +81,35 @@ public class CommandAckService {
                 || command.getStatus() == CommandStatus.FAILED) {
             return;
         }
+        if(java.util.Set.of("FP_ENROLL","RFID_SCAN").contains(command.getCommandType()) &&
+                command.getPayload().get("enrollmentGeneration") instanceof Number generation &&
+                generation.longValue()!=inventory.findById(command.getDevice().getDeviceId()).map(com.smartaccess.model.DeviceInventory::getGeneration).orElse(0L)) {
+            command.setStatus(CommandStatus.FAILED); command.setResultMessage("GENERATION_MISMATCH"); return;
+        }
         boolean face = command.getPayload() != null && "FACE".equals(command.getPayload().get("accessMethod"));
         if (face && (command.getStatus() == CommandStatus.TIMEOUT
                 || command.getRequestedAt().isBefore(LocalDateTime.now().minusSeconds(15)))) return;
         command.setAcknowledgedAt(LocalDateTime.now());
         command.setResultMessage(message);
+        if (EnrollmentService.CANCEL.equals(command.getCommandType()) && success) {
+            String targetUuid=(String)command.getPayload().get("targetCommandUuid");
+            Command target=commands.findForUpdate(targetUuid).orElse(null);
+            if(target==null || !target.getDevice().getDeviceId().equals(command.getDevice().getDeviceId()) ||
+                    !java.util.Set.of(EnrollmentService.CANCELLED,EnrollmentService.COMPLETED).contains(message)) {
+                command.setStatus(CommandStatus.FAILED); command.setResultMessage("CANCELLATION_NOT_CONFIRMED"); return;
+            }
+            if(EnrollmentService.CANCELLED.equals(message)) {
+                // Cancellation is authoritative only when the controller has stopped this exact UUID.
+                // A completed fingerprint cannot be cancelled or deleted by this path.
+                if(target.getStatus()==CommandStatus.ACKNOWLEDGED && FingerprintService.FP_ENROLL.equals(target.getCommandType())) {
+                    command.setStatus(CommandStatus.FAILED); command.setResultMessage("CANCELLATION_CONFLICT"); return;
+                }
+                target.setStatus(CommandStatus.FAILED); target.setResultMessage(EnrollmentService.CANCELLED);
+                target.setAcknowledgedAt(LocalDateTime.now());
+            }
+            command.setStatus(CommandStatus.ACKNOWLEDGED);
+            return;
+        }
         if (!success) {
             command.setStatus(CommandStatus.FAILED);
             if (face) accessLogs.findByAccessUuid(commandUuid).ifPresent(log -> {

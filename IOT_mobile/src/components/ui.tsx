@@ -70,6 +70,7 @@ export function FeatureTile({
   badge,
   tone = 'primary',
   compact = false,
+  titleLines = 2,
   onPress,
   style,
 }: {
@@ -79,6 +80,7 @@ export function FeatureTile({
   badge?: string;
   tone?: ToneName;
   compact?: boolean;
+  titleLines?: number;
   onPress: () => void;
   style?: StyleProp<ViewStyle>;
 }) {
@@ -104,7 +106,7 @@ export function FeatureTile({
           <Ionicons name={icon} size={20} color={palette.ink} />
           {badge ? <View style={{ position: 'absolute', top: -7, right: -7, minWidth: 19, height: 19, borderRadius: 10, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}><Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{badge}</Text></View> : null}
         </View>
-        <Text style={styles.tileMiniTitle} numberOfLines={2}>
+        <Text style={styles.tileMiniTitle} numberOfLines={titleLines}>
           {title}
         </Text>
       </Pressable>

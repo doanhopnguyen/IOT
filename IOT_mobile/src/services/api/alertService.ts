@@ -29,6 +29,14 @@ export interface AlertStatistics {
   days: { date: string; info: number; warning: number; critical: number }[];
 }
 export const alertService = {
+  async unresolved() {
+    const events = new Map<number, AlertDto>();
+    for (let page = 0; ; page++) {
+      const data = await request<PageResponse<AlertDto>>(`/api/alerts/unresolved?page=${page}&size=100`);
+      data.items.forEach(event => events.set(event.id, event));
+      if (!data.hasNext) return [...events.values()];
+    }
+  },
   users() { return request<Reference[]>('/api/alerts/users'); },
   statistics(filters: AlertFilters) {
     return request<AlertStatistics>(`/api/alerts/statistics?${alertQuery(filters, true)}`);

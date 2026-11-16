@@ -44,6 +44,7 @@ test('creating a door-only profile posts name and room only', async () => {
     setApiBaseUrl('http://member-profile.test:8080');
     globalThis.fetch = async (input, init) => {
       if (String(input).endsWith('/api/auth/csrf')) return Response.json({ token: 'csrf' });
+      if (String(input).endsWith('/api/units')) return Response.json([{ unitId: 7, lifecycleStatus: 'ACTIVE' }]);
       assert.equal(String(input), 'http://member-profile.test:8080/api/manager/units/7/member-profiles');
       assert.equal(init?.method, 'POST');
       assert.deepEqual(JSON.parse(String(init?.body)), { fullName: 'Bé Na', room: 'P302' });

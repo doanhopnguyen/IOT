@@ -26,8 +26,8 @@ export function LaptopAiSetup({ unitId }: { unitId: number }) {
           <Text style={s.heading}>Nhận diện bằng Laptop</Text>
           <Text style={s.caption}>Kết nối ứng dụng Smart Door AI trên máy tính</Text>
         </View>
-        <Badge label="Tự động" tone="primary" />
       </View>
+      <View style={{ alignSelf: 'flex-start' }}><Badge label="Tài khoản chủ cửa + mã ghép" tone="primary" /></View>
 
       <View
         style={{

@@ -1,11 +1,29 @@
 import { useEffect, useState } from 'react';
-import { Text } from 'react-native';
+import { Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import type { InventoryDevice } from './ActivationWizard';
 import { resetComplete, resetOnline, resetService, validateReset } from '../services/api/resetService';
 import { useConfirm } from './ConfirmationProvider';
 import { Button, Card, Input, Notice, styles as s } from './ui';
 import { colors } from '../theme/tokens';
 import { managerService, type CommandDto } from '../services/api/managerService';
+
+export function ResetOverview() {
+  return <Card style={{ borderColor: '#FECACA', gap: 16 }}>
+    <Text style={[s.heading, { color: colors.error }]}>Những dữ liệu sẽ bị xóa</Text>
+    {[
+      { icon: 'keypad-outline' as const, title: 'Mã PIN & kết nối', detail: 'PIN mở cửa, PIN Admin và Wi-Fi đã lưu.' },
+      { icon: 'finger-print-outline' as const, title: 'Quyền ra vào', detail: 'Thẻ, vân tay, thành viên và quyền khuôn mặt tại cửa này.' },
+      { icon: 'options-outline' as const, title: 'Thiết lập & lịch sử', detail: 'Hiệu chỉnh cảm ứng, cảm biến, Servo và lịch sử của cửa.' },
+    ].map(item => <View key={item.title} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+      <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: colors.errorSoft, alignItems: 'center', justifyContent: 'center' }}>
+        <Ionicons name={item.icon} size={18} color={colors.error} />
+      </View>
+      <View style={{ flex: 1, gap: 3 }}><Text style={s.label}>{item.title}</Text><Text style={s.caption}>{item.detail}</Text></View>
+    </View>)}
+    <Notice tone="info">Tài khoản của bạn, firmware và dữ liệu các cửa khác được giữ lại. Bạn cần thiết lập lại cửa sau khi khôi phục.</Notice>
+  </Card>;
+}
 
 export function FactoryReset({ device, onUpdated }: {
   device: InventoryDevice; onUpdated: (device: InventoryDevice) => void;
@@ -91,7 +109,6 @@ export function FactoryReset({ device, onUpdated }: {
           : 'Chưa có xác nhận lưu QR mới từ khóa. Giữ lại mã này, kết nối Wi-Fi cho khóa và gửi lại mã.'}</Notice> : null}
     </> : resetting ? <Notice tone="warning">Đang khôi phục mặc định. Giữ nguồn và kết nối mạng cho cửa. App tự cập nhật và chỉ báo hoàn tất khi thiết bị xác nhận đã xóa.</Notice> : <>
       {device.operationUuid ? <Notice tone="warning">Lần reset trước chưa được xác nhận hoàn tất. Cập nhật trạng thái trước khi thử lại.</Notice> : null}
-      <Text style={s.description}>Xóa toàn bộ dữ liệu người dùng và thiết lập của cửa: PIN, Wi-Fi, thẻ, vân tay, hiệu chỉnh cảm ứng/cửa/servo, thành viên, quyền khuôn mặt và lịch sử. Thiết bị sẽ khởi động lại để thiết lập từ đầu.</Text>
       <Text style={s.caption}>Cần đúng cả mật khẩu tài khoản quản lý và PIN admin của cửa. Giữ lại danh tính xuất xưởng, firmware và tài khoản để có thể sử dụng lại thiết bị.</Text>
       {!online ? <Notice tone="warning">Cần đưa cửa online trước khi khôi phục mặc định.</Notice> : null}
       <Input label="Mật khẩu tài khoản quản lý" value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" />

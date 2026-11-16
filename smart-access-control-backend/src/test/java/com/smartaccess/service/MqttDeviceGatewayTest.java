@@ -167,7 +167,21 @@ class MqttDeviceGatewayTest {
         org.assertj.core.api.Assertions.assertThat(config.path("lifecycle").asText()).isEqualTo("SUSPENDED");
         org.assertj.core.api.Assertions.assertThat(config.has("rfid")).isFalse();
         org.assertj.core.api.Assertions.assertThat(config.path("requestId").asText()).hasSize(36);
-        verify(telemetry, never()).record(any(), any(), anyString());
+        verify(telemetry).record(eq(door), any(), anyString());
+        verifyNoInteractions(policies);
+    }
+
+    @Test void authenticatedSuspendedControllerCanConfirmOnlyEnrollmentCleanup() throws Exception {
+        var client=connectedClient();
+        when(auth.authenticate(anyString(),anyString())).thenThrow(unauthorized());
+        Device door=new Device();door.setDeviceType(DeviceType.DOOR_CONTROLLER);
+        door.setLifecycleStatus(com.smartaccess.model.enumtype.DeviceLifecycleStatus.SUSPENDED);
+        when(auth.authenticateSuspended("door-1","secret")).thenReturn(door);
+        when(acks.handleEnrollmentCleanupAck("door-1","cmd-1",true,null)).thenReturn(true);
+        gateway.handle("test/doors/door-1/ack",message(body));
+        verify(acks).handleEnrollmentCleanupAck("door-1","cmd-1",true,null);
+        verify(acks,never()).handleAck(anyString(),anyString(),anyBoolean(),any(),any());
+        org.assertj.core.api.Assertions.assertThat(published(client,"test/doors/door-1/ack-confirm").path("commandUuid").asText()).isEqualTo("cmd-1");
         verifyNoInteractions(policies);
     }
 

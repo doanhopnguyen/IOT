@@ -51,6 +51,16 @@ class TelemetryServiceTest {
 
     ObjectNode status() { return json.createObjectNode(); }
 
+    @Test void latestHealthUsesOnlyCurrentWhitelistedFieldsEvenWhenHistoryIsDownsampled() {
+        last("fingerReady", "true", 1);
+        service.record(door,status().put("fingerReady",true).put("rfidReady",false).put("moduleHealthSupported",true)
+                .put("wifiPassword","secret").put("deviceSecret","secret"),requestId);
+        assertThat(service.latest(7L).values()).containsEntry("rfidReady","false").containsEntry("fingerReady","true")
+                .doesNotContainKeys("wifiPassword","deviceSecret");
+        service.record(door,status().put("wifiSsid","network"),UUID.randomUUID().toString());
+        assertThat(service.latest(7L).values()).containsOnlyKeys("wifiSsid");
+    }
+
     @Test void storesEachKnownMetricWithUnitOnFirstHeartbeat() {
         service.record(door, status().put("doorClosed", true).put("unlocked", false).put("rssi", -61)
                 .put("freeHeap", 180000).put("deviceSecret", "never-stored"), requestId);

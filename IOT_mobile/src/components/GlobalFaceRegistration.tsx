@@ -1,5 +1,8 @@
 import { ItemList } from './ItemList';
 import { Ionicons } from '@expo/vector-icons';
+import { isDeviceReadOnly } from '../services/api/deviceState';
+import { guardUnitMutation } from '../services/api/lifecycleGuard';
+import { request } from '../services/api/client';
 import { useEffect, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
@@ -202,13 +205,17 @@ export function GlobalFaceRegistration({ doors, back }: { doors: Door[]; back: (
                 title={pending ? 'Hủy yêu cầu đang chờ' : 'Gửi yêu cầu dùng hồ sơ đã đăng ký'}
                 icon={pending ? 'close-outline' : 'paper-plane-outline'}
                 variant={pending ? 'ghost' : 'primary'}
-                disabled={busy || !profile?.hasTemplate}
+                disabled={busy || !profile?.hasTemplate || isDeviceReadOnly(d.lifecycleStatus)}
                 onPress={() => {
-                  void act(() =>
+                  if (isDeviceReadOnly(d.lifecycleStatus)) return;
+                  void act(async () => {
+                    await guardUnitMutation(Number(d.id), request);
+                    return (
                     pending
                       ? faceService.cancel(pending.id)
-                      : faceService.requestAccess(Number(d.id)),
-                  );
+                      : faceService.requestAccess(Number(d.id))
+                    );
+                  });
                 }}
               />
             </Card>

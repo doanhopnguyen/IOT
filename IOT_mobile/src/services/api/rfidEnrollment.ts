@@ -2,6 +2,10 @@ import { managerService, type CommandDto } from './managerService';
 
 type Reader = Pick<typeof managerService, 'scanRfid' | 'waitForCommand' | 'assignRfid'>;
 
+export function enrollmentStopped(command: CommandDto) {
+  return command.status === 'ACKNOWLEDGED' || (command.status === 'FAILED' && !!command.acknowledgedAt);
+}
+
 export function rfidScanError(command: CommandDto): string {
   const messages: Record<string, string> = {
     RFID_SCAN_TIMEOUT: 'Hết thời gian đọc thẻ. Bấm thêm thẻ và đưa thẻ sát đầu đọc trên cửa trong 30 giây.',
@@ -16,12 +20,15 @@ export function rfidScanError(command: CommandDto): string {
 
 /** Register only a UID acknowledged by the ESP32 reader for this enrollment session. */
 export async function enrollScannedRfid(unitId: number, userId: number, waiting: () => void,
-  reader: Reader = managerService) {
+  reader: Reader = managerService, session?: { started: (command: CommandDto) => void; cancelled: () => boolean; settled?: (command: CommandDto) => void }) {
   const command = await reader.scanRfid(unitId, userId);
+  session?.started(command);
   waiting();
   const result = await reader.waitForCommand(command);
+  session?.settled?.(result);
+  if (session?.cancelled()) throw new Error('Đang xác nhận hủy đăng ký.');
   if (result.status !== 'ACKNOWLEDGED') throw new Error(rfidScanError(result));
   const match = /^RFID_UID:([0-9A-F]{8}|[0-9A-F]{14}|[0-9A-F]{20})$/i.exec(result.resultMessage ?? '');
   if (!match) throw new Error('Đầu đọc chưa trả về mã thẻ hợp lệ. Bấm thêm thẻ để đọc lại.');
-  return reader.assignRfid(unitId, userId, match[1].toUpperCase());
+  return reader.assignRfid(unitId, userId, match[1].toUpperCase(), command.commandUuid);
 }

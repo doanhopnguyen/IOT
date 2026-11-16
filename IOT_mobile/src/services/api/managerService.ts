@@ -7,7 +7,7 @@ export interface UnitUserDto {
   removalPending?: boolean;
 }
 export type CommandStatus = 'PENDING' | 'SENT' | 'ACKNOWLEDGED' | 'FAILED' | 'TIMEOUT';
-export interface CommandDto { commandUuid: string; status: CommandStatus; resultMessage: string | null; }
+export interface CommandDto { commandUuid: string; status: CommandStatus; resultMessage: string | null; acknowledgedAt?: string | null; }
 const post = (body?: unknown): RequestInit => body === undefined
   ? { method: 'POST' }
   : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
@@ -45,8 +45,14 @@ export const managerService = {
   scanRfid(unitId: number, userId: number) {
     return request<CommandDto>(`/api/manager/units/${unitId}/users/${userId}/rfid-scan`, post());
   },
-  assignRfid(unitId: number, userId: number, rfidUid: string) {
-    return request<{ credentialId: number; rfidUid: string }>(`/api/manager/units/${unitId}/users/${userId}/rfids`, post({ rfidUid }));
+  assignRfid(unitId: number, userId: number, rfidUid: string, scanCommandUuid?: string) {
+    return request<{ credentialId: number; rfidUid: string }>(`/api/manager/units/${unitId}/users/${userId}/rfids`, post({ rfidUid, scanCommandUuid }));
+  },
+  cancelEnrollment(unitId: number, commandUuid: string) {
+    return request<CommandDto>(`/api/manager/units/${unitId}/enrollments/${commandUuid}/cancel`, post());
+  },
+  currentEnrollment(unitId: number, userId: number) {
+    return request<CommandDto | null>(`/api/manager/units/${unitId}/users/${userId}/enrollments/current`);
   },
   remoteUnlock(unitId: number) { return request<CommandDto>(`/api/manager/units/${unitId}/unlock`, post()); },
   remoteLock(unitId: number) { return request<CommandDto>(`/api/manager/units/${unitId}/lock`, post()); },

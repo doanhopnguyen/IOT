@@ -26,6 +26,11 @@ public class AlertController {
             @RequestParam(defaultValue = "30") int size) {
         return service.list(accessUnitId, from, to, severity, relatedUserId, page, size);
     }
+    @GetMapping("/unresolved")
+    public PageResponse<Alert> unresolved(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "100") int size) {
+        return service.unresolved(page, size);
+    }
     @GetMapping("/{id}")
     public Alert detail(@PathVariable Long id) {
         return service.detail(id);

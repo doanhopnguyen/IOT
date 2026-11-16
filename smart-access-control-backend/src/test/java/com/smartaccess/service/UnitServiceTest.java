@@ -40,7 +40,7 @@ class UnitServiceTest {
             door.setLifecycleStatus(lifecycle);
             var result = service.listMine(1L).get(0);
             assertThat(result.lifecycleStatus()).isEqualTo(lifecycle);
-            assertThat(result.online()).isFalse();
+            assertThat(result.online()).isTrue(); // Connectivity is independent of lifecycle permission.
             assertThat(result.canRemoteUnlock()).isFalse();
             assertThat(result.canRemoteLock()).isFalse();
         }

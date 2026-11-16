@@ -18,6 +18,8 @@ import java.util.Locale;
 /** RFID changes are delivered in the next authenticated controller policy snapshot. */
 @Service
 public class RfidService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.smartaccess.repository.CommandRepository commands;
     private final ManagerAccessGuard guard;
     private final AccountRepository accounts;
     private final DeviceRepository devices;
@@ -34,7 +36,32 @@ public class RfidService {
     }
 
     @Transactional
+    public RfidCredentialResponse assignScanned(Long managerId, Long unitId, Long accountId, String rfidUid, String scanUuid) {
+        guard.requireManagedUnit(managerId, unitId);
+        var controller=guard.requireOnlineController(unitId);
+        devices.findByDeviceUidForUpdate(controller.getDeviceUid()).orElseThrow();
+        var scan=scanUuid==null?null:commands.findForUpdate(scanUuid).orElse(null);
+        if(scan==null || !"RFID_SCAN".equals(scan.getCommandType()) ||
+                scan.getRequestedBy()==null || !managerId.equals(scan.getRequestedBy().getAccountId()) ||
+                !controller.getDeviceId().equals(scan.getDevice().getDeviceId()) ||
+                scan.getStatus()!=com.smartaccess.model.enumtype.CommandStatus.ACKNOWLEDGED ||
+                Boolean.TRUE.equals(scan.getPayload().get("cancelRequested")) ||
+                !(scan.getPayload().get("accountId") instanceof Number id) || id.longValue()!=accountId ||
+                !("RFID_UID:"+(rfidUid==null?"":rfidUid.toUpperCase(Locale.ROOT))).equals(scan.getResultMessage()))
+            throw new BusinessException(HttpStatus.CONFLICT,"Phiên đọc thẻ chưa được xác nhận hoặc đã yêu cầu hủy");
+        if(scan.getPayload().get("credentialId") instanceof Number credentialId) {
+            var existing=credentials.findById(credentialId.longValue()).orElseThrow();
+            return new RfidCredentialResponse(existing.getCredentialId(),existing.getRfidUid());
+        }
+        var result=assign(managerId,unitId,accountId,rfidUid);
+        var payload=new java.util.HashMap<>(scan.getPayload());
+        payload.put("credentialId",result.credentialId()); scan.setPayload(payload);
+        return result;
+    }
+
+    @Transactional
     public RfidCredentialResponse assign(Long managerId, Long unitId, Long accountId, String rfidUid) {
+        guard.requireWritableUnit(unitId);
         String uid = rfidUid == null ? "" : rfidUid.trim().toUpperCase(Locale.ROOT);
         if (!uid.matches("[0-9A-Z:\\-]{4,64}")) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "Mã thẻ gồm 4–64 ký tự chữ, số, ':' hoặc '-'");
@@ -60,6 +87,7 @@ public class RfidService {
 
     @Transactional
     public void revoke(Long managerId, Long unitId, Long accountId, Long credentialId) {
+        guard.requireWritableUnit(unitId);
         guard.requireManagedUnit(managerId, unitId);
         Credential credential = credentials.findById(credentialId)
                 .filter(c -> c.getCredentialType() == CredentialType.RFID)

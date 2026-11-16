@@ -88,6 +88,22 @@ class AlertStatisticsTest {
         verify(notifications, times(2)).publishEvent(any(com.smartaccess.config.RealtimeConfig.DeviceUpdated.class));
     }
 
+    @Test void unresolvedQueryIncludesOldAcknowledgedCriticalAcrossPagesAndExcludesOtherOwnersAndResolved() {
+        for(int i=0;i<130;i++) event(door,EventSeverity.WARNING,AlertStatus.OPEN,today).setEventType("ACCESS_DENIED");
+        for(int i=0;i<105;i++) event(door,EventSeverity.CRITICAL,i%2==0?AlertStatus.OPEN:AlertStatus.ACKNOWLEDGED,today.minusDays(90));
+        event(door,EventSeverity.CRITICAL,AlertStatus.RESOLVED,today);
+        event(door(account()),EventSeverity.CRITICAL,AlertStatus.OPEN,today);
+        em.flush();
+        var first=service.unresolved(0,100); var second=service.unresolved(1,100);
+        assertThat(first.items()).hasSize(100); assertThat(first.hasNext()).isTrue();
+        assertThat(second.items()).hasSize(5); assertThat(second.hasNext()).isFalse();
+        assertThat(first.totalElements()).isEqualTo(105);
+        assertThat(first.items()).allSatisfy(a -> {
+            assertThat(a.accessUnit().id()).isEqualTo(door.getAccessUnit().getUnitId());
+            assertThat(a.status()).isIn(AlertStatus.OPEN,AlertStatus.ACKNOWLEDGED);
+        });
+    }
+
     @Test void physicalFaultsCannotBeResolvedManuallyButCanBeRead() {
         for (String type : new String[]{"DEVICE_OFFLINE", "DOOR_LEFT_OPEN", "SENSOR_FAULT", "REPEATED_WRONG_PIN"}) {
             var alert = event(door, EventSeverity.CRITICAL, AlertStatus.OPEN, today);

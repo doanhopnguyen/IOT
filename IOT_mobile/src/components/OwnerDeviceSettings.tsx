@@ -1,23 +1,26 @@
 import { Ionicons } from '@expo/vector-icons';
 import { DoorDashboard } from './DoorDashboard';
+import { DeviceHealth } from './DeviceHealth';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { request } from '../services/api/client';
+import { loadOwnerSettings, type UnitDto } from '../services/api/unitService';
 import { Badge, Button, Card, FeatureTile, Notice, PageHeader, styles as s } from './ui';
 import type { InventoryDevice } from './ActivationWizard';
-import { FactoryReset } from './FactoryReset';
+import { FactoryReset, ResetOverview } from './FactoryReset';
+import { HardwareSectionHero, isHardwareSection } from './HardwareSettingsUi';
 import { colors, fonts, radius } from '../theme/tokens';
 import { CameraNodeSettings } from './CameraNodeSettings';
 import { DeviceSetup } from './DeviceSetup';
 import { OwnerCredentials } from './OwnerCredentials';
 import { deviceDisplayName } from '../services/api/productQr';
 import type { SetupPage } from '../services/api/setupService';
-import { lifecycleNotice } from '../services/api/deviceState';
+import { lifecycleNotice, isDeviceReadOnly, recentHeartbeat } from '../services/api/deviceState';
 import { FirmwareUpdates } from './FirmwareUpdates';
 import { firmwareService } from '../services/api/firmwareService';
 
 export type SettingsSection =
   | 'hub'
+  | 'health'
   | 'stats'
   | 'remote-config'
   | 'access-methods'
@@ -37,6 +40,7 @@ const sectionMeta: Record<
   Exclude<SettingsSection, 'hub'>,
   { title: string }
 > = {
+  health: { title: 'Tình trạng cửa' },
   stats: {
     title: 'Thống kê & Báo cáo',
   },
@@ -93,6 +97,7 @@ export function OwnerDeviceSettings({
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [device, setDevice] = useState<InventoryDevice>();
+  const [unit, setUnit] = useState<UnitDto>();
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [updateCount, setUpdateCount] = useState(0);
@@ -112,12 +117,12 @@ export function OwnerDeviceSettings({
   const deviceUid = device?.deviceUid;
   const reload = useCallback(async () => {
     const ticket = ++revision.current;
-    if (deviceUid) {
-      const next = await request<InventoryDevice>(`/api/activation/devices/${deviceUid}`);
-      if (ticket === revision.current) setDevice(next);
-    } else {
-      const rows = await request<InventoryDevice[]>('/api/activation/mine');
-      if (ticket === revision.current) setDevice(rows.find((d) => d.unitId === unitId));
+    const next = await loadOwnerSettings(unitId, deviceUid);
+    if (ticket === revision.current) {
+      setDevice(next.device);
+      setUnit(next.unit);
+      setMessage('');
+      setFailed(false);
     }
   }, [unitId, deviceUid]);
 
@@ -147,8 +152,10 @@ export function OwnerDeviceSettings({
           typeof e === 'object' &&
           'status' in e &&
           [403, 404].includes(Number(e.status))
-        )
+        ) {
           setDevice(undefined);
+          setUnit(undefined);
+        }
       } finally {
         setLoading(false);
         running = false;
@@ -176,9 +183,26 @@ export function OwnerDeviceSettings({
   };
 
   const gridCellWidth = width >= 680 ? '20%' : '25%';
+  const controllerUid = device?.deviceUid ?? unit?.deviceUid;
+  const lifecycleStatus = isDeviceReadOnly(unit?.lifecycleStatus) ? unit?.lifecycleStatus
+    : isDeviceReadOnly(device?.lifecycleStatus) ? device?.lifecycleStatus
+    : unit?.lifecycleStatus ?? device?.lifecycleStatus;
+  const lastSeenAt = device?.lastSeenAt ?? unit?.lastSeenAt ?? null;
+  const sensorFresh = recentHeartbeat(lastSeenAt);
+  const doorClosed = sensorFresh ? (device ? device.doorClosed : unit?.doorClosed) : null;
+  const latchReleased = sensorFresh ? (device ? device.latchReleased : unit?.latchReleased) : null;
   const isResetting = device?.state === 'RESETTING';
   const needsInitialSetup =
-    device && !isResetting && (!device.setupReady || device.state !== 'ACTIVE');
+    device && !isDeviceReadOnly(lifecycleStatus) && !isResetting && (!device.setupReady || device.state !== 'ACTIVE');
+
+  const readOnly = (!device && !unit) || isDeviceReadOnly(lifecycleStatus);
+  if (section !== 'hub' && section !== 'health' && section !== 'stats' && readOnly) {
+    return <ScrollView contentContainerStyle={s.page}>
+      <PageHeader back={() => setSection('hub')} title={sectionMeta[section].title} />
+      {isHardwareSection(section) ? <HardwareSectionHero section={section} /> : null}
+      <Notice tone="warning">{lifecycleNotice(lifecycleStatus) || 'Đang xác định trạng thái thiết bị.'} Chỉ cho phép xem thông tin.</Notice>
+    </ScrollView>;
+  }
 
   if (section !== 'hub') {
     const meta = sectionMeta[section];
@@ -193,11 +217,13 @@ export function OwnerDeviceSettings({
           back={() => setSection('hub')}
           title={meta.title}
         />
+        {isHardwareSection(section) ? <HardwareSectionHero section={section} /> : null}
         {message ? <Notice tone={failed ? 'error' : 'info'}>{message}</Notice> : null}
-        {lifecycleNotice(device?.lifecycleStatus) ? (
-          <Notice tone="warning">{lifecycleNotice(device?.lifecycleStatus)}</Notice>
+        {lifecycleNotice(lifecycleStatus) ? (
+          <Notice tone="warning">{lifecycleNotice(lifecycleStatus)}</Notice>
         ) : null}
 
+        {section === 'health' ? <DeviceHealth unitId={unitId} /> : null}
         {section === 'stats' ? <DoorDashboard unitId={unitId} section="stats" /> : null}
         {section === 'remote-config' ? (
           <DoorDashboard unitId={unitId} section="remote-config" />
@@ -214,6 +240,7 @@ export function OwnerDeviceSettings({
             unitId={unitId}
             initialView="door-pin"
             standaloneSubView
+            onInitialSetup={() => setSection('setup-wizard')}
             onStepChange={setupChanged}
           />
         ) : null}
@@ -222,6 +249,7 @@ export function OwnerDeviceSettings({
             unitId={unitId}
             initialView="admin-pin"
             standaloneSubView
+            onInitialSetup={() => setSection('setup-wizard')}
             onStepChange={setupChanged}
           />
         ) : null}
@@ -238,6 +266,7 @@ export function OwnerDeviceSettings({
             unitId={unitId}
             initialView="calibrate"
             standaloneSubView
+            onInitialSetup={() => setSection('setup-wizard')}
             onStepChange={setupChanged}
           />
         ) : null}
@@ -254,9 +283,11 @@ export function OwnerDeviceSettings({
         {section === 'setup-wizard' ? (
           <DeviceSetup unitId={unitId} onStepChange={setupChanged} onComplete={() => setSection('hub')} />
         ) : null}
+        {section === 'factory-reset' ? <ResetOverview /> : null}
         {section === 'factory-reset' && device ? (
           <FactoryReset key={device.deviceUid} device={device} onUpdated={updateDevice} />
         ) : null}
+        {section === 'factory-reset' && !device ? <Notice tone="info">Chưa có hồ sơ cấp phát của thiết bị này nên chưa thể khôi phục cài đặt gốc. Liên hệ quản trị viên để kiểm tra thiết bị.</Notice> : null}
       </ScrollView>
     );
   }
@@ -287,8 +318,8 @@ export function OwnerDeviceSettings({
 
       {message ? <Notice tone={failed ? 'error' : 'info'}>{message}</Notice> : null}
       {updateCount > 0 ? <Button title={`Có ${updateCount} bản cập nhật cho cửa`} icon="cloud-download-outline" variant="ghost" onPress={() => setSection('firmware')} /> : null}
-      {lifecycleNotice(device?.lifecycleStatus) ? (
-        <Notice tone="warning">{lifecycleNotice(device?.lifecycleStatus)}</Notice>
+      {lifecycleNotice(lifecycleStatus) ? (
+        <Notice tone="warning">{lifecycleNotice(lifecycleStatus)}</Notice>
       ) : null}
 
       <Card style={oStyles.heroCard}>
@@ -296,55 +327,55 @@ export function OwnerDeviceSettings({
           <View style={oStyles.chipEmblem}>
             <Ionicons name="hardware-chip-outline" size={24} color="#fff" />
           </View>
-          <View style={{ flex: 1, gap: 4 }}>
+          <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
             <Text style={oStyles.heroTitle}>Thông tin thiết bị</Text>
             <Text selectable style={oStyles.heroUid}>
-              {(device ? deviceDisplayName(device.deviceUid, device.name) : undefined) ??
+              {(controllerUid ? deviceDisplayName(controllerUid, device?.name ?? unit?.unitName) : undefined) ??
                 (loading ? 'Đang tải thiết bị…' : 'Chưa tìm thấy thiết bị của cửa.')}
             </Text>
+            {device || unit ? (
+              <Badge
+                label={
+                  lifecycleStatus === 'SUSPENDED'
+                    ? 'Bị tạm ngưng'
+                    : lifecycleStatus === 'MAINTENANCE'
+                      ? 'Đang bảo trì'
+                      : lifecycleStatus === 'DECOMMISSIONED'
+                        ? 'Đã thu hồi'
+                        : device?.state === 'ACTIVE' && device.setupReady
+                          ? 'Đã sẵn sàng'
+                          : device?.state === 'RESETTING'
+                            ? 'Đang reset'
+                            : device?.state === 'CLAIMED'
+                              ? 'Đang thiết lập'
+                              : device ? 'Trong danh mục' : 'Chưa xác nhận thiết lập'
+                }
+                tone={
+                  device?.state === 'ACTIVE' &&
+                  device.setupReady &&
+                  lifecycleStatus === 'ACTIVE'
+                    ? 'success'
+                    : 'warning'
+                }
+              />
+            ) : null}
           </View>
-          {device ? (
-            <Badge
-              label={
-                device.lifecycleStatus === 'SUSPENDED'
-                  ? 'Bị tạm ngưng'
-                  : device.lifecycleStatus === 'MAINTENANCE'
-                    ? 'Đang bảo trì'
-                    : device.lifecycleStatus === 'DECOMMISSIONED'
-                      ? 'Đã thu hồi'
-                      : device.state === 'ACTIVE' && device.setupReady
-                        ? 'Đã sẵn sàng'
-                        : device.state === 'RESETTING'
-                          ? 'Đang reset'
-                          : device.state === 'CLAIMED'
-                            ? 'Đang thiết lập'
-                            : 'Trong danh mục'
-              }
-              tone={
-                device.state === 'ACTIVE' &&
-                device.setupReady &&
-                device.lifecycleStatus === 'ACTIVE'
-                  ? 'success'
-                  : 'warning'
-              }
-            />
-          ) : null}
         </View>
 
         <View style={oStyles.sensorGrid}>
           <View style={oStyles.sensorBox}>
             <View style={s.row}>
               <Ionicons
-                name={device?.doorClosed ? 'shield-checkmark-outline' : 'alert-circle-outline'}
+                name={doorClosed === true ? 'shield-checkmark-outline' : 'alert-circle-outline'}
                 size={18}
-                color={device?.doorClosed ? colors.success : colors.warning}
+                color={doorClosed === true ? colors.success : colors.warning}
               />
               <Text style={oStyles.sensorLabel}>Cảm biến cánh cửa</Text>
             </View>
             <Text style={oStyles.sensorValue}>
-              {device?.doorClosed == null
+              {doorClosed == null
                 ? 'Chưa có dữ liệu'
-                : device.doorClosed
+                : doorClosed
                   ? 'Đang đóng'
                   : 'Đang mở'}
             </Text>
@@ -352,16 +383,16 @@ export function OwnerDeviceSettings({
           <View style={oStyles.sensorBox}>
             <View style={s.row}>
               <Ionicons
-                name={device?.latchReleased ? 'lock-open-outline' : 'lock-closed-outline'}
+                name={latchReleased === true ? 'lock-open-outline' : 'lock-closed-outline'}
                 size={18}
-                color={device?.latchReleased ? colors.warning : colors.primary}
+                color={latchReleased === true ? colors.warning : colors.primary}
               />
               <Text style={oStyles.sensorLabel}>Lệnh chốt khóa</Text>
             </View>
             <Text style={oStyles.sensorValue}>
-              {device?.latchReleased == null
+              {latchReleased == null
                 ? 'Chưa có dữ liệu'
-                : device.latchReleased
+                : latchReleased
                   ? 'Nhả chốt'
                   : 'Khóa chốt'}
             </Text>
@@ -390,7 +421,7 @@ export function OwnerDeviceSettings({
         </Card>
       ) : null}
 
-      {device?.unitId && !isResetting ? (
+      {controllerUid && !isResetting && !readOnly ? (
         <>
           <View style={oStyles.groupHeader}>
             <Text style={oStyles.groupTitle}>Vận hành & An ninh</Text>
@@ -494,33 +525,39 @@ export function OwnerDeviceSettings({
                   onPress={() => setSection('lockdown')}
                 />
               </View>
-              {device ? (
-                <View style={{ width: gridCellWidth }}>
-                  <FeatureTile
-                    icon="refresh-circle-outline"
-                    tone="error"
-                    title="Khôi phục gốc"
-                    onPress={() => setSection('factory-reset')}
-                  />
-                </View>
-              ) : null}
+              <View style={{ width: gridCellWidth }}>
+                <FeatureTile
+                  icon="refresh-circle-outline"
+                  tone="error"
+                  title="Khôi phục gốc"
+                  onPress={() => setSection('factory-reset')}
+                />
+              </View>
+              <View style={{ width: gridCellWidth }}>
+                <FeatureTile icon="pulse-outline" tone="teal" title="Tình trạng cửa" titleLines={3} onPress={() => setSection('health')} />
+              </View>
             </View>
           </Card>
         </>
-      ) : device ? (
+      ) : <>
+        <View style={oStyles.groupHeader}><Text style={oStyles.groupTitle}>Phần cứng & Hệ thống</Text></View>
         <Card style={oStyles.iconGroupCard}>
           <View style={oStyles.bentoGrid}>
             <View style={{ width: gridCellWidth }}>
               <FeatureTile
-                icon="refresh-circle-outline"
-                tone="error"
-                title="Khôi phục cài đặt gốc"
-                onPress={() => setSection('factory-reset')}
+                icon="pulse-outline"
+                tone="teal"
+                title="Tình trạng cửa"
+                titleLines={3}
+                onPress={() => setSection('health')}
               />
             </View>
+            {device && !readOnly ? <View style={{ width: gridCellWidth }}>
+              <FeatureTile icon="refresh-circle-outline" tone="error" title="Khôi phục cài đặt gốc" onPress={() => setSection('factory-reset')} />
+            </View> : null}
           </View>
         </Card>
-      ) : null}
+      </>}
     </ScrollView>
   );
 }

@@ -13,7 +13,7 @@ test('OTA completion needs both new boot acknowledgement and matching reported f
 });
 test('owner confirmation submits selected release and explicit consent, never the firmware binary', async () => {
   setApiBaseUrl('http://ota.test');const old=globalThis.fetch;const calls:{path:string;init?:RequestInit}[]=[];
-  globalThis.fetch=(async(path,init)=>{calls.push({path:String(path),init});return new Response(JSON.stringify(String(path).endsWith('/csrf')?{token:'csrf'}:{commandUuid:'ota',status:'SENT',resultMessage:null}));}) as typeof fetch;
+  globalThis.fetch=(async(path,init)=>{calls.push({path:String(path),init});return new Response(JSON.stringify(String(path).endsWith('/api/units')?[{unitId:7,lifecycleStatus:'ACTIVE'}]:String(path).endsWith('/csrf')?{token:'csrf'}:{commandUuid:'ota',status:'SENT',resultMessage:null}));}) as typeof fetch;
   try {
     await firmwareService.install(7,3);const sent=calls.find(c=>c.path.endsWith('/units/7/firmware'))!;
     assert.equal(sent.init?.method,'POST');assert.deepEqual(JSON.parse(String(sent.init?.body)),{releaseId:3,consent:true});

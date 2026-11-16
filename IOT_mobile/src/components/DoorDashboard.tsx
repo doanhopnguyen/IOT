@@ -55,20 +55,22 @@ export function DoorDashboard({
 
   const load = useCallback(async () => {
     const [d, r, st, ld] = await Promise.all([
-      statsService.dailyAccess(unitId, 7),
-      statsService.telemetry(unitId, 'rssi'),
-      statsService.settings(unitId),
-      managerService.lockdownStatus(unitId),
+      section === 'all' || section === 'stats' ? statsService.dailyAccess(unitId, 7) : Promise.resolve(undefined),
+      section === 'all' || section === 'stats' ? statsService.telemetry(unitId, 'rssi') : Promise.resolve(undefined),
+      section === 'all' || section === 'remote-config' || section === 'access-methods' ? statsService.settings(unitId) : Promise.resolve(undefined),
+      section === 'all' || section === 'lockdown' ? managerService.lockdownStatus(unitId) : Promise.resolve(undefined),
     ]);
-    setDays(d);
-    setRssi(r.slice(-24));
-    setSettings(st);
-    setWaitForClose(st.autoLockWaitForClose !== false);
-    setUnlock(String(st.unlockDurationSec));
-    setOpenLimit(String(st.doorOpenTimeoutSec));
-    setPinLimit(String(st.pinFailureLimit ?? 5));
-    setLockedDown(ld.lockedDown);
-  }, [unitId]);
+    if (d) setDays(d);
+    if (r) setRssi(r.slice(-24));
+    if (st) {
+      setSettings(st);
+      setWaitForClose(st.autoLockWaitForClose !== false);
+      setUnlock(String(st.unlockDurationSec));
+      setOpenLimit(String(st.doorOpenTimeoutSec));
+      setPinLimit(String(st.pinFailureLimit ?? 5));
+    }
+    if (ld) setLockedDown(ld.lockedDown);
+  }, [unitId, section]);
 
   useEffect(() => {
     void load().catch((e) => {
@@ -492,38 +494,21 @@ export function DoorDashboard({
             },
           ]}
         >
-          <View style={s.row}>
-            <View
-              style={[
-                dStyles.sectionBadgeIcon,
-                { backgroundColor: lockedDown ? colors.errorSoft : colors.roseSoft },
-              ]}
-            >
-              <Ionicons
-                name={lockedDown ? 'lock-closed' : 'shield-half-outline'}
-                size={22}
-                color={lockedDown ? colors.error : colors.rose}
-              />
+          <View style={{ alignItems: 'center', gap: 14, paddingVertical: 12 }}>
+            <View style={{ width: 86, height: 86, borderRadius: 30, backgroundColor: lockedDown ? colors.errorSoft : colors.roseSoft, justifyContent: 'center', alignItems: 'center' }}>
+              <Ionicons name={lockedDown === undefined ? 'help-circle-outline' : lockedDown ? 'lock-closed' : 'shield-checkmark-outline'} size={42} color={lockedDown === undefined ? colors.muted : lockedDown ? colors.error : colors.rose} />
             </View>
-            <View style={{ flex: 1, gap: 4 }}>
-              <Text style={s.heading}>Tạm khóa cửa (Lockdown)</Text>
-              <Text
-                style={{
-                  color: lockedDown ? colors.error : colors.muted,
-                  fontWeight: '700',
-                  fontSize: 14,
-                }}
-              >
-                {lockedDown === undefined ? 'Đang tải...' : lockdown.title}
-              </Text>
-              <View style={{ alignSelf: 'flex-start', marginTop: 2 }}>
-                <Badge
-                  label={lockedDown ? 'Đang khóa khẩn cấp' : 'Hoạt động bình thường'}
-                  tone={lockedDown ? 'error' : 'success'}
-                />
-              </View>
-            </View>
+            <Text style={[s.heading, { textAlign: 'center' }]}>Tạm khóa cửa (Lockdown)</Text>
+            <Badge
+              label={lockedDown === undefined ? 'Chưa xác định trạng thái' : lockedDown ? 'Đang tạm khóa' : 'Quyền ra vào đang hoạt động'}
+              tone={lockedDown === undefined ? 'neutral' : lockedDown ? 'error' : 'success'}
+            />
+            <Text style={[s.description, { textAlign: 'center' }]}>{lockedDown === undefined ? failed ? 'Chưa lấy được trạng thái. Thử tải lại để tiếp tục.' : 'Đang kiểm tra trạng thái trên máy chủ…' : lockdown.title}</Text>
           </View>
+          {failed && lockedDown === undefined ? <Button title="Thử tải lại trạng thái" variant="ghost" icon="refresh-outline" disabled={busy} onPress={() => {
+            setBusy(true); setFailed(false); setMessage('');
+            void load().catch(e => { setFailed(true); setMessage(e instanceof Error ? e.message : 'Không tải được trạng thái tạm khóa.'); }).finally(() => setBusy(false));
+          }} /> : null}
           <View style={dStyles.infoBox}>
             <Ionicons name="shield-outline" size={18} color={colors.rose} />
             <Text style={[s.caption, { flex: 1, color: colors.text }]}>

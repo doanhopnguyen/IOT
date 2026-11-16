@@ -57,8 +57,10 @@ public class FingerprintService {
         device=devices.findByDeviceUidForUpdate(device.getDeviceUid()).orElseThrow();
         removals.requireNoCleanup(device);
 
-        if (commandRepository.existsByDevice_DeviceIdAndCommandTypeAndStatusIn(
-                device.getDeviceId(), FP_ENROLL, IN_FLIGHT)) {
+        final Long deviceId=device.getDeviceId();
+        if (List.of(FP_ENROLL,"RFID_SCAN",EnrollmentService.CANCEL).stream().anyMatch(type ->
+                commandRepository.existsByDevice_DeviceIdAndCommandTypeAndStatusIn(
+                deviceId, type, IN_FLIGHT))) {
             throw new BusinessException(HttpStatus.CONFLICT, "Thiết bị đang đăng ký một vân tay khác");
         }
         Set<Integer> used = usedSlots(device.getDeviceId());

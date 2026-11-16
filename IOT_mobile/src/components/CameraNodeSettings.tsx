@@ -9,13 +9,14 @@ export function CameraNodeSettings({ unitId }: { unitId: number }) {
   const [manual, setManual] = useState(false);
   return (
     <>
+      <Text style={s.heading}>Kết nối với Smart Door AI</Text>
       <LaptopAiSetup unitId={unitId} />
-      <Button
-        title="Ghép camera thủ công"
-        icon="options-outline"
-        variant="ghost"
-        onPress={() => setManual(true)}
-      />
+      <Card>
+        <Text style={s.heading}>Bộ camera do quản trị viên cấp</Text>
+        <Text style={s.description}>Dùng mã ghép camera để liên kết thiết bị với cửa này và nhận thông tin cấp phát.</Text>
+        <Button title="Ghép camera thủ công" icon="videocam-outline" variant="ghost" onPress={() => setManual(true)} />
+        <Notice tone="info">Đã có UID và secret? Nhập thông tin đã cấp trong cấu hình Smart Door AI trên máy tính.</Notice>
+      </Card>
       <AppModal
         visible={manual}
         title="Ghép camera thủ công"

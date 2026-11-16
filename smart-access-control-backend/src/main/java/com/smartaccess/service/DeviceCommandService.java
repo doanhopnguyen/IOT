@@ -26,6 +26,10 @@ public class DeviceCommandService {
     private final ApplicationEventPublisher events;
     private final DeviceGateway gateway;
     private final AccessLogRepository accessLogs;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private com.smartaccess.repository.DeviceRepository devices;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private com.smartaccess.repository.DeviceInventoryRepository inventory;
 
     public DeviceCommandService(CommandRepository commands, AccountRepository accounts,
             ApplicationEventPublisher events, DeviceGateway gateway, AccessLogRepository accessLogs) {
@@ -46,6 +50,16 @@ public class DeviceCommandService {
     @Transactional(propagation = Propagation.MANDATORY)
     public Command dispatchWithUuid(Device device, Long requestedBy, String type,
             Map<String, Object> payload, Map<String, Object> wireData, String uuid) {
+        if(devices!=null && !java.util.Set.of("DEVICE_RESET","DEVICE_DECOMMISSION","MEMBER_REMOVE",EnrollmentService.CANCEL,DeploymentService.SYNC_ACTIVATION).contains(type)) {
+            var current=devices.findByDeviceUidForUpdate(device.getDeviceUid()).orElse(device);
+            if(current.getLifecycleStatus()==com.smartaccess.model.enumtype.DeviceLifecycleStatus.SUSPENDED ||
+                    current.getLifecycleStatus()==com.smartaccess.model.enumtype.DeviceLifecycleStatus.DECOMMISSIONED)
+                throw new BusinessException(HttpStatus.CONFLICT,"Thiết bị chỉ cho phép xem thông tin");
+        }
+        if(inventory!=null && ("FP_ENROLL".equals(type) || "RFID_SCAN".equals(type))) {
+            var generation=inventory.findById(device.getDeviceId()).map(com.smartaccess.model.DeviceInventory::getGeneration).orElse(0L);
+            payload=new java.util.LinkedHashMap<>(payload); payload.put("enrollmentGeneration",generation);
+        }
         Command command = new Command();
         command.setCommandUuid(uuid);
         command.setDevice(device);
@@ -53,6 +67,13 @@ public class DeviceCommandService {
         command.setCommandType(type);
         command.setPayload(payload);
         commands.save(command);
+        if ("FP_ENROLL".equals(type) || "RFID_SCAN".equals(type)) {
+            wireData = new java.util.LinkedHashMap<>(wireData);
+            wireData.put("enrollmentSeq", command.getCommandId());
+            // Bound scanning by the original request, even if transaction commit/MQTT delivery is delayed.
+            // The 10-second margin covers device clock skew before the 60-second command timeout.
+            wireData.put("enrollmentExpiresAt", java.time.Instant.now().getEpochSecond()+50);
+        }
         if (type.startsWith("SERVO_")) {
             wireData = new java.util.LinkedHashMap<>(wireData);
             wireData.put("servoSeq", command.getCommandId());

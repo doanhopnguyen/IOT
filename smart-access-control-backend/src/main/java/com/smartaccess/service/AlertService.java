@@ -92,6 +92,17 @@ public class AlertService {
         var data = events.findAll(spec, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "occurredAt", "eventId")));
         return new PageResponse<>(data.stream().map(AlertService::dto).toList(), page, size, data.getTotalElements(), data.hasNext());
     }
+    public PageResponse<Alert> unresolved(int page, int size) {
+        AccessLogService.validate(null, null, page, size);
+        Specification<Event> spec = managedBy(current.requireAccount().getAccountId());
+        spec = spec.and((r, q, c) -> c.and(
+                r.get("alertStatus").in(AlertStatus.OPEN, AlertStatus.ACKNOWLEDGED),
+                c.or(c.equal(r.get("severity"), EventSeverity.CRITICAL),
+                     c.equal(r.get("eventType"), AlertRuleService.REPEATED_WRONG_PIN))));
+        var data = events.findAll(spec, PageRequest.of(page, size, Sort.by("eventId")));
+        return new PageResponse<>(data.stream().map(AlertService::dto).toList(), page, size, data.getTotalElements(), data.hasNext());
+    }
+
     public Alert detail(Long id) {
         Long accountId = current.requireAccount().getAccountId();
         Event event = events.findById(id).orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Alert not found"));

@@ -41,6 +41,7 @@ public class FaceEnrollmentService {
         Long targetId = input.accountId() == null ? actor.getAccountId() : input.accountId();
         Account target = accounts.findForUpdate(targetId).orElseThrow(() -> error(NOT_FOUND, "Không tìm thấy tài khoản."));
         AccessUnit unit = units.findById(input.unitId()).orElseThrow(() -> error(NOT_FOUND, "Không tìm thấy cửa."));
+        requireWritable(unit.getUnitId());
         if(removals!=null)removals.requireNotRemoving(unit.getUnitId(),targetId);
         if (!input.consent()) throw error(BAD_REQUEST, "Cần có sự đồng ý rõ ràng trước khi đăng ký khuôn mặt.");
         if (!actor.getAccountId().equals(targetId))
@@ -97,6 +98,7 @@ public class FaceEnrollmentService {
         Account target = accounts.findForUpdate(accountId).orElseThrow();
         FaceRequest request = lock(id);
         requireManager(request, actor.getAccountId());
+        requireWritable(request.getAccessUnit().getUnitId());
         if(removals!=null)removals.requireNotRemoving(request.getAccessUnit().getUnitId(),accountId);
         if (request.getStatus() != FaceRequestStatus.PENDING) throw error(CONFLICT, "Yêu cầu này đã được xử lý.");
         Credential sample = pendingSample(request).orElse(null);
@@ -146,6 +148,13 @@ public class FaceEnrollmentService {
         request.setReviewedAt(LocalDateTime.now());
         audit(actor, "CANCEL_FACE_ENROLLMENT", id, Map.of());
         return dto(request);
+    }
+
+    private void requireWritable(Long unitId) {
+        devices.findFirstByAccessUnit_UnitIdAndDeviceType(unitId,DeviceType.DOOR_CONTROLLER).ifPresent(device -> {
+            if(device.getLifecycleStatus()==DeviceLifecycleStatus.SUSPENDED || device.getLifecycleStatus()==DeviceLifecycleStatus.DECOMMISSIONED)
+                throw error(CONFLICT,"Thiết bị chỉ cho phép xem thông tin");
+        });
     }
 
     public Profile profile() {

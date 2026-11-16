@@ -31,6 +31,7 @@ String setupSsid,setupPassword,setupCsrf,serialLine,requestNonce;
 String resetReceipt,resetIntent,remoteEnrollUuid,activationCode;
 uint32_t lastResetAttempt=0;
 String rfidScanUuid;uint32_t rfidScanStarted=0;
+uint32_t rfidScanBudget=30000,remoteBudget=45000,moduleProbeAt=0;
 DNSServer setupDns;
 bool setupApActive=false;
 uint32_t setupConnectStarted=0,setupApCloseAt=0,lastConfigAt=0;
@@ -176,9 +177,14 @@ const char *connectedRestrictionNotice(){
   if(restriction==DoorRestriction::RETIRED)return "Device retired";
   return nullptr;
 }
+void finishRemoteEnroll(bool success,const String &message);
 void setRestriction(DoorRestriction::Mode next){
   if(next==restriction)return;
   restriction=next;
+  if(next==DoorRestriction::SUSPENDED || next==DoorRestriction::RETIRED) {
+    if(remoteStage)finishRemoteEnroll(false,"DEVICE_SUSPENDED");
+    if(!rfidScanUuid.isEmpty()){String target=rfidScanUuid;rfidScanUuid="";sendAck(target,false,"DEVICE_SUSPENDED");}
+  }
   if(next!=DoorRestriction::RETIRED && !nvs.putUChar("restrict",uint8_t(next)))storageFault=true;
   clearPinEntry();if(screen==HOME)drawDigits();
   lastStatusBarDraw=0;
@@ -357,6 +363,7 @@ bool localHttp(){return setupApActive && setupWeb.client().localIP()==WiFi.softA
 void setupReply(int code,const String &message){DynamicJsonDocument doc(384);doc["message"]=message;String body;serializeJson(doc,body);setupWeb.sendHeader("Cache-Control","no-store");setupWeb.send(code,"application/json",body);}
 bool setupPinAuthorized(){return !cfg.admin.valid || (wifiPermitUntil && int32_t(wifiPermitUntil-millis())>0 && setupWeb.client().remoteIP()==setupAuthorizedClient);}
 bool setupAuthorized() {
+  if(restriction==DoorRestriction::SUSPENDED || restriction==DoorRestriction::RETIRED){setupReply(403,"Thiết bị chỉ cho phép xem thông tin.");return false;}
   if(!localHttp() || resetPending || storageFault || setupWeb.arg("csrf")!=setupCsrf){setupReply(403,"Phiên thiết lập không hợp lệ. Mở lại trang tại cửa.");return false;}
   if(setupPinAuthorized())return true;
   setupReply(403,"Nhập đúng PIN admin trên trang này trước khi đổi mạng.");return false;
@@ -416,6 +423,7 @@ void startSetupWeb() {
     setupReply(200,"Đang kết nối Wi-Fi. Chỉ lưu khi kết nối thành công.");
   });
   setupWeb.on("/api/wifi/authorize",HTTP_POST,[]{
+    if(restriction==DoorRestriction::SUSPENDED || restriction==DoorRestriction::RETIRED){setupReply(403,"Thiết bị chỉ cho phép xem thông tin.");return;}
     if(!localHttp() || resetPending || setupWeb.arg("csrf")!=setupCsrf){setupReply(403,"Phiên thiết lập không hợp lệ.");return;}
     if(setupBadPins>=5 && millis()-setupBlockedAt<30000){setupReply(429,"Nhập sai nhiều lần. Chờ 30 giây.");return;}
     if(!cfg.admin.valid || !pinMatches(cfg.admin,setupWeb.arg("adminAuth"))){setupBadPins++;setupBlockedAt=millis();setupReply(403,"PIN quản trị chưa đúng.");return;}
@@ -425,6 +433,7 @@ void startSetupWeb() {
     setupReply(410,"PIN chỉ được thiết lập trong ứng dụng của chủ cửa sau khi cửa đã online.");
   });
   setupWeb.on("/api/setup/finish",HTTP_POST,[]{
+    if(restriction==DoorRestriction::SUSPENDED || restriction==DoorRestriction::RETIRED){setupReply(403,"Thiết bị chỉ cho phép xem thông tin.");return;}
     if(!localHttp() || resetPending || setupWeb.arg("csrf")!=setupCsrf){setupReply(403,"Phiên thiết lập không hợp lệ.");return;}
     if(WiFi.status()!=WL_CONNECTED || WiFi.SSID()!=wifiSsid){setupReply(409,"Cửa chưa kết nối Wi-Fi đã chọn. Kiểm tra lại trước khi hoàn tất.");return;}
     if(!confirmSavedWifi()){setupReply(500,"Chưa xác nhận lưu được Wi-Fi. Giữ nguồn ổn định và kiểm tra thiết bị trước khi tiếp tục.");return;}
@@ -448,6 +457,7 @@ bool loadFactoryJson(JsonDocument &doc) {
 }
 void finishRemoteEnroll(bool success,const String &message) {
   String uuid=remoteEnrollUuid;remoteStage=0;remoteEnrollUuid="";fingerHeld=true;
+  if(!success)eventPrefs.putString("enrollStopped",uuid);
   sendAck(uuid,success,message,true,success?remoteSlot:0);tell(message);
 }
 // Dây UART cảm biến hay chập chờn: đọc bảng ô nhớ tối đa 3 lần trước khi kết luận lỗi.
@@ -468,7 +478,7 @@ int chooseEnrollSlot(int requested,JsonArrayConst used) {
 }
 void pollRemoteEnroll() {
   if(!remoteStage || millis()-remotePollAt<200)return;remotePollAt=millis();
-  if(millis()-remoteStarted>=45000){finishRemoteEnroll(false,"ENROLL_TIMEOUT");return;}
+  if(millis()-remoteStarted>=remoteBudget){finishRemoteEnroll(false,"ENROLL_TIMEOUT");return;}
   uint8_t r=finger.getImage();
   if(r==FINGERPRINT_NOFINGER){if(remoteStage==2){remoteStage=3;tell("Scan SAME finger #2");}return;}
   if(r==FINGERPRINT_PACKETRECIEVEERR || r==FINGERPRINT_TIMEOUT){fingerReady=false;finishRemoteEnroll(false,"SENSOR_COMMUNICATION_FAILED");return;}
@@ -484,8 +494,40 @@ void pollRemoteEnroll() {
   uint8_t bitmap[32];
   if(!readFingerBitmapRetry(bitmap)){finishRemoteEnroll(false,"SENSOR_READ_FAILED");return;}
   if(bitmap[remoteSlot/8]&(1<<(remoteSlot%8))){finishRemoteEnroll(false,"SLOT_OCCUPIED");return;}
+  if(millis()-remoteStarted>=remoteBudget){finishRemoteEnroll(false,"ENROLL_TIMEOUT");return;}
   if(finger.storeModel(remoteSlot)!=FINGERPRINT_OK){finishRemoteEnroll(false,"SENSOR_STORE_FAILED");return;}
+  // Keep completion evidence after ack-confirm removes the transport receipt. Cancellation never deletes a stored template.
+  eventPrefs.putString("enrollDone",remoteEnrollUuid);
   finishRemoteEnroll(true,"ENROLLED");
+}
+void cancelRemoteEnrollment(const String &uuid,JsonObjectConst data) {
+  String target=data["targetCommandUuid"]|"",kind=data["targetType"]|"";
+  uint64_t seq=data["targetSequence"]|uint64_t(0),watermark=eventPrefs.getULong64("enrollSeq",0);
+  if(target.length()!=36 || !seq || (kind!="RFID_SCAN" && kind!="FP_ENROLL")){sendAck(uuid,false,"INVALID_ENROLLMENT_TARGET");return;}
+  if(target==remoteEnrollUuid && remoteStage) {
+    finishRemoteEnroll(false,"ENROLLMENT_CANCELLED");
+    sendAck(uuid,true,"ENROLLMENT_CANCELLED");return;
+  }
+  if(target==rfidScanUuid) {
+    rfidScanUuid="";sendAck(target,false,"ENROLLMENT_CANCELLED");
+    tell("Registration cancelled");sendAck(uuid,true,"ENROLLMENT_CANCELLED");return;
+  }
+  if(kind=="FP_ENROLL" && target==eventPrefs.getString("enrollDone","")){sendAck(uuid,true,"ENROLLMENT_ALREADY_COMPLETED");return;}
+  bool knownStopped=target==eventPrefs.getString("enrollStopped","");
+  for(int i=0;i<16;i++) {
+    DynamicJsonDocument saved(512);
+    if(!deserializeJson(saved,eventPrefs.getString(("ack"+String(i)).c_str(),"")) && saved["commandUuid"].as<String>()==target) {
+      if(kind=="FP_ENROLL" && (saved["success"]|false)){sendAck(uuid,true,"ENROLLMENT_ALREADY_COMPLETED");return;}
+      knownStopped=true;break;
+    }
+  }
+  // A cancel delivered before its start advances a durable watermark, preventing delayed starts even after ACK confirmation.
+  if(seq>watermark) {
+    if(eventPrefs.putULong64("enrollSeq",seq)!=sizeof(seq)){sendAck(uuid,false,"STORAGE_ERROR");return;}
+    knownStopped=true;
+  }
+  if(kind=="FP_ENROLL" && !knownStopped){sendAck(uuid,false,"ENROLLMENT_OUTCOME_UNKNOWN");return;}
+  sendAck(target,false,"ENROLLMENT_CANCELLED");sendAck(uuid,true,"ENROLLMENT_CANCELLED");
 }
 void executeMemberRemoval(const String &uuid,JsonObjectConst data) {
   uint64_t sequence=data["removalSequence"]|uint64_t(0);
@@ -650,10 +692,20 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
   for(int i=0;i<16;i++){DynamicJsonDocument saved(512);if(!deserializeJson(saved,eventPrefs.getString(("ack"+String(i)).c_str(),""))&&saved["commandUuid"].as<String>()==uuid){publishDocument("ack",saved);return;}}
   if((connectedUpdating() && otaJob.uuid==uuid) || factoryPrefs.getString("otaAck","")==uuid)return;
   if(connectedUpdating()){sendAck(uuid,false,"DEVICE_BUSY_UPDATING");return;}
-  if(eventPrefs.getString("started","")==uuid){if(remoteEnrollUuid!=uuid && rfidScanUuid!=uuid)sendAck(uuid,false,"INTERRUPTED_COMMAND");return;}
+  if(remoteEnrollUuid==uuid || rfidScanUuid==uuid)return;
+  if(eventPrefs.getString("started","")==uuid){sendAck(uuid,false,"INTERRUPTED_COMMAND");return;}
   time_t now=time(nullptr);long long issued=doc["issuedAt"]|0LL;int ttl=doc["ttlSec"]|0;
   if(now<1700000000 || issued>now+5 || ttl<1 || ttl>60 || now-issued>ttl){sendAck(uuid,false,"EXPIRED_OR_CLOCK_INVALID");return;}
   if(!eventPrefs.putString("started",uuid)){sendAck(uuid,false,"STORAGE_ERROR",false);return;}
+  if(type=="ENROLLMENT_CANCEL"){cancelRemoteEnrollment(uuid,doc["data"].as<JsonObjectConst>());return;}
+  if(type=="FP_ENROLL" || type=="RFID_SCAN") {
+    uint64_t sequence=doc["data"]["enrollmentSeq"]|uint64_t(0);
+    if(sequence && sequence<=eventPrefs.getULong64("enrollSeq",0)){sendAck(uuid,false,"STALE_ENROLLMENT");return;}
+    if(sequence && eventPrefs.putULong64("enrollSeq",sequence)!=sizeof(sequence)){sendAck(uuid,false,"STORAGE_ERROR");return;}
+    long long expires=doc["data"]["enrollmentExpiresAt"]|(issued+ttl);
+    uint32_t remaining=uint32_t(max(0LL,min(issued+ttl,expires)-now))*1000;
+    remoteBudget=min(uint32_t(45000),remaining);rfidScanBudget=min(uint32_t(30000),remaining);
+  }
   if(type=="FIRMWARE_UPDATE"){startOtaUpdate(uuid,doc["data"].as<JsonObjectConst>());return;}
   if(type=="DEVICE_RESET"){executeReset(uuid,doc["data"]["nextGeneration"]|generation+1);return;}
   if(type=="ACTIVATION_CODE_SET") {
@@ -665,6 +717,7 @@ void handleBroker(char *incoming,uint8_t *bytes,unsigned length) {
     sendAck(uuid,saved,saved?"ACTIVATION_QR_SAVED":result==ProductActivation::STALE?"STALE_ACTIVATION_CODE":result==ProductActivation::INVALID?"INVALID_ACTIVATION_CODE":"ACTIVATION_QR_STORAGE_FAILED");return;
   }
   if(!claimed || resetPending){sendAck(uuid,false,"NOT_READY");return;}
+  if(restriction==DoorRestriction::SUSPENDED || restriction==DoorRestriction::RETIRED){sendAck(uuid,false,"DEVICE_SUSPENDED");return;}
   if(type=="PIN_ALERT_SAFE" || type=="PIN_ALERT_LOCKDOWN"){
     const char *result=applyPinAlertResponse(type=="PIN_ALERT_LOCKDOWN",doc["data"]["pinResponseSeq"]|uint64_t(0));
     bool ok=!strcmp(result,"PIN_ALERT_SAFE_APPLIED") || !strcmp(result,"PIN_ALERT_LOCKDOWN_APPLIED");
@@ -849,7 +902,7 @@ void handleFactorySerial() {
 bool connectedCaptureCard(const String &uid) {
   if(rfidScanUuid.isEmpty())return false;
   String uuid=rfidScanUuid;rfidScanUuid="";
-  if(resetPending || !claimed || millis()-rfidScanStarted>=30000){sendAck(uuid,false,"RFID_SCAN_EXPIRED");return true;}
+  if(resetPending || !claimed || millis()-rfidScanStarted>=rfidScanBudget){sendAck(uuid,false,"RFID_SCAN_EXPIRED");return true;}
   sendAck(uuid,true,"RFID_UID:"+uid);tell("Card read - confirm in mobile app");return true;
 }
 void connectedPoll() {
@@ -859,10 +912,19 @@ void connectedPoll() {
     executeReset(resetIntent,factoryPrefs.getUInt("nextGen",generation+1));
   // AP recovery runs in the background; a configured door keeps its offline keypad.
   if(!connectedUpdating() && connectedAccessReady() && screen==APP_SETUP && !networkPage)go(HOME);
-  if(!rfidScanUuid.isEmpty() && millis()-rfidScanStarted>=30000){String uuid=rfidScanUuid;rfidScanUuid="";sendAck(uuid,false,"RFID_SCAN_TIMEOUT");tell("Card scan timed out");}
+  if(!rfidScanUuid.isEmpty() && millis()-rfidScanStarted>=rfidScanBudget){String uuid=rfidScanUuid;rfidScanUuid="";sendAck(uuid,false,"RFID_SCAN_TIMEOUT");tell("Card scan timed out");}
   handleFactorySerial();pollSetupScan();if(setupApActive)setupDns.processNextRequest();setupWeb.handleClient();pollRemoteEnroll();
   if(setupApCloseAt && WiFi.status()==WL_CONNECTED && int32_t(millis()-setupApCloseAt)>=0){setupApCloseAt=0;setupDns.stop();WiFi.softAPdisconnect(true);setupApActive=false;networkPage=false;wifiPermitUntil=0;if(!connectedContinueSetup())go(HOME);}
   if(!fingerReady && !remoteStage && !resetPending && serialLine.isEmpty() && millis()-lastSensorRetry>15000){lastSensorRetry=millis();probeSensors();}
+  // Read live responses without resetting modules or interrupting an enrollment.
+  if(!remoteStage && screen==HOME && !resetPending && millis()-moduleProbeAt>=15000) {
+    byte version=rfid.PCD_ReadRegister(MFRC522::VersionReg);
+    bool responds=version!=0 && version!=0xff;
+    if(responds && !rfidReady)rfid.PCD_Init();
+    rfidReady=responds;
+    fingerReady=finger.getParameters()==FINGERPRINT_OK;
+    moduleProbeAt=millis();
+  }
   if(SetupLogic::wifiAttemptExpired(setupConnectStarted,millis(),WiFi.status()==WL_CONNECTED && WiFi.SSID()==wifiSsid)) {
     setupConnectStarted=0;setupError="Không kết nối được mạng mới. Đã giữ cấu hình Wi-Fi trước đó; hãy chọn lại mạng/mật khẩu.";
     if(savedWifiCount)attemptSavedWifi(0);else {wifiSsid="";wifiPassword="";}
@@ -905,8 +967,9 @@ void connectedPoll() {
   if(millis()-lastStatusAt>5000 || (changed && millis()-lastStatusAt>=100)){
     lastStatusAt=millis();requestNonce=randomId();MotorState state=current;DynamicJsonDocument status(2048);
     status["requestId"]=requestNonce;status["localReady"]=configured();status["hasDoorPin"]=appPinsReady && cfg.user.valid;status["fingerReady"]=fingerReady;
+    status["rfidReady"]=rfidReady;status["moduleHealthSupported"]=moduleProbeAt>0 && millis()-moduleProbeAt<20000;
     status["adminPinSet"]=appPinsReady && cfg.admin.valid;status["touchCalibrated"]=bool(cfg.touch.valid);
-    status["doorCalibrated"]=sensorCycleVerified;status["setupStage"]=setupStage();status["wifiSsid"]=wifiSsid;
+    status["doorCalibrated"]=sensorCycleVerified;status["setupStage"]=setupStage();status["wifiSsid"]=WiFi.SSID();
     status["lockAngle"]=cfg.lockAngle;status["openAngle"]=cfg.openAngle;status["servoRange"]=cfg.servoRange;
     status["openDirection"]=cfg.openDirection;
     status["lockPending"]=state.door.lockPending;status["unlockDurationSec"]=state.unlockMs/1000;

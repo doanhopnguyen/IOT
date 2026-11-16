@@ -60,6 +60,13 @@ public class ManagerAccessGuard {
         }
     }
 
+    public void requireWritableUnit(Long unitId) {
+        devices.findFirstByAccessUnit_UnitIdAndDeviceType(unitId, DeviceType.DOOR_CONTROLLER).ifPresent(device -> {
+            if(device.getLifecycleStatus()==DeviceLifecycleStatus.SUSPENDED || device.getLifecycleStatus()==DeviceLifecycleStatus.DECOMMISSIONED)
+                throw new BusinessException(HttpStatus.CONFLICT,"Thiết bị bị tạm ngưng hoặc đã thu hồi; chỉ cho phép xem thông tin");
+        });
+    }
+
     public Device requireOnlineController(Long unitId) {
         Device device = devices.findFirstByAccessUnit_UnitIdAndDeviceType(unitId, DeviceType.DOOR_CONTROLLER)
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Cửa chưa được gắn thiết bị"));

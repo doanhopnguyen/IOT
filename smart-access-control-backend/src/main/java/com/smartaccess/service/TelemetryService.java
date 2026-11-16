@@ -31,6 +31,9 @@ public class TelemetryService {
 
     private final TelemetryRepository telemetry;
     private final DeviceRepository devices;
+    public record Snapshot(LocalDateTime at, Map<String, String> values) {}
+    private final Map<Long, Snapshot> snapshots = new java.util.concurrent.ConcurrentHashMap<>();
+    public Snapshot latest(Long deviceId) { return snapshots.get(deviceId); }
 
     public TelemetryService(TelemetryRepository telemetry, DeviceRepository devices) {
         this.telemetry = telemetry;
@@ -40,6 +43,7 @@ public class TelemetryService {
     private static Map<String, String> metrics() {
         Map<String, String> m = new LinkedHashMap<>();
         m.put("doorClosed", "bool"); m.put("unlocked", "bool"); m.put("fingerReady", "bool");
+        m.put("rfidReady", "bool"); m.put("moduleHealthSupported", "bool");
         for (String name : new String[]{"hasDoorPin","adminPinSet","touchCalibrated","doorCalibrated","servoCalibrated"}) m.put(name,"bool");
         m.put("setupStage","state"); m.put("wifiSsid","text");
         m.put("lockAngle","deg"); m.put("openAngle","deg");
@@ -66,8 +70,10 @@ public class TelemetryService {
             copyVersion(status, "hw", managed::getHardwareVersion, managed::setHardwareVersion);
         });
         LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.MILLIS);
+        Map<String, String> latest = new LinkedHashMap<>();
         for (var metric : METRICS.entrySet()) {
             String value = value(metric.getKey(), status);
+            if (value != null) latest.put(metric.getKey(), value);
             if (value == null || !shouldStore(device, metric.getKey(), value, now)) continue;
             String uuid = messageUuid(requestId, metric.getKey());
             if (telemetry.existsByMessageUuid(uuid)) continue;
@@ -77,6 +83,9 @@ public class TelemetryService {
             row.setOccurredAt(now);
             telemetry.save(row);
         }
+        // Exact authenticated heartbeat, independent of historical metric downsampling.
+        // Missing fields replace old readings; after a server restart health stays unknown until a new heartbeat.
+        snapshots.put(device.getDeviceId(), new Snapshot(now, Map.copyOf(latest)));
     }
 
     /** Giá trị đã chuẩn hóa thành chuỗi, hoặc null nếu thiếu, sai kiểu hay ngoài khoảng hợp lệ. */
@@ -87,7 +96,7 @@ public class TelemetryService {
             // Firmware gửi null khi chưa hiệu chỉnh cảm biến cửa: lưu "unknown" thay vì bỏ qua.
             case "doorClosed" -> node.isNull() ? "unknown" : node.isBoolean() ? String.valueOf(node.asBoolean()) : null;
             case "unlocked" -> node.isNull() ? "unknown" : node.isBoolean() ? String.valueOf(node.asBoolean()) : null;
-            case "fingerReady", "hasDoorPin", "adminPinSet", "touchCalibrated", "doorCalibrated", "servoCalibrated", "lockPending", "autoLockWaitForClose", "buzzerOn" -> node.isBoolean() ? String.valueOf(node.asBoolean()) : null;
+            case "fingerReady", "rfidReady", "moduleHealthSupported", "hasDoorPin", "adminPinSet", "touchCalibrated", "doorCalibrated", "servoCalibrated", "lockPending", "autoLockWaitForClose", "buzzerOn" -> node.isBoolean() ? String.valueOf(node.asBoolean()) : null;
             case "unlockDurationSec" -> inRange(node,1,30);
             case "doorOpenTimeoutSec" -> inRange(node,10,600);
             case "pinFailureLimit" -> inRange(node,1,10);

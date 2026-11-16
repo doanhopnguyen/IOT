@@ -27,6 +27,7 @@ test('lockdown calls hit the owner lockdown endpoint', async () => {
     setApiBaseUrl('http://lockdown.test:8080');
     globalThis.fetch = async (input, init) => {
       if (String(input).endsWith('/api/auth/csrf')) return Response.json({ token: 'csrf' });
+      if (String(input).endsWith('/api/units')) return Response.json([{ unitId: 7, lifecycleStatus: 'ACTIVE' }]);
       calls.push(`${init?.method ?? 'GET'} ${String(input)}`);
       if (!init?.method || init.method === 'GET') return Response.json({ lockedDown: true });
       return Response.json({ commandUuid: 'c-1', status: 'PENDING', resultMessage: null }, { status: 202 });

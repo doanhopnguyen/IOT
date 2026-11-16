@@ -4,6 +4,17 @@ import { EventNotifications, isCriticalNotification, nextNotification, updateNot
 import type { AlertDto } from '../src/services/api/alertService';
 
 const event = (id: number): AlertDto => ({ id, accessUnit: { id: 3, name: 'Door' }, device: { id: 9, name: 'Device' }, eventType: 'OFFLINE', severity: 'WARNING', status: 'OPEN', message: 'Offline', occurredAt: '2026-10-07T08:00:00' });
+
+test('acknowledged critical incidents remind once in each real session; resolved events never remind', async () => {
+  const service = new EventNotifications();
+  const critical: AlertDto = { ...event(71), severity: 'CRITICAL', status: 'ACKNOWLEDGED' };
+  assert.deepEqual(await service.observe([critical, critical, { ...critical, id: 72, status: 'RESOLVED' }]), [critical]);
+  assert.deepEqual(await service.observe([critical]), []);
+  assert.deepEqual(await service.observe([]), []);
+  assert.deepEqual(await service.observe([critical]), []);
+  service.reset(); assert.deepEqual(await service.observe([critical]), [critical]);
+  assert.deepEqual(await service.observe([{ ...critical, id: 73, status: 'RESOLVED' }]), []);
+});
 test('unread events prompt on opening the app; each event notifies once per session', async () => {
   const service = new EventNotifications();
   assert.deepEqual((await service.observe([event(1)])).map(e => e.id), [1]);
@@ -35,11 +46,11 @@ test('queued popups retain the current event and every new event without duplica
   assert.deepEqual(updateNotificationQueue(pending, [next], [third, next, current]).map(item => item.id), [1, 2, 3]);
   assert.deepEqual(updateNotificationQueue(pending, [], [third, next]).map(item => item.id), [1, 2, 3]);
 });
-test('a resolved PIN popup is removed while ordinary incident updates stay readable until closed', () => {
+test('resolved PIN and ordinary incident popups are removed from the queue', () => {
   const pin: AlertDto = { ...event(1), eventType: 'REPEATED_WRONG_PIN' };
   const normal = event(2);
   const pending = updateNotificationQueue([pin, normal], [], [{ ...pin, status: 'RESOLVED' }, { ...normal, status: 'RESOLVED' }]);
-  assert.deepEqual(pending.map(item => [item.id, item.status]), [[2, 'RESOLVED']]);
+  assert.deepEqual(pending, []);
 });
 test('critical incidents interrupt normal banners without dropping the queued notifications', () => {
   const normal = event(1), warning = event(2), critical = { ...event(3), severity: 'CRITICAL' as const };

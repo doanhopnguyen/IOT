@@ -232,12 +232,26 @@ public class MqttDeviceGateway implements DeviceGateway {
 
     /**
      * Bản tin bị từ chối: thiết bị SUSPENDED vẫn nhận cấu hình rút gọn qua heartbeat để chip chặn mở cửa;
-     * thiết bị DECOMMISSIONED được báo lại lệnh thu hồi. Không ghi telemetry, không đồng bộ quyền.
+     * thiết bị DECOMMISSIONED được báo lại lệnh thu hồi. Chỉ nhận health/cleanup ACK đã xác thực, không đồng bộ quyền.
      */
     private void handleRejected(String deviceUid, String kind, JsonNode body) {
+        if("ack".equals(kind)) {
+            try {
+                var suspended=authentication.authenticateSuspended(deviceUid,text(body,"deviceSecret"));
+                if(suspended!=null && suspended.getLifecycleStatus()==com.smartaccess.model.enumtype.DeviceLifecycleStatus.SUSPENDED &&
+                        suspended.getDeviceType()==com.smartaccess.model.enumtype.DeviceType.DOOR_CONTROLLER &&
+                        (deployment==null || deployment.acceptGeneration(suspended,body)) &&
+                        ackService.handleEnrollmentCleanupAck(deviceUid,body.path("commandUuid").asText(),
+                                body.path("success").asBoolean(false),text(body,"message"))) {
+                    reply(deviceUid,"ack-confirm",Map.of("commandUuid",body.path("commandUuid").asText()));
+                    publishUpdate();
+                }
+            } catch(RuntimeException ignored) { /* No owner command can bypass suspension through this path. */ }
+            return;
+        }
         if ("status".equals(kind) && body.path("requestId").asText().length() == 36) {
             try {
-                authentication.authenticateSuspended(deviceUid, text(body, "deviceSecret"));
+                var suspended=authentication.authenticateSuspended(deviceUid, text(body, "deviceSecret"));
                 Map<String, Object> config = new LinkedHashMap<>();
                 long generation = deployment == null ? 0 : deployment.generation(deviceUid);
                 if (generation > 0) config.put("generation", generation);
@@ -245,6 +259,12 @@ public class MqttDeviceGateway implements DeviceGateway {
                 config.put("serverTime", java.time.Instant.now().getEpochSecond());
                 config.put("requestId", body.path("requestId").asText());
                 reply(deviceUid, "config", config);
+                if((generation==0 || body.path("generation").asLong()==generation) &&
+                        suspended.getDeviceType()==com.smartaccess.model.enumtype.DeviceType.DOOR_CONTROLLER) {
+                    boolean changed=deviceService.touch(deviceUid);
+                    telemetry.record(suspended,body,body.path("requestId").asText());
+                    if(changed)publishUpdate();
+                }
                 return;
             } catch (RuntimeException notSuspended) { /* rơi xuống kiểm tra thu hồi */ }
         }

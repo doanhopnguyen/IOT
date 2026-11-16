@@ -33,6 +33,7 @@ test('kiểm tra khoảng cài đặt giống backend', () => {
 function recorder(response: unknown) {
   const calls: { url: string; init: RequestInit }[] = [];
   const transport = (async (url: string, init: RequestInit) => {
+    if (url.endsWith('/api/units')) return Response.json([{ unitId: 3, lifecycleStatus: 'ACTIVE' }]);
     calls.push({ url, init });
     return new Response(JSON.stringify(response), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }) as unknown as typeof fetch;

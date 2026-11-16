@@ -69,7 +69,8 @@ public class ManagerCommandController {
     @ResponseStatus(HttpStatus.CREATED)
     public RfidCredentialResponse assignRfid(@AuthenticationPrincipal AccountPrincipal principal, @PathVariable Long unitId,
             @PathVariable Long userId, @RequestBody AssignRfidRequest request) {
-        return rfidService.assign(principal.accountId(), unitId, userId, request == null ? null : request.rfidUid());
+        return rfidService.assignScanned(principal.accountId(), unitId, userId,
+                request == null ? null : request.rfidUid(), request == null ? null : request.scanCommandUuid());
     }
 
     @DeleteMapping("/units/{unitId}/users/{userId}/rfids/{credentialId}")

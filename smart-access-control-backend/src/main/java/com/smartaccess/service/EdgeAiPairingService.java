@@ -62,6 +62,7 @@ public class EdgeAiPairingService {
         if (password == null || !passwords.matches(password, owner.getPasswordHash()))
             throw new ResponseStatusException(FORBIDDEN, "Cần xác thực lại mật khẩu");
         AccessUnit unit = guard.requireManagedUnit(ownerId, unitId);
+        guard.requireWritableUnit(unitId);
         String code = normalize(pairingCode);
         if (code.isEmpty())
             throw new ResponseStatusException(BAD_REQUEST, "Cần mã ghép bộ camera AI do admin cấp");

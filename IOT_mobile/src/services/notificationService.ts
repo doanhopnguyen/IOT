@@ -16,7 +16,9 @@ export class EventNotifications {
     this.seen.clear();
   }
   async observe(events: AlertDto[]): Promise<AlertDto[]> {
-    const fresh = this.initialized ? events.filter(e => !this.seen.has(e.id)) : events.filter(e => e.status === 'OPEN' || isPinAlertActionable(e));
+    const eligible = [...new Map(events.map(e => [e.id, e])).values()].filter(e => e.status !== 'RESOLVED');
+    const fresh = eligible.filter(e => !this.seen.has(e.id) &&
+      (this.initialized || e.status === 'OPEN' || (e.status === 'ACKNOWLEDGED' && isCriticalNotification(e))));
     for (const e of events) this.seen.add(e.id);
     this.initialized = true;
     // Keep IDs for the entire session so an older event cannot notify again.
@@ -38,5 +40,6 @@ export function updateNotificationQueue(pending: AlertDto[], fresh: AlertDto[], 
   const reported = new Map(latest.map(event => [event.id, event]));
   const queued = new Map(pending.map(event => [event.id, reported.get(event.id) ?? event]));
   for (const event of [...fresh].reverse()) if (!queued.has(event.id)) queued.set(event.id, event);
-  return [...queued.values()].filter(event => event.eventType !== 'REPEATED_WRONG_PIN' || isPinAlertActionable(event));
+  return [...queued.values()].filter(event => event.status !== 'RESOLVED' &&
+    (event.eventType !== 'REPEATED_WRONG_PIN' || isPinAlertActionable(event)));
 }

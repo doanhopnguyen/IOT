@@ -77,6 +77,7 @@ class DeviceCommandFlowTest {
     @Autowired AccessLogRepository accessLogs;
     @Autowired AuditLogRepository audits;
     @Autowired AccessEventService localEvents;
+    @Autowired AccessLogService history;
     @Autowired PasswordEncoder encoder;
     @Autowired TransactionTemplate tx;
     @Autowired JdbcTemplate jdbc;
@@ -211,6 +212,72 @@ class DeviceCommandFlowTest {
                 "{\"eventUuid\":\"invalid\",\"method\":\"RFID\",\"result\":\"GRANTED\"}")))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThat(accessLogs.count()).isEqualTo(before + 1);
+    }
+
+    @Test
+    void historyFiltersAndPaginationStayWithinTheAuthenticatedAccountScope() {
+        LocalDateTime morning = LocalDateTime.of(2026, 11, 16, 8, 0);
+        Long foreignUnitId = tx.execute(s -> {
+            AccessUnit unit = units.findById(unitId).orElseThrow();
+            Device device = devices.findByDeviceUid(uid).orElseThrow();
+            saveHistory(unit, device, null, AccessMethod.PIN, AccessResult.DENIED, morning);
+            saveHistory(unit, device, accounts.getReferenceById(userId), AccessMethod.RFID, AccessResult.GRANTED, morning.plusHours(1));
+            saveHistory(unit, device, accounts.getReferenceById(managerId), AccessMethod.REMOTE_UNLOCK, AccessResult.ERROR, morning.plusHours(2));
+            AccessUnit foreign = new AccessUnit();
+            foreign.setUnitName("Foreign history door");
+            foreign.setManager(accounts.getReferenceById(otherManagerId));
+            units.save(foreign);
+            Device foreignDevice = new Device();
+            foreignDevice.setDeviceUid("HISTORY-FOREIGN-" + uid);
+            foreignDevice.setDeviceName("Foreign controller");
+            foreignDevice.setDeviceType(DeviceType.DOOR_CONTROLLER);
+            foreignDevice.setAccessUnit(foreign);
+            devices.save(foreignDevice);
+            saveHistory(foreign, foreignDevice, accounts.getReferenceById(otherManagerId), AccessMethod.RFID, AccessResult.GRANTED, morning);
+            return foreign.getUnitId();
+        });
+
+        ownerSession();
+        var first = history.list(unitId, morning, morning.plusDays(1), null, null, 0, 1);
+        assertThat(first.totalElements()).isEqualTo(3);
+        assertThat(first.hasNext()).isTrue();
+        assertThat(first.items()).singleElement().satisfies(log -> {
+            assertThat(log.method()).isEqualTo(AccessMethod.REMOTE_UNLOCK);
+            assertThat(log.device().name()).isEqualTo("ctl");
+        });
+        assertThat(history.list(unitId, morning, null, null, null, 1, 1).items())
+                .singleElement().satisfies(log -> assertThat(log.method()).isEqualTo(AccessMethod.RFID));
+        assertThat(history.list(unitId, morning, null, AccessMethod.PIN, AccessResult.DENIED, 0, 30).items())
+                .singleElement().satisfies(log -> assertThat(log.account()).isNull());
+        assertThat(history.list(unitId, morning.plusMinutes(30), morning.plusHours(1), AccessMethod.RFID, AccessResult.GRANTED, 0, 30).totalElements())
+                .isEqualTo(1);
+        assertThat(history.list(foreignUnitId, null, null, null, null, 0, 30).items()).isEmpty();
+        assertThat(history.list(null, null, null, null, null, 0, 30).items())
+                .allSatisfy(log -> assertThat(log.accessUnit().id()).isEqualTo(unitId));
+
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated(
+                        new com.smartaccess.security.AccountPrincipal(userId), null, List.of()));
+        assertThat(history.list(unitId, null, null, null, null, 0, 30).items()).singleElement()
+                .satisfies(log -> assertThat(log.account().id()).isEqualTo(userId));
+        assertThat(history.list(foreignUnitId, null, null, null, null, 0, 30).items()).isEmpty();
+
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated(
+                        new com.smartaccess.security.AccountPrincipal(otherManagerId), null, List.of()));
+        assertThat(history.list(unitId, null, null, null, null, 0, 30).items()).isEmpty();
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        assertThatThrownBy(() -> history.list(unitId, null, null, null, null, 0, 30))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+    }
+
+    private void saveHistory(AccessUnit unit, Device device, Account account,
+            AccessMethod method, AccessResult result, LocalDateTime occurredAt) {
+        AccessLog log = new AccessLog();
+        log.setAccessUuid(java.util.UUID.randomUUID().toString());
+        log.setAccessUnit(unit); log.setSourceDevice(device); log.setAccount(account);
+        log.setMethod(method); log.setResult(result); log.setOccurredAt(occurredAt);
+        accessLogs.saveAndFlush(log);
     }
 
     @Test

@@ -123,6 +123,16 @@ export function ServoSettings({ unitId, online, calibrating = false }: { unitId:
           <Text style={{ fontFamily: fonts.bold, fontSize: 26, color: colors.primary }}>{reportedOpen == null ? '—' : `${reportedOpen}°`}</Text>
         </View>
       </View>
+      <View style={{ padding: 16, borderRadius: 18, borderWidth: 1, borderColor: '#BAE6FD', backgroundColor: colors.skySoft, gap: 12 }}>
+        <Text style={s.label}>Xem trước góc đã chọn</Text>
+        <Text style={{ fontFamily: fonts.bold, fontSize: 36, color: colors.sky, textAlign: 'center' }}>{openAngle == null ? '—' : `${openAngle}°`}</Text>
+        <View style={{ flexDirection: 'row', gap: 4 }}>
+          {Array.from({ length: 10 }, (_, i) => <View key={i} style={{ flex: 1, height: 14, borderRadius: 4,
+            backgroundColor: openAngle != null && i * 10 <= openAngle ? colors.sky : '#DBEAFE' }} />)}
+        </View>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={s.caption}>0° · Khóa</Text><Text style={s.caption}>90° · Mở</Text></View>
+        <Text style={s.caption}>Minh họa góc cài đặt. Quan sát chốt thực tế khi quay thử.</Text>
+      </View>
       <Text style={s.description}>Giữ nguyên vị trí khóa 0° đang dùng. Cửa demo chỉ chỉnh góc mở theo chiều dương, tối đa 90°.</Text>
       <Input label="Góc mở (0–90°)" keyboardType="decimal-pad" value={open} onChangeText={value => edit(value)} editable={!disabled} />
       <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -134,12 +144,10 @@ export function ServoSettings({ unitId, online, calibrating = false }: { unitId:
       <Text style={s.caption}>0° → 5° → 10° → … → 90°. Giảm góc sẽ đưa servo về gần mốc 0°.</Text>
       <Button title={live ? 'Quay trực tiếp: BẬT' : 'Quay trực tiếp: TẮT'} variant="ghost" disabled={disabled}
         onPress={() => { cancelEdit(); setLive(!live); if (live) { setBusy(true); void queue.stop().catch(e => setError(servoError(e))).finally(() => setBusy(false)); } }} />
-      <View style={{ flexDirection: 'row', gap: 10 }}>
-        <View style={{ flex: 1 }}><Button title="Thử khóa 0°" variant="ghost" icon="lock-closed-outline" disabled={disabled}
-          onPress={() => { cancelEdit(); queue.submit({ target: 'LOCK', angle: 0, openDirection: 1 }); }} /></View>
-        <View style={{ flex: 1 }}><Button title="Thử góc mở" variant="ghost" icon="play-outline" disabled={disabled || openAngle == null}
-          onPress={() => { cancelEdit(); queue.submit({ target: 'OPEN', angle: demoAngleToCommand(openAngle!)!, openDirection: 1 }); }} /></View>
-      </View>
+      <Button title="Thử khóa 0°" variant="ghost" icon="lock-closed-outline" disabled={disabled}
+        onPress={() => { cancelEdit(); queue.submit({ target: 'LOCK', angle: 0, openDirection: 1 }); }} />
+      <Button title="Thử góc mở" variant="ghost" icon="play-outline" disabled={disabled || openAngle == null}
+        onPress={() => { cancelEdit(); queue.submit({ target: 'OPEN', angle: demoAngleToCommand(openAngle!)!, openDirection: 1 }); }} />
       <Button title={busy ? 'Đang xử lý…' : 'Lưu góc mở'} icon="checkmark-circle-outline" disabled={disabled || openAngle == null} onPress={() => { void save(); }} />
       <Button title="Dừng quay thử" variant="ghost" disabled={busy || !online} onPress={() => {
         cancelEdit(); setLive(false); setBusy(true);

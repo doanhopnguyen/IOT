@@ -25,7 +25,7 @@ public class RfidScanService {
         var online=guard.requireOnlineController(unitId);
         var device=devices.findByDeviceUidForUpdate(online.getDeviceUid()).orElseThrow();
         removals.requireNoCleanup(device);
-        for(String type:List.of("RFID_SCAN","FP_ENROLL")) {
+        for(String type:List.of("RFID_SCAN","FP_ENROLL",EnrollmentService.CANCEL)) {
             if(repository.existsByDevice_DeviceIdAndCommandTypeAndStatusIn(device.getDeviceId(),type,List.of(CommandStatus.PENDING,CommandStatus.SENT)))
                 throw new ResponseStatusException(CONFLICT,"Cửa đang có phiên đăng ký thẻ/vân tay. Chờ hoàn tất rồi thử lại.");
         }

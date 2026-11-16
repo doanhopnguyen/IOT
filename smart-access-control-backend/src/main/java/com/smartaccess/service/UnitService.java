@@ -84,8 +84,7 @@ public class UnitService {
         Device device = devices.findFirstByAccessUnit_UnitIdAndDeviceType(unit.getUnitId(), DeviceType.DOOR_CONTROLLER)
                 .orElse(null);
         LocalDateTime lastSeen = device == null ? null : device.getLastSeenAt();
-        boolean online = device != null && device.getLifecycleStatus() == DeviceLifecycleStatus.ACTIVE
-                && lastSeen != null
+        boolean online = device != null && lastSeen != null
                 && lastSeen.isAfter(LocalDateTime.now().minusSeconds(ManagerAccessGuard.ONLINE_WINDOW_SEC));
         long memberCount = memberships.countByAccessUnit_UnitId(unit.getUnitId());
         if (unit.getManager() != null && memberships.existsById(new UserAccessId(unit.getManager().getAccountId(), unit.getUnitId())))

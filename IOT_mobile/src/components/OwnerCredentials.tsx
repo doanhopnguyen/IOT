@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Text } from 'react-native';
 import { managerService, type UnitUserDto } from '../services/api/managerService';
 import { AppModal, Button, Card, Notice, styles as s } from './ui';
@@ -9,6 +9,7 @@ export function OwnerCredentials({ unitId, ready }: { unitId: number; ready: boo
   const [owner, setOwner] = useState<UnitUserDto>();
   const [error, setError] = useState('');
   const [enrollOpen, setEnrollOpen] = useState(false);
+  const closeEnrollment = useRef<(() => Promise<boolean>) | undefined>(undefined);
   const reload = useCallback(async () => {
     setOwner(await managerService.ownerAccess(unitId));
     setError('');
@@ -65,13 +66,14 @@ export function OwnerCredentials({ unitId, ready }: { unitId: number; ready: boo
       <AppModal
         visible={enrollOpen}
         title="Thêm phương thức mở cửa"
-        onClose={() => setEnrollOpen(false)}
+        onClose={() => { void (closeEnrollment.current?.() ?? Promise.resolve(true)).then(closed => { if (closed) setEnrollOpen(false); }); }}
       >
         <CredentialEnrollment
           unitId={unitId}
           userId={owner.userId}
           changed={reload}
           disabled={!ready}
+          closeRequestRef={closeEnrollment}
         />
       </AppModal>
     </>

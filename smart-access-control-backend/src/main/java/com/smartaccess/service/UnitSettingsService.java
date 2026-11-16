@@ -42,6 +42,7 @@ public class UnitSettingsService {
 
     @Transactional
     public UnitSettings.Response update(Long managerId, Long unitId, UnitSettings.Request request) {
+        guard.requireWritableUnit(unitId);
         if (request == null || request.isEmpty())
             throw new BusinessException(HttpStatus.BAD_REQUEST, "Cần ít nhất một thay đổi");
         check(request.unlockDurationSec(), UNLOCK_MIN, UNLOCK_MAX, "Thời gian mở khóa");

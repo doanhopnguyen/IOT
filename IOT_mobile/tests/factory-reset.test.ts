@@ -36,6 +36,7 @@ test('reset API sends both credentials only in the POST body and surfaces a wron
   const seen: { url: string; init?: RequestInit }[] = [];
   globalThis.fetch = (async (url, init) => {
     seen.push({ url: String(url), init });
+    if (String(url).endsWith(`/api/activation/devices/${uid}`)) return Response.json({ lifecycleStatus: 'ACTIVE' });
     return String(url).endsWith('/csrf') ? new Response(JSON.stringify({ token: 'test-csrf' }), { status: 200 })
       : new Response('{}', { status: 403 });
   }) as typeof fetch;

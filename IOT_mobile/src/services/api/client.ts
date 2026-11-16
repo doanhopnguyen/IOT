@@ -1,3 +1,5 @@
+import { guardDeviceMutation, needsLifecycleGuard } from './lifecycleGuard';
+
 let baseUrl = resolveBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL?.replace(/\/$/, ''));
 let serverRevision = 0;
 const activeRequests = new Set<AbortController>();
@@ -39,12 +41,13 @@ export function apiUrl(path: string) {
   return `${baseUrl}${path}`;
 }
 // Token đổi sau khi đăng nhập, nên gọi lại sau login.
-export async function refreshCsrf() {
+export async function refreshCsrf(timeoutMs = 20000) {
   const revision = serverRevision;
-  const response = await fetch(apiUrl('/api/auth/csrf'), { credentials: 'include', headers: { Accept: 'application/json' } });
-  if (!response.ok) throw new ApiError(`Không lấy được CSRF token (lỗi ${response.status})`, response.status);
-  const body = await response.json() as { token: string };
+  // Use the same timeout and server-change cancellation as every other API call.
+  // This GET does not require a CSRF token, so it cannot recurse into this function.
+  const body = await request<{ token: string }>('/api/auth/csrf', {}, fetch, timeoutMs);
   if (revision !== serverRevision) throw new Error('Máy chủ đã thay đổi, vui lòng đăng nhập lại.');
+  if (typeof body?.token !== 'string' || !body.token.trim()) throw new Error('Máy chủ không trả về mã bảo vệ phiên hợp lệ. Vui lòng thử lại.');
   csrfToken = body.token;
 }
 export function clearCsrf() {
@@ -67,8 +70,9 @@ export async function request<T>(path: string, init: RequestInit = {}, transport
     headers.set('Accept', 'application/json');
     if (authorization) headers.set('Authorization', authorization);
     const method = (init.method ?? 'GET').toUpperCase();
+    if (needsLifecycleGuard(path, method)) await guardDeviceMutation(path, method, <R>(target: string) => request<R>(target, {}, transport, timeoutMs));
     if (method !== 'GET' && method !== 'HEAD') {
-      if (!csrfToken) await refreshCsrf();
+      if (!csrfToken) await refreshCsrf(timeoutMs);
       if (csrfToken) headers.set('X-CSRF-TOKEN', csrfToken);
     }
     if (revision !== serverRevision) throw new Error('Máy chủ đã thay đổi.');
@@ -82,7 +86,11 @@ export async function request<T>(path: string, init: RequestInit = {}, transport
     if (response.status === 204) return undefined as T;
     return await response.json() as T;
   } catch (error) {
-    if (controller.signal.aborted) throw new Error('Dịch vụ chưa phản hồi. Kiểm tra kết nối Internet rồi thử lại.');
+    if (revision !== serverRevision) throw new Error('Máy chủ đã thay đổi, vui lòng đăng nhập lại.');
+    if (controller.signal.aborted) throw new Error('Dịch vụ chưa phản hồi. Kiểm tra địa chỉ máy chủ và kết nối Wi-Fi/VPN rồi thử lại.');
+    if (error instanceof TypeError && /fetch|network|load failed/i.test(error.message)) {
+      throw new Error('Không kết nối được máy chủ. Kiểm tra địa chỉ máy chủ và kết nối Wi-Fi/VPN rồi thử lại.');
+    }
     throw error;
   } finally {
     clearTimeout(timer);

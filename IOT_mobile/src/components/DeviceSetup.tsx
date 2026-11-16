@@ -17,6 +17,7 @@ import { ServoSettings } from './ServoSettings';
 import { SetupProgress } from './SetupProgress';
 import { LaptopAiSetup } from './LaptopAiSetup';
 import { colors } from '../theme/tokens';
+import { CalibrationDiagram, PinPreview, SettingsSteps } from './HardwareSettingsUi';
 
 async function acknowledged(command: CommandDto) {
   const result = await managerService.waitForCommand(command);
@@ -48,6 +49,7 @@ interface Props {
   stepOffset?: number;
   initialView?: SetupSubView;
   standaloneSubView?: boolean;
+  onInitialSetup?: () => void;
 }
 
 export function DeviceSetup(props: Props) {
@@ -61,6 +63,7 @@ function DeviceSetupFlow({
   stepOffset = 0,
   initialView = 'home',
   standaloneSubView = false,
+  onInitialSetup,
 }: Props) {
   const [status, setStatus] = useState<SetupStatus>();
   const [pin, setPin] = useState('');
@@ -229,8 +232,13 @@ function DeviceSetupFlow({
       {loadError ? <Notice tone="warning">{loadError}</Notice> : null}
     </>
   );
+  const initialPinsMissing = !effective.doorPinSet || !effective.adminPinSet;
+  const initialPinSetup = initialPinsMissing ? <>
+    <Notice tone="info">Tạo đủ hai mã PIN ban đầu trước khi đổi riêng từng mã hoặc hiệu chỉnh.</Notice>
+    {onInitialSetup ? <Button title="Thiết lập PIN ban đầu" variant="ghost" icon="keypad-outline" onPress={onInitialSetup} /> : null}
+  </> : null;
 
-  if (page !== 'COMPLETE')
+  if (page !== 'COMPLETE' && !standaloneSubView)
     return (
       <Card>
         <SetupProgress
@@ -328,39 +336,23 @@ function DeviceSetupFlow({
             onPress={() => setView('home')}
           />
         ) : null}
-        <ServoSettings key={unitId} unitId={unitId} online={effective.online} />
+        {page !== 'COMPLETE' ? <Notice tone="info">Hoàn tất thiết lập ban đầu và hiệu chỉnh cảm biến trước khi quay thử Servo.</Notice> : null}
+        <ServoSettings key={unitId} unitId={unitId} online={effective.online} calibrating={page !== 'COMPLETE'} />
       </>
     );
 
   if (view === 'door-pin')
     return (
       <Card>
-        <View style={s.row}>
-          <View
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 15,
-              backgroundColor: colors.warningSoft,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Ionicons name="keypad-outline" size={21} color={colors.warning} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={s.heading}>Mã PIN mở cửa</Text>
-            <Text style={s.caption}>Mã 6 chữ số mở cửa hằng ngày</Text>
-          </View>
-          <Badge
-            label={effective.doorPinSet ? 'Đã đặt' : 'Chưa đặt'}
-            tone={effective.doorPinSet ? 'success' : 'warning'}
-          />
-        </View>
+        <Text style={s.heading}>Đổi mã PIN mở cửa</Text>
+        <View style={{ alignSelf: 'flex-start' }}><Badge label={effective.doorPinSet ? 'Đã đặt mã mở cửa' : 'Chưa đặt mã mở cửa'} tone={effective.doorPinSet ? 'success' : 'warning'} /></View>
         <Text style={s.description}>
           Dùng để mở cửa trực tiếp trên bàn phím cảm ứng của khóa. Mã phải gồm đúng 6 chữ số và khác
           PIN Admin.
         </Text>
+        <PinPreview value={pin} />
+        {initialPinSetup}
+        {!effective.online ? <Notice tone="warning">Cửa đang ngoại tuyến. Bạn có thể xem thông tin; kết nối lại cửa trước khi lưu PIN.</Notice> : null}
         <Input
           label="PIN mở cửa mới · 6 số"
           value={pin}
@@ -384,7 +376,7 @@ function DeviceSetupFlow({
         <Button
           title={busy ? 'Đang chờ cửa xác nhận…' : 'Lưu mã PIN mở cửa'}
           icon="checkmark-circle-outline"
-          disabled={busy || !effective.online || Boolean(validateSinglePin(pin, confirmPin))}
+          disabled={busy || !effective.online || initialPinsMissing || Boolean(validateSinglePin(pin, confirmPin))}
           onPress={() => {
             void act(async () => {
               await acknowledged(await setupService.doorPin(unitId, { pin, confirmPin }));
@@ -413,32 +405,16 @@ function DeviceSetupFlow({
   if (view === 'admin-pin')
     return (
       <Card>
-        <View style={s.row}>
-          <View
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 15,
-              backgroundColor: colors.roseSoft,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Ionicons name="key-outline" size={21} color={colors.rose} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={s.heading}>Mã PIN Admin</Text>
-            <Text style={s.caption}>Mã 6 chữ số quản trị trực tiếp trên khóa</Text>
-          </View>
-          <Badge
-            label={effective.adminPinSet ? 'Đã đặt' : 'Chưa đặt'}
-            tone={effective.adminPinSet ? 'success' : 'warning'}
-          />
-        </View>
+        <Text style={s.heading}>Đổi PIN quản trị</Text>
+        <View style={{ alignSelf: 'flex-start' }}><Badge label={effective.adminPinSet ? 'Đã đặt PIN Admin' : 'Chưa đặt PIN Admin'} tone={effective.adminPinSet ? 'success' : 'warning'} /></View>
         <Text style={s.description}>
           Dùng để mở menu quản trị trên màn hình khóa, xác nhận đổi Wi-Fi hoặc khôi phục cài đặt
           gốc. Phải gồm 6 chữ số và khác PIN mở cửa.
         </Text>
+        <PinPreview value={adminPin} admin />
+        {initialPinSetup}
+        {!effective.online ? <Notice tone="warning">Cửa đang ngoại tuyến. Kết nối lại cửa trước khi lưu PIN Admin.</Notice> : null}
+        <Text style={s.caption}>Thay đổi chỉ hoàn tất khi khóa xác nhận.</Text>
         <Input
           label="PIN Admin mới · 6 số"
           value={adminPin}
@@ -463,7 +439,7 @@ function DeviceSetupFlow({
           title={busy ? 'Đang chờ cửa xác nhận…' : 'Lưu mã PIN Admin'}
           icon="shield-checkmark-outline"
           disabled={
-            busy || !effective.online || Boolean(validateSinglePin(adminPin, confirmAdminPin))
+            busy || !effective.online || initialPinsMissing || Boolean(validateSinglePin(adminPin, confirmAdminPin))
           }
           onPress={() => {
             void act(async () => {
@@ -498,28 +474,14 @@ function DeviceSetupFlow({
   if (view === 'calibrate')
     return (
       <Card>
-        <View style={s.row}>
-          <View
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 15,
-              backgroundColor: colors.indigoSoft,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Ionicons name="locate-outline" size={21} color={colors.indigo} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={s.heading}>Hiệu chỉnh phần cứng</Text>
-            <Text style={s.caption}>Cảm ứng màn hình và cảm biến đóng/mở cửa</Text>
-          </View>
-          <Badge
-            label={effective.touchCalibrated && effective.doorCalibrated ? 'Đã chuẩn' : 'Cần căn'}
-            tone={effective.touchCalibrated && effective.doorCalibrated ? 'success' : 'warning'}
-          />
-        </View>
+        <Text style={s.heading}>Kiểm tra trước khi hiệu chỉnh</Text>
+        <View style={{ alignSelf: 'flex-start' }}><Badge label={effective.touchCalibrated && effective.doorCalibrated ? 'Đã lưu hiệu chỉnh' : 'Chưa hiệu chỉnh đầy đủ'} tone={effective.touchCalibrated && effective.doorCalibrated ? 'success' : 'warning'} /></View>
+        <CalibrationDiagram stage={effective.stage} />
+        {initialPinSetup}
+        {restarting || effective.stage.startsWith('TOUCH_') || effective.stage === 'DOOR_CLOSED' || effective.stage === 'DOOR_OPEN' ? (
+          <SetupProgress step={pages[page].position} total={4} title={pages[page].title} detail="Theo dõi bước hiện tại và thực hiện trên khóa." />
+        ) : null}
+        {effective.stage.startsWith('TOUCH_') || effective.stage === 'DOOR_CLOSED' || effective.stage === 'DOOR_OPEN' ? <Notice tone="info">{setupInstruction(effective)}</Notice> : null}
         <View
           style={{
             backgroundColor: colors.surfaceAlt,
@@ -536,12 +498,10 @@ function DeviceSetupFlow({
               size={18}
               color={effective.touchCalibrated ? colors.success : colors.muted}
             />
-            <Text style={[s.caption, { flex: 1, color: colors.text }]}>
-              Cảm ứng màn hình 4 góc
-            </Text>
-            <Text style={s.caption}>
-              {effective.touchCalibrated ? 'Đã hiệu chỉnh' : 'Chưa hiệu chỉnh'}
-            </Text>
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={[s.caption, { color: colors.text }]}>Cảm ứng: 3 điểm + xác nhận giữa</Text>
+              <Text style={s.caption}>{effective.touchCalibrated ? 'Đã hiệu chỉnh' : 'Chưa hiệu chỉnh'}</Text>
+            </View>
           </View>
           <View style={s.row}>
             <Ionicons
@@ -549,12 +509,10 @@ function DeviceSetupFlow({
               size={18}
               color={effective.doorCalibrated ? colors.success : colors.muted}
             />
-            <Text style={[s.caption, { flex: 1, color: colors.text }]}>
-              Cảm biến từ đóng / mở cửa
-            </Text>
-            <Text style={s.caption}>
-              {effective.doorCalibrated ? 'Đã hiệu chỉnh' : 'Chưa hiệu chỉnh'}
-            </Text>
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={[s.caption, { color: colors.text }]}>Cảm biến từ đóng / mở cửa</Text>
+              <Text style={s.caption}>{effective.doorCalibrated ? 'Đã hiệu chỉnh' : 'Chưa hiệu chỉnh'}</Text>
+            </View>
           </View>
         </View>
         <Text style={s.description}>
@@ -564,7 +522,7 @@ function DeviceSetupFlow({
         <Button
           title={busy ? 'Đang gửi lệnh…' : 'Bắt đầu hiệu chỉnh trên cửa'}
           icon="construct-outline"
-          disabled={busy || !effective.online}
+          disabled={busy || !effective.online || initialPinsMissing}
           onPress={() => {
             void act(async () => {
               await acknowledged(await setupService.calibrate(unitId));
@@ -627,32 +585,20 @@ function DeviceSetupFlow({
   if (view === 'wifi')
     return (
       <Card>
-        <View style={s.row}>
-          <View
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 15,
-              backgroundColor: colors.skySoft,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Ionicons name="wifi-outline" size={22} color={colors.sky} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={s.heading}>Đổi Wi-Fi của cửa</Text>
-            <Text style={s.caption}>Mạng đã lưu: {effective.wifiSsid || 'Chưa có thông tin'}</Text>
-          </View>
-          <Badge
-            label={effective.online ? 'Đang kết nối' : 'Ngoại tuyến'}
-            tone={effective.online ? 'success' : 'neutral'}
-          />
+        <View style={{ gap: 8 }}>
+          <Text style={s.heading}>Mạng Wi-Fi của cửa</Text>
+          <View style={{ alignSelf: 'flex-start' }}><Badge label={effective.online ? 'Đang kết nối dịch vụ' : 'Ngoại tuyến'} tone={effective.online ? 'success' : 'neutral'} /></View>
         </View>
-        <Text style={s.description}>
-          Mở Wi-Fi của cửa, quét QR trên màn hình bằng camera điện thoại để tham gia mạng. Chọn
-          Wi-Fi mới trên trang thiết lập; với cửa đã nhận, trang yêu cầu PIN quản trị.
-        </Text>
+        <View style={{ backgroundColor: colors.tealSoft, borderRadius: 18, padding: 18, gap: 8, alignItems: 'center' }}>
+          <Ionicons name="wifi" size={38} color={effective.online ? colors.teal : colors.muted} />
+          <Text style={[s.heading, { textAlign: 'center' }]}>{effective.wifiSsid || 'Chưa có tên mạng'}</Text>
+          <Text style={s.caption}>{effective.online ? 'Cửa đang kết nối dịch vụ' : 'Tên mạng được lưu gần nhất'}</Text>
+        </View>
+        <SettingsSteps steps={[
+          { title: 'Mở mạng thiết lập trên cửa', detail: 'Gửi yêu cầu tới khóa, sau đó quét QR Wi-Fi trên màn hình thiết bị.' },
+          { title: 'Kết nối điện thoại với khóa', detail: 'Chọn mạng SmartDoor và giữ kết nối dù điện thoại báo không có Internet.' },
+          { title: 'Chọn Wi-Fi mới cho cửa', detail: 'Mở trang thiết lập, xác thực PIN Admin và chọn mạng Wi-Fi 2.4 GHz.' },
+        ]} />
         <Button
           title="Mở Wi-Fi thiết lập trên cửa"
           icon="radio-outline"

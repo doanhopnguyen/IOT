@@ -1,5 +1,12 @@
 export type DeviceLifecycle = 'REGISTERED' | 'PROVISIONED' | 'ACTIVE' | 'MAINTENANCE' | 'SUSPENDED' | 'DECOMMISSIONED';
 
+export function isDeviceReadOnly(status?: DeviceLifecycle) {
+  return status === 'SUSPENDED' || status === 'DECOMMISSIONED';
+}
+export function sortUsableDevicesFirst<T extends { lifecycleStatus?: DeviceLifecycle }>(devices: T[]): T[] {
+  return [...devices.filter(d => !isDeviceReadOnly(d.lifecycleStatus)), ...devices.filter(d => isDeviceReadOnly(d.lifecycleStatus))];
+}
+
 export function recentHeartbeat(lastSeenAt: string | null, now = Date.now()) {
   const seen = lastSeenAt ? Date.parse(lastSeenAt) : NaN;
   return Number.isFinite(seen) && seen <= now + 5000 && now - seen < 90000;

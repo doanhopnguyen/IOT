@@ -25,10 +25,14 @@ export function useEventNotifications(enabled: boolean) {
       if (!active || running || AppState.currentState !== 'active') return;
       running = true;
       try {
-        const data = await alertService.list();
+        const [data, unresolved] = await Promise.all([alertService.list(), alertService.unresolved()]);
         if (!active) return;
-        const fresh = await notificationService.observe(data.items);
-        if (active) setPending(previous => updateNotificationQueue(previous, fresh, data.items));
+        const unresolvedIds = new Set(unresolved.map(event => event.id));
+        const snapshot = [...new Map([...unresolved, ...data.items].map(event => [event.id, event])).values()]
+          .filter(event => !isCriticalNotification(event) || unresolvedIds.has(event.id) || event.status === 'RESOLVED');
+        const fresh = await notificationService.observe(snapshot);
+        if (active) setPending(previous => updateNotificationQueue(previous.filter(event =>
+          !isCriticalNotification(event) || unresolvedIds.has(event.id)), fresh, snapshot));
       } catch {
         // Alert screen provides retry/error details. Keep polling when backend recovers.
       } finally {

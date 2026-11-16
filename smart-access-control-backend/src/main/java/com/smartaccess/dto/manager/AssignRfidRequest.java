@@ -1,3 +1,3 @@
 package com.smartaccess.dto.manager;
 
-public record AssignRfidRequest(String rfidUid) {}
+public record AssignRfidRequest(String rfidUid, String scanCommandUuid) {}
