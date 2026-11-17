@@ -79,3 +79,14 @@ Tham khảo: [PubSubClient](https://github.com/knolleary/pubsubclient/tree/v2.8)
 - Từ 2.0.6-demo, bản OTA không bật cờ nền nút đen nên nút trở về nền mặc định (xanh dương trên chip thật).
 
 - Từ 2.0.7-demo, bản OTA bật lại nền nút đen (FW_DEMO_BLACK_BUTTONS), cùng chức năng với 1.18.0. Build bằng môi trường esp32-s3-ota-black trong platformio.connected.ini.
+
+### Phát hành 2.1.1
+
+Build từ thư mục gốc bằng `./scripts/build-firmware.ps1 -Environment esp32-s3-release-2-1-1`.
+Hai tệp đầu ra là `.local/releases/firmware-2.1.1.bin` (OTA) và `.local/releases/factory-2.1.1.bin` (nạp ban đầu).
+Khi tạo bản phát hành trong admin, nhập phiên bản `2.1.1`, phần cứng `esp32s3-n16r8` và chọn đúng hai tệp này.
+
+Bản này giữ broker mặc định Tailscale Funnel và bố cục phân vùng của 2.1.0-funnel,
+đồng thời bổ sung trạng thái module trực tiếp, hủy đăng ký RFID/vân tay và các chặn thao tác theo vòng đời thiết bị.
+Cập nhật OTA dùng tệp firmware, giữ dữ liệu NVS; không dùng factory image cho OTA.
+Thiết bị phải có firmware hỗ trợ OTA từ 1.13.0, online, đã thiết lập xong, cửa đóng/khóa và không có tác vụ đang chạy.

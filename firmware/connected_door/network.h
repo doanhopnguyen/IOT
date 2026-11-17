@@ -477,7 +477,8 @@ int chooseEnrollSlot(int requested,JsonArrayConst used) {
   return 0;
 }
 void pollRemoteEnroll() {
-  if(!remoteStage || millis()-remotePollAt<200)return;remotePollAt=millis();
+  if(!remoteStage || millis()-remotePollAt<200)return;
+  remotePollAt=millis();
   if(millis()-remoteStarted>=remoteBudget){finishRemoteEnroll(false,"ENROLL_TIMEOUT");return;}
   uint8_t r=finger.getImage();
   if(r==FINGERPRINT_NOFINGER){if(remoteStage==2){remoteStage=3;tell("Scan SAME finger #2");}return;}
