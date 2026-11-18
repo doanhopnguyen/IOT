@@ -90,3 +90,18 @@ Bản này giữ broker mặc định Tailscale Funnel và bố cục phân vùn
 đồng thời bổ sung trạng thái module trực tiếp, hủy đăng ký RFID/vân tay và các chặn thao tác theo vòng đời thiết bị.
 Cập nhật OTA dùng tệp firmware, giữ dữ liệu NVS; không dùng factory image cho OTA.
 Thiết bị phải có firmware hỗ trợ OTA từ 1.13.0, online, đã thiết lập xong, cửa đóng/khóa và không có tác vụ đang chạy.
+
+### Phát hành 2.1.2 — thử cập nhật OTA
+
+Build từ thư mục gốc bằng `./scripts/build-firmware.ps1 -Environment esp32-s3-release-2-1-2`.
+Bản này dùng nền nút đen, viền và chữ trắng (`FW_DEMO_BLACK_BUTTONS`) để nhận biết sau khi cập nhật từ 2.1.1;
+cờ màu áp dụng cho bàn phím PIN và các nút TFT dùng chung hàm vẽ nút.
+Giữ cấu hình broker Tailscale Funnel, bố cục phân vùng và chức năng của 2.1.1.
+
+Trong admin, tạo bản phát hành phiên bản `2.1.2`, phần cứng `esp32s3-n16r8`:
+- OTA: `.local/releases/firmware-2.1.2.bin`.
+- Nạp ban đầu: `.local/releases/factory-2.1.2.bin`.
+
+Để thử OTA, giữ thiết bị đang chạy 2.1.1 online, đã thiết lập xong, cửa đóng/khóa và không có tác vụ đang chạy,
+sau đó gửi cập nhật 2.1.2. Sau reboot, kiểm tra phiên bản báo về là `2.1.2`, bàn phím chuyển nền đen
+và PIN/thẻ/vân tay/cấu hình đã lưu vẫn hoạt động. Không dùng factory image cho OTA.
